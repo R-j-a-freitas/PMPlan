@@ -15,8 +15,10 @@ jobs:
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://bwtodvouhjecjcuhfgvw.supabase.co/auth/v1/health")
           echo "HTTP status: $STATUS"
-          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 400 ]; then
-            echo "Keepalive ping falhou com status $STATUS"
+          # Qualquer resposta HTTP (incluindo 401) confirma que o projecto está activo.
+          # Só falha se não houve resposta de todo (STATUS = 000).
+          if [ "$STATUS" = "000" ]; then
+            echo "Sem resposta do servidor Supabase"
             exit 1
           fi
-          echo "Keepalive OK"
+          echo "Keepalive OK (projecto activo, status $STATUS)"
