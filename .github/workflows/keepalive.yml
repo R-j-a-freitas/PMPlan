@@ -1,0 +1,22 @@
+name: Supabase Keepalive
+
+on:
+  schedule:
+    # Corre de 3 em 3 dias às 06:00 UTC (bem abaixo do limite de 7 dias do free tier)
+    - cron: '0 6 */3 * *'
+  workflow_dispatch: # permite correr manualmente a qualquer momento
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase health endpoint
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://bwtodvouhjecjcuhfgvw.supabase.co/auth/v1/health")
+          echo "HTTP status: $STATUS"
+          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 400 ]; then
+            echo "Keepalive ping falhou com status $STATUS"
+            exit 1
+          fi
+          echo "Keepalive OK"

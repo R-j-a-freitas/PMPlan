@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Requisitos de layout obrigatórios (secção 10): zero margens externas, o calendário
+   ocupa sempre todo o espaço disponível do viewport activo. */
+html,
+body,
+#root {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Overlay de conflitos (ConflictIndicator) — borda vermelha em eventos com conflito por resolver. */
+.pmplan-event-conflict {
+  outline: 2px solid #dc2626;
+  outline-offset: -2px;
+}
