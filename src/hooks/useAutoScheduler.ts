@@ -23,7 +23,11 @@ interface UseAutoSchedulerResult {
 // anterior vem directo do Supabase; equipamento/zona/feriados/eventos vêm dos stores).
 export function useAutoScheduler(): UseAutoSchedulerResult {
   const equipment = useEquipmentStore((state) => state.equipment);
-  const events = useCalendarStore((state) => state.events);
+  // Detecção de conflitos precisa do ano COMPLETO, não da fatia visível do calendário
+  // (`events`) — senão uma PM de Novembro não é vista com o Março no ecrã. Mesmo
+  // contrato do useBulkAutoScheduler: o chamador garante fetchYearEvents(targetYear)
+  // antes de generate (como faz o AutoSchedulerModal.handleGenerate).
+  const yearEvents = useCalendarStore((state) => state.yearEvents);
   const holidays = useHolidayStore((state) => state.holidays);
 
   const [generating, setGenerating] = useState(false);
@@ -62,7 +66,10 @@ export function useAutoScheduler(): UseAutoSchedulerResult {
             status: event.status,
           }));
 
-        const existingEventsTargetYear = events.filter(
+        // AUDIT-FOLLOWUP: o filtro por equipment_id limita a Regra 1 (sobreposição de
+        // engenheiro) aos eventos do próprio equipamento — o useBulkAutoScheduler filtra
+        // só por ano. Fora do âmbito do item J; rever se este hook ganhar consumidores.
+        const existingEventsTargetYear = yearEvents.filter(
           (event) =>
             event.equipment_id === equipmentId &&
             new Date(event.start_date).getFullYear() === targetYear,
@@ -92,7 +99,7 @@ export function useAutoScheduler(): UseAutoSchedulerResult {
         setGenerating(false);
       }
     },
-    [equipment, events, holidays],
+    [equipment, yearEvents, holidays],
   );
 
   const reset = useCallback(() => {

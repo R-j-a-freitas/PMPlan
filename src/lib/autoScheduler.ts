@@ -1,5 +1,5 @@
-import { addDays, differenceInCalendarDays, getDaysInYear, isWeekend } from 'date-fns';
-import { checkEngineerOverlap, checkHolidayConflict, validatePMPlacement } from './conflictRules';
+import { addDays, differenceInCalendarDays, getDaysInYear } from 'date-fns';
+import { checkEngineerOverlap, checkHolidayConflict, checkWeekendConflict, validatePMPlacement } from './conflictRules';
 import type { ConflictResult, Country, Holiday, PMEvent, PMStatus, PmPerYear, WeekendWork } from '../types';
 
 // ─── TIPOS ───────────────────────────────────────────────────────────────────
@@ -81,14 +81,6 @@ function resolveAnchorDate(historical: HistoricalPM): Date {
 
 // ─── AJUSTES DE DATA (R1-R5) ──────────────────────────────────────────────────
 
-// Regra 5: sábado/domingo só bloqueia se o contrato do equipamento não o permitir.
-function isWeekendBlocked(date: Date, weekendWork: WeekendWork): boolean {
-  if (!isWeekend(date)) return false;
-  if (weekendWork === 'both') return false;
-  if (weekendWork === 'saturday' && date.getDay() === 6) return false;
-  return true;
-}
-
 function isHolidayOrWeekend(
   date: Date,
   zoneId: string,
@@ -98,7 +90,8 @@ function isHolidayOrWeekend(
   hospitalCity: string | null,
   weekendWork: WeekendWork,
 ): boolean {
-  if (isWeekendBlocked(date, weekendWork)) return true;
+  // Regra 5 partilhada (conflictRules.checkWeekendConflict) — verificação dia a dia.
+  if (checkWeekendConflict(date, date, weekendWork).hasConflict) return true;
   return checkHolidayConflict(date, zoneId, zoneCountry, holidays, hospitalLocality, hospitalCity).hasConflict;
 }
 
@@ -206,6 +199,7 @@ function resolveValidDate(params: {
     endDate: addDays(date, durationDays),
     existingEvents,
     holidays,
+    weekendWork,
     hospitalLocality,
     hospitalCity,
   });

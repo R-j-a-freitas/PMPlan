@@ -12,7 +12,8 @@ interface DragDropResult {
 
 interface DraggedEventProps {
   equipmentId: string;
-  engineerId: string;
+  // null = PM sem engenheiro atribuído (extendedProps vem de event.engineer_id nullable).
+  engineerId: string | null;
 }
 
 function toIsoDate(date: Date): string {
@@ -38,7 +39,7 @@ export function useDragDrop(): DragDropResult {
     async (params: {
       eventId: string;
       equipmentId: string;
-      engineerId: string;
+      engineerId: string | null;
       startDate: Date;
       endDate: Date;
       revert: () => void;

@@ -20,7 +20,15 @@ function formatDate(date: Date) {
 }
 
 // Linha individual de proposta PM (dentro do card de cada equipamento)
-function ProposalRow({ proposal, index }: { proposal: ProposedPMEvent; index: number }) {
+function ProposalRow({
+  proposal,
+  index,
+  missingEngineer,
+}: {
+  proposal: ProposedPMEvent;
+  index: number;
+  missingEngineer: boolean;
+}) {
   const hasConflicts = proposal.conflicts.length > 0;
   const needsReview = proposal.requiresManualReview;
 
@@ -48,6 +56,11 @@ function ProposalRow({ proposal, index }: { proposal: ProposedPMEvent; index: nu
           {proposal.anchorSource === 'base_distribution' && (
             <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
               distribuição base
+            </span>
+          )}
+          {missingEngineer && (
+            <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+              sem engenheiro
             </span>
           )}
           {needsReview && (
@@ -79,10 +92,12 @@ function EquipmentResultCard({
   result,
   selected,
   onToggle,
+  validEngineerIds,
 }: {
   result: BulkSchedulerResult;
   selected: boolean;
   onToggle: () => void;
+  validEngineerIds: Set<string>;
 }) {
   const hasAnyConflict = result.proposals.some((p) => p.requiresManualReview || p.conflicts.length > 0);
   const allOk = !hasAnyConflict && result.proposals.length > 0;
@@ -132,7 +147,14 @@ function EquipmentResultCard({
         ) : result.proposals.length === 0 ? (
           <p className="text-sm text-gray-400">Nenhuma proposta gerada.</p>
         ) : (
-          result.proposals.map((p, i) => <ProposalRow key={i} proposal={p} index={i} />)
+          result.proposals.map((p, i) => (
+            <ProposalRow
+              key={i}
+              proposal={p}
+              index={i}
+              missingEngineer={!validEngineerIds.has(p.engineerId)}
+            />
+          ))
         )}
       </div>
     </div>
@@ -160,6 +182,10 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
     () => equipment.filter((e) => e.active).sort((a, b) => a.name.localeCompare(b.name)),
     [equipment],
   );
+
+  // Ids de engenheiros reais — propostas cujo engineerId não resolve (vazio ou obsoleto)
+  // são marcadas "sem engenheiro" na revisão e gravadas com engineer_id null.
+  const validEngineerIds = useMemo(() => new Set(engineers.map((e) => e.id)), [engineers]);
 
   // Pré-seleccionar todos os equipamentos activos ao abrir o modal
   useEffect(() => {
@@ -213,23 +239,29 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
     setSaving(true);
     try {
       const toSave: PMEventInsert[] = [];
+      let withoutEngineer = 0;
       for (const result of results) {
         if (!selectedResults.has(result.equipmentId)) continue;
         for (const proposal of result.proposals) {
-          const engineer = engineers.find((e) => e.id === proposal.engineerId);
-          if (!engineer) continue;
+          // Proposta sem engenheiro resolúvel: guarda na mesma com engineer_id null
+          // (em vez de descartar silenciosamente) — o utilizador atribui depois.
+          const hasEngineer = validEngineerIds.has(proposal.engineerId);
+          if (!hasEngineer) withoutEngineer++;
+          const baseNotes = proposal.adjustmentReason
+            ? `Gerado automaticamente. ${proposal.adjustmentReason}`
+            : 'Gerado automaticamente.';
           toSave.push({
             equipment_id: proposal.equipmentId,
-            engineer_id: proposal.engineerId,
+            engineer_id: hasEngineer ? proposal.engineerId : null,
             start_date: format(proposal.proposedStartDate, 'yyyy-MM-dd'),
             end_date: format(proposal.proposedEndDate, 'yyyy-MM-dd'),
             actual_start_date: null,
             actual_end_date: null,
             status: 'planned',
             outlook_event_id: null,
-            notes: proposal.adjustmentReason
-              ? `Gerado automaticamente. ${proposal.adjustmentReason}`
-              : 'Gerado automaticamente.',
+            notes: hasEngineer
+              ? baseNotes
+              : `${baseNotes} Sem engenheiro atribuído — requer atribuição manual.`,
           });
         }
       }
@@ -240,10 +272,15 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
       }
 
       await createBulkEvents(toSave);
-      pushToast({
-        variant: 'success',
-        message: `${toSave.length} PM(s) criada(s) com sucesso para o plano ${targetYear}.`,
-      });
+      const successMessage = `${toSave.length} PM(s) criada(s) com sucesso para o plano ${targetYear}.`;
+      if (withoutEngineer > 0) {
+        pushToast({
+          variant: 'warning',
+          message: `${successMessage} (${withoutEngineer} sem engenheiro atribuído — atribui-os manualmente no calendário)`,
+        });
+      } else {
+        pushToast({ variant: 'success', message: successMessage });
+      }
       onClose();
     } catch (err) {
       pushToast({
@@ -437,6 +474,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
                 <EquipmentResultCard
                   key={result.equipmentId}
                   result={result}
+                  validEngineerIds={validEngineerIds}
                   selected={selectedResults.has(result.equipmentId)}
                   onToggle={() => {
                     setSelectedResults((prev) => {

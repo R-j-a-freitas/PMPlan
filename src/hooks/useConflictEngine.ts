@@ -12,7 +12,8 @@ import type { ConflictResult } from '../types';
 
 interface ValidatePlacementParams {
   equipmentId: string;
-  engineerId: string;
+  // null = PM sem engenheiro atribuído — a Regra 1 ignora-a (ver checkEngineerOverlap).
+  engineerId: string | null;
   startDate: Date;
   endDate: Date;
   excludeEventId?: string;
@@ -47,6 +48,7 @@ export function useConflictEngine() {
         endDate: params.endDate,
         existingEvents: events,
         holidays,
+        weekendWork: targetEquipment.weekend_work,
         hospitalLocality: targetEquipment.hospital_locality,
         hospitalCity: targetEquipment.hospital_city,
         ...(params.excludeEventId ? { excludeEventId: params.excludeEventId } : {}),

@@ -3,12 +3,13 @@ import {
   areIntervalsOverlapping,
   eachDayOfInterval,
   endOfYear,
+  format,
   isSameDay,
   isWeekend,
   startOfYear,
 } from 'date-fns';
 import type { Interval } from 'date-fns';
-import type { ConflictResult, Country, Equipment, EngineerWithZones, Holiday, PMEvent, Zone } from '../types';
+import type { ConflictResult, Country, Equipment, EngineerWithZones, Holiday, PMEvent, WeekendWork, Zone } from '../types';
 import { toDisplayDate } from './dateFormat';
 import { expandZoneSelection } from './zoneTree';
 
@@ -30,15 +31,21 @@ function eventIsActive(event: PMEvent): boolean {
 
 // Regra 1: Engenheiro não pode ter dois eventos sobrepostos
 export function checkEngineerOverlap(
-  engineerId: string,
+  engineerId: string | null,
   startDate: Date,
   endDate: Date,
   existingEvents: PMEvent[],
   excludeEventId?: string,
 ): ConflictResult {
+  // Candidato sem engenheiro atribuído (null ou '') nunca colide com ninguém.
+  if (!engineerId) return NO_CONFLICT;
+
   const candidateInterval = toInterval(startDate, endDate);
 
   const overlapping = existingEvents.find((event) => {
+    // Eventos existentes sem engenheiro não participam na regra — sem este guard,
+    // duas PMs por atribuir "colidiriam" entre si (bug do engenheiro fantasma).
+    if (!event.engineer_id) return false;
     if (event.engineer_id !== engineerId) return false;
     if (excludeEventId && event.id === excludeEventId) return false;
     if (!eventIsActive(event)) return false;
@@ -130,6 +137,44 @@ export function checkHolidayConflict(
     hasConflict: true,
     type: 'holiday_block',
     message: `${matched.name} (feriado) — não é possível agendar PM neste dia.`,
+    suggestedDate,
+  };
+}
+
+// Regra 5: fim-de-semana só com contrato que o permita. 'none' (ou ausente — fallback
+// defensivo para linhas anteriores à migração weekend_work) bloqueia sábado e domingo;
+// 'saturday' bloqueia só domingo; 'both' não bloqueia nada. Partilhada entre o scheduler
+// automático (lib/autoScheduler) e a criação/edição manual (validatePMPlacement) — a
+// lógica vive APENAS aqui.
+export function checkWeekendConflict(
+  startDate: Date,
+  endDate: Date,
+  weekendWork: WeekendWork | undefined | null,
+): ConflictResult {
+  const effective = weekendWork ?? 'none';
+  if (effective === 'both') return NO_CONFLICT;
+
+  const isBlockedDay = (day: Date): boolean => {
+    if (!isWeekend(day)) return false;
+    if (effective === 'saturday' && day.getDay() === 6) return false;
+    return true;
+  };
+
+  const blocked = eachDayOfInterval({ start: startDate, end: endDate }).find(isBlockedDay);
+  if (!blocked) return NO_CONFLICT;
+
+  // Próximo dia permitido pela Regra 5 (os restantes bloqueios — feriados, engenheiro —
+  // são validados pelas respectivas regras quando a sugestão for aplicada).
+  let suggestedDate = addDays(blocked, 1);
+  while (isBlockedDay(suggestedDate)) {
+    suggestedDate = addDays(suggestedDate, 1);
+  }
+
+  const dayName = blocked.getDay() === 6 ? 'sábado' : 'domingo';
+  return {
+    hasConflict: true,
+    type: 'weekend_block',
+    message: `${format(blocked, 'dd/MM/yyyy')} é ${dayName} — o contrato do equipamento não permite PMs neste dia.`,
     suggestedDate,
   };
 }
@@ -252,15 +297,17 @@ export function checkZoneLoad(
 }
 
 // Função principal que agrega todas as regras de bloqueio (feriados em qualquer dia do
-// intervalo + sobreposição de engenheiro). A carga de zona não bloqueia — ver checkZoneLoad.
+// intervalo + fim-de-semana não contratualizado + sobreposição de engenheiro). A carga
+// de zona não bloqueia — ver checkZoneLoad.
 export function validatePMPlacement(params: {
-  engineerId: string;
+  engineerId: string | null;
   zoneId: string;
   zoneCountry: Country;
   startDate: Date;
   endDate: Date;
   existingEvents: PMEvent[];
   holidays: Holiday[];
+  weekendWork: WeekendWork | undefined | null;
   excludeEventId?: string;
   hospitalLocality?: string | null;
   hospitalCity?: string | null;
@@ -273,6 +320,7 @@ export function validatePMPlacement(params: {
     endDate,
     existingEvents,
     holidays,
+    weekendWork,
     excludeEventId,
     hospitalLocality = null,
     hospitalCity = null,
@@ -284,6 +332,9 @@ export function validatePMPlacement(params: {
     .map((day) => checkHolidayConflict(day, zoneId, zoneCountry, holidays, hospitalLocality, hospitalCity))
     .filter((result) => result.hasConflict);
   results.push(...holidayConflicts);
+
+  const weekendResult = checkWeekendConflict(startDate, endDate, weekendWork);
+  if (weekendResult.hasConflict) results.push(weekendResult);
 
   const overlapResult = checkEngineerOverlap(
     engineerId,

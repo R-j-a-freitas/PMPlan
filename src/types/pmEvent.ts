@@ -9,7 +9,9 @@ export type PMStatus =
 export type PMEvent = {
   id: string;
   equipment_id: string;
-  engineer_id: string;
+  // null = PM sem engenheiro atribuído (ex: gerada pelo scheduler para equipamento sem
+  // engenheiro principal) — requer atribuição manual posterior.
+  engineer_id: string | null;
   start_date: string;
   end_date: string;
   actual_start_date: string | null;

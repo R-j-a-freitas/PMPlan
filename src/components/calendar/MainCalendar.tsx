@@ -106,7 +106,8 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
         : events.filter((event) => {
             const eq = equipment.find((item) => item.id === event.equipment_id);
             const zoneMatch = hasZoneFilter && !!eq && selectedZoneIds.includes(eq.zone_id);
-            const engineerMatch = hasEngineerFilter && selectedEngineerIds.includes(event.engineer_id);
+            const engineerMatch =
+              hasEngineerFilter && !!event.engineer_id && selectedEngineerIds.includes(event.engineer_id);
             const equipmentMatch = hasEquipmentFilter && selectedEquipmentIds.includes(event.equipment_id);
             return zoneMatch || engineerMatch || equipmentMatch;
           });
