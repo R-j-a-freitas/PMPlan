@@ -24,9 +24,9 @@ interface UseAutoSchedulerResult {
 export function useAutoScheduler(): UseAutoSchedulerResult {
   const equipment = useEquipmentStore((state) => state.equipment);
   // Detecção de conflitos precisa do ano COMPLETO, não da fatia visível do calendário
-  // (`events`) — senão uma PM de Novembro não é vista com o Março no ecrã. Mesmo
-  // contrato do useBulkAutoScheduler: o chamador garante fetchYearEvents(targetYear)
-  // antes de generate (como faz o AutoSchedulerModal.handleGenerate).
+  // (`events`) — senão uma PM de Novembro não é vista com o Março no ecrã. O chamador
+  // garante fetchYearEvents(targetYear) antes de generate (ou, de preferência, migrar
+  // para o padrão do useBulkAutoScheduler: fetchYearEventsSnapshot + parâmetro).
   const yearEvents = useCalendarStore((state) => state.yearEvents);
   const holidays = useHolidayStore((state) => state.holidays);
 

@@ -4,7 +4,15 @@ import { pt } from 'date-fns/locale';
 import { useBulkAutoScheduler } from '../../hooks';
 import type { BulkSchedulerResult } from '../../hooks';
 import type { ProposedPMEvent } from '../../lib/autoScheduler';
-import { useAuthStore, useCalendarStore, useEngineerStore, useEquipmentStore, useUiStore, useZoneStore } from '../../stores';
+import {
+  fetchYearEventsSnapshot,
+  useAuthStore,
+  useCalendarStore,
+  useEngineerStore,
+  useEquipmentStore,
+  useUiStore,
+  useZoneStore,
+} from '../../stores';
 import type { PMEventInsert } from '../../types';
 import { Badge, Button } from '../ui';
 
@@ -165,7 +173,6 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
   const equipment = useEquipmentStore((state) => state.equipment);
   const engineers = useEngineerStore((state) => state.engineers);
   const zones = useZoneStore((state) => state.zones);
-  const fetchYearEvents = useCalendarStore((state) => state.fetchYearEvents);
   const createBulkEvents = useCalendarStore((state) => state.createBulkEvents);
   const canCreatePM = useAuthStore((state) => state.permissions.canCreatePM);
   const pushToast = useUiStore((state) => state.pushToast);
@@ -227,11 +234,20 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
 
   async function handleGenerate() {
     if (selectedEquipmentIds.size === 0) return;
-    // Garantir que os yearEvents estão actualizados para o ano alvo
-    await fetchYearEvents(targetYear);
     setPhase('generating');
-    await generate({ equipmentIds: Array.from(selectedEquipmentIds), targetYear });
-    setPhase('review');
+    try {
+      // Consulta pura do ano alvo — não escreve no store, para os yearEvents do
+      // planningYear (LoadMap/Dashboard) não ficarem trocados se o ano alvo diferir.
+      const existingEvents = await fetchYearEventsSnapshot(targetYear);
+      await generate({ equipmentIds: Array.from(selectedEquipmentIds), targetYear, existingEvents });
+      setPhase('review');
+    } catch (err) {
+      pushToast({
+        variant: 'error',
+        message: err instanceof Error ? err.message : 'Falha ao carregar os eventos do ano alvo.',
+      });
+      setPhase('setup');
+    }
   }
 
   async function handleSave() {

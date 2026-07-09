@@ -44,6 +44,19 @@ interface CalendarState {
   setVisibleTitle: (title: string) => void;
 }
 
+// Consulta pura dos eventos de um ano — NÃO escreve no store. Usada pelo
+// AutoSchedulerModal para obter os eventos do ano alvo sem sobrepor os `yearEvents`
+// do planningYear activo (LoadMap/Dashboard continuam coerentes durante a geração).
+export async function fetchYearEventsSnapshot(year: number): Promise<PMEvent[]> {
+  const { data, error } = await supabase
+    .from('pm_events')
+    .select('*')
+    .gte('start_date', `${year}-01-01`)
+    .lte('start_date', `${year}-12-31`);
+  if (error) throw error;
+  return data;
+}
+
 export const useCalendarStore = create<CalendarState>()(
   devtools(
     (set, get) => ({
@@ -77,16 +90,15 @@ export const useCalendarStore = create<CalendarState>()(
       // independentemente de a vista activa estar em Mês/Semana.
       fetchYearEvents: async (year) => {
         set({ yearEventsLoading: true, error: null });
-        const { data, error } = await supabase
-          .from('pm_events')
-          .select('*')
-          .gte('start_date', `${year}-01-01`)
-          .lte('start_date', `${year}-12-31`);
-        if (error) {
-          set({ yearEventsLoading: false, error: error.message });
-          return;
+        try {
+          const data = await fetchYearEventsSnapshot(year);
+          set({ yearEvents: data, yearEventsLoading: false });
+        } catch (error) {
+          set({
+            yearEventsLoading: false,
+            error: error instanceof Error ? error.message : 'Falha ao carregar eventos do ano.',
+          });
         }
-        set({ yearEvents: data, yearEventsLoading: false });
       },
 
       createEvent: async (event) => {

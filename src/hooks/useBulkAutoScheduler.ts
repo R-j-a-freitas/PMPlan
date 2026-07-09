@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { supabase } from '../lib/supabase';
 import { compareSchedules, generateAnnualSchedule } from '../lib/autoScheduler';
 import type { HistoricalPM, ProposedPMEvent, ScheduleComparison } from '../lib/autoScheduler';
-import { useCalendarStore, useEquipmentStore, useHolidayStore } from '../stores';
+import { useEquipmentStore, useHolidayStore } from '../stores';
 import type { PMEvent } from '../types';
 
 export interface BulkSchedulerResult {
@@ -20,6 +20,9 @@ export interface BulkSchedulerResult {
 interface GenerateParams {
   equipmentIds: string[];
   targetYear: number;
+  /** Eventos existentes do ano alvo — vêm de fetchYearEventsSnapshot (consulta pura),
+   *  não do store, para a geração nunca sobrepor os yearEvents do planningYear da UI. */
+  existingEvents: PMEvent[];
 }
 
 interface UseBulkAutoSchedulerReturn {
@@ -60,7 +63,6 @@ function proposalToVirtualEvent(p: ProposedPMEvent): PMEvent {
 // já ocupado pelas propostas do equipamento N — mesmo antes de persistir na BD.
 export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
   const equipment = useEquipmentStore((state) => state.equipment);
-  const yearEvents = useCalendarStore((state) => state.yearEvents);
   const holidays = useHolidayStore((state) => state.holidays);
 
   const [generating, setGenerating] = useState(false);
@@ -68,13 +70,13 @@ export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
   const [results, setResults] = useState<BulkSchedulerResult[]>([]);
 
   const generate = useCallback(
-    async ({ equipmentIds, targetYear }: GenerateParams) => {
+    async ({ equipmentIds, targetYear, existingEvents }: GenerateParams) => {
       setGenerating(true);
       setProgress({ current: 0, total: equipmentIds.length });
       const accumulated: BulkSchedulerResult[] = [];
 
       // Pool de eventos existentes + propostas já geradas (para detecção de conflitos cruzados)
-      let virtualPool: PMEvent[] = [...yearEvents];
+      let virtualPool: PMEvent[] = [...existingEvents];
 
       for (let i = 0; i < equipmentIds.length; i++) {
         const equipmentId = equipmentIds[i];
@@ -170,7 +172,7 @@ export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
       setResults(accumulated);
       setGenerating(false);
     },
-    [equipment, yearEvents, holidays],
+    [equipment, holidays],
   );
 
   const reset = useCallback(() => {
