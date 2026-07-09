@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   computeEngineerLoadRatio,
   computeZoneLoadRatio,
@@ -71,21 +71,18 @@ function LoadSection({ title, infoText, collapsed, onToggle, children }: LoadSec
 // conflictRules.computeZoneLoadRatio) e por engenheiro, ambas colapsadas por omissão.
 export function LoadMap() {
   const planningYear = useCalendarStore((state) => state.planningYear);
+  // `calendarStore.events` só tem o que a vista activa do calendário tem carregado (Mês/
+  // Semana ficam com uma fatia pequena do ano) — as métricas de carga precisam sempre do
+  // ano completo, por isso usam `yearEvents`. O fetch vive no Dashboard (única página
+  // que monta a Sidebar/LoadMap) — buscar também aqui duplicava a query por cada
+  // mudança de planningYear.
   const yearEvents = useCalendarStore((state) => state.yearEvents);
-  const fetchYearEvents = useCalendarStore((state) => state.fetchYearEvents);
   const zones = useZoneStore((state) => state.zones);
   const equipment = useEquipmentStore((state) => state.equipment);
   const engineers = useEngineerStore((state) => state.engineers);
 
   const [zoneCollapsed, setZoneCollapsed] = useState(true);
   const [engineerCollapsed, setEngineerCollapsed] = useState(true);
-
-  // `calendarStore.events` só tem o que a vista activa do calendário tem carregado (Mês/
-  // Semana ficam com uma fatia pequena do ano) — as métricas de carga precisam sempre do
-  // ano completo, por isso usam `yearEvents`, pedido à parte aqui.
-  useEffect(() => {
-    fetchYearEvents(planningYear);
-  }, [planningYear, fetchYearEvents]);
 
   const zoneLoads = useMemo(
     () =>

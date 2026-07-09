@@ -42,6 +42,8 @@ export function Dashboard() {
 
   // Carregar os eventos do ano de planeamento sempre que ele mudar — necessário para
   // saber se o ano já tem PMs criadas (condição de visibilidade do botão de geração).
+  // ÚNICO dono deste fetch: o LoadMap (na Sidebar, montada por esta página) consome
+  // os yearEvents do store sem voltar a pedi-los.
   useEffect(() => {
     fetchYearEvents(planningYear);
   }, [planningYear, fetchYearEvents]);
