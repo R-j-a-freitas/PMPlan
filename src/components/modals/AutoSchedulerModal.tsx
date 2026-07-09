@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { pt } from 'date-fns/locale';
-import { useBulkAutoScheduler } from '../../hooks/useBulkAutoScheduler';
-import type { BulkSchedulerResult } from '../../hooks/useBulkAutoScheduler';
+import { useBulkAutoScheduler } from '../../hooks';
+import type { BulkSchedulerResult } from '../../hooks';
 import type { ProposedPMEvent } from '../../lib/autoScheduler';
 import { useAuthStore, useCalendarStore, useEngineerStore, useEquipmentStore, useUiStore, useZoneStore } from '../../stores';
 import type { PMEventInsert } from '../../types';
