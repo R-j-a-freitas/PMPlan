@@ -50,10 +50,10 @@ export function Dashboard() {
 
   const currentYear = new Date().getFullYear();
   const yearHasActivePMs = yearEvents.some((e) => e.status !== 'cancelled');
-  // Botão só visível para anos futuros sem PMs activas: planear 2027 em 2026, desde que
-  // o ano 2027 ainda não tenha qualquer PM planeada ou aprovada.
+  // Botão visível para o ano corrente ou futuros sem PMs activas: planear 2027 em 2026,
+  // ou gerar o próprio 2026 se ainda não tiver qualquer PM planeada ou aprovada.
   const showGenerateButton =
-    canCreatePM && planningYear > currentYear && !yearHasActivePMs && !yearEventsLoading;
+    canCreatePM && planningYear >= currentYear && !yearHasActivePMs && !yearEventsLoading;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
