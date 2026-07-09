@@ -136,7 +136,9 @@ export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
             hospitalLocality: targetEquipment.hospital_locality,
             hospitalCity: targetEquipment.hospital_city,
             previousYearHistory,
-            weekendWork: targetEquipment.weekend_work,
+            // Fallback defensivo para ambientes onde a migração weekend_work ainda não
+            // correu (a coluna vem undefined) — 'none' é o comportamento mais restritivo.
+            weekendWork: targetEquipment.weekend_work ?? 'none',
           });
 
           // Adicionar propostas geradas ao pool virtual para os próximos equipamentos
