@@ -21,6 +21,9 @@ interface PMEventFormProps {
   showStatus: boolean;
   /** Modo só-leitura (engineer/readonly, ou utilizador sem canCreatePM/canEditPM). */
   disabled: boolean;
+  /** PMs já planeadas no ano vs. o contratado ("PM/ano" do equipamento) — null enquanto
+   *  nenhum equipamento está seleccionado. */
+  pmQuota: { count: number; max: number; year: number } | null;
   onEquipmentChange: (id: string) => void;
   onEngineerChange: (id: string) => void;
   onStartDateChange: (value: string) => void;
@@ -51,6 +54,16 @@ export function PMEventForm(props: PMEventFormProps) {
           ))}
         </select>
       </label>
+
+      {props.pmQuota && (
+        <p
+          className={`-mt-2 text-xs ${
+            props.pmQuota.count >= props.pmQuota.max ? 'font-medium text-red-600' : 'text-gray-500'
+          }`}
+        >
+          PMs planeadas em {props.pmQuota.year}: {props.pmQuota.count}/{props.pmQuota.max}
+        </p>
+      )}
 
       <label className="flex flex-col gap-1 text-sm">
         Engenheiro

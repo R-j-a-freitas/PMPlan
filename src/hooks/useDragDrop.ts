@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { addDays } from 'date-fns';
+import { addDays, format } from 'date-fns';
 import type { EventDropArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg } from '@fullcalendar/interaction';
 import { useConflictEngine } from './useConflictEngine';
@@ -16,8 +16,12 @@ interface DraggedEventProps {
   engineerId: string | null;
 }
 
+// `event.start`/`event.end` do FullCalendar vêm como Date local (meia-noite local do dia
+// arrastado) — `.toISOString()` converteria para UTC e, com fuso positivo (Portugal/Espanha
+// em horário de Verão), devolvia sempre o dia anterior. `format` do date-fns lê os
+// componentes locais, por isso mantém o dia correcto.
 function toIsoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return format(date, 'yyyy-MM-dd');
 }
 
 // `event.end` do FullCalendar é exclusivo; `end_date` da app é o último dia inclusive da

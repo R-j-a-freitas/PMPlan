@@ -179,6 +179,42 @@ export function checkWeekendConflict(
   };
 }
 
+// Regra 6: nº de PMs planeadas no ano não pode exceder o contratado (equipment.pm_per_year,
+// campo "PM/ano" no formulário de equipamento). Conta só eventos activos (cancelados não
+// ocupam quota) do mesmo equipamento a começar nesse ano — partilhada entre o motor de
+// conflitos (bloqueio na criação/edição) e o contador mostrado no PMEventModal.
+export function countPmEventsForEquipmentInYear(
+  equipmentId: string,
+  year: number,
+  events: PMEvent[],
+  excludeEventId?: string,
+): number {
+  return events.filter(
+    (event) =>
+      event.equipment_id === equipmentId &&
+      eventIsActive(event) &&
+      (!excludeEventId || event.id !== excludeEventId) &&
+      new Date(event.start_date).getFullYear() === year,
+  ).length;
+}
+
+export function checkPmQuota(
+  equipmentId: string,
+  pmPerYear: number,
+  year: number,
+  events: PMEvent[],
+  excludeEventId?: string,
+): ConflictResult {
+  const count = countPmEventsForEquipmentInYear(equipmentId, year, events, excludeEventId);
+  if (count < pmPerYear) return NO_CONFLICT;
+
+  return {
+    hasConflict: true,
+    type: 'pm_quota_exceeded',
+    message: `Este equipamento já tem ${count} PM(s) planeadas em ${year} — o contrato prevê ${pmPerYear}/ano.`,
+  };
+}
+
 export interface LoadRatio {
   capacityDays: number;
   demandDays: number;

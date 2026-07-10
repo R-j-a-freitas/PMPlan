@@ -35,6 +35,7 @@ interface HospitalBundle {
   equipmentList: EquipmentFull[];
   events: PMEvent[];
   proposal: ClientProposal | null;
+  engineerNames: string[];
   engineerEmails: string[];
   clientEmails: string[];
 }
@@ -132,6 +133,10 @@ export function Approvals() {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'approvals' | 'templates'>('approvals');
+  // Hospital cujo workflow o utilizador pediu para reiniciar — aberto o modal de
+  // confirmação enquanto não for null (reiniciar implica revalidar engenheiro + cliente).
+  const [resetTarget, setResetTarget] = useState<HospitalBundle | null>(null);
 
   useEffect(() => {
     fetchHospitals();
@@ -152,15 +157,21 @@ export function Approvals() {
         const equipmentIds = new Set(equipmentList.map((item) => item.id));
         const events = yearEvents.filter((event) => equipmentIds.has(event.equipment_id) && event.status !== 'cancelled');
         const proposal = proposals.find((item) => item.hospital_id === hospital.id) ?? null;
-        const engineerEmails = [
-          ...new Set(
+        // Engenheiros distintos atribuídos às PMs deste hospital — nomes e emails são
+        // recolhidos em paralelo a partir dos mesmos eventos, para o placeholder
+        // {{engenheiro}} usar sempre o(s) nome(s) reais em vez de um genérico.
+        const bundleEngineers = [
+          ...new Map(
             events
-              .map((event) => engineers.find((engineer) => engineer.id === event.engineer_id)?.email)
-              .filter((email): email is string => !!email),
-          ),
+              .map((event) => engineers.find((engineer) => engineer.id === event.engineer_id))
+              .filter((engineer): engineer is (typeof engineers)[number] => !!engineer)
+              .map((engineer) => [engineer.id, engineer]),
+          ).values(),
         ];
+        const engineerNames = bundleEngineers.map((engineer) => engineer.name);
+        const engineerEmails = [...new Set(bundleEngineers.map((engineer) => engineer.email).filter(Boolean))];
         const clientEmails = hospital.contacts.map((contact) => contact.email).filter((email): email is string => !!email);
-        return { hospital, equipmentList, events, proposal, engineerEmails, clientEmails };
+        return { hospital, equipmentList, events, proposal, engineerNames, engineerEmails, clientEmails };
       })
       .filter((bundle) => bundle.events.length > 0)
       .sort((a, b) => a.hospital.name.localeCompare(b.hospital.name));
@@ -185,7 +196,14 @@ export function Approvals() {
     const template = templates.find((item) => item.key === templateKey && item.country === bundle.hospital.country);
     if (!template) throw new Error(`Template "${templateKey}" (${bundle.hospital.country}) não encontrado.`);
     const tableHtml = buildProposalEmailTableHtml(letterDataFor(bundle));
-    const engenheiro = bundle.hospital.country === 'ES' ? 'Equipo técnico' : 'Equipa técnica';
+    // {{engenheiro}} usa o(s) nome(s) real(is) atribuído(s) às PMs deste hospital; só cai
+    // no genérico ("Equipa técnica"/"Equipo técnico") quando nenhuma PM tem engenheiro.
+    const engenheiro =
+      bundle.engineerNames.length > 0
+        ? bundle.engineerNames.join(', ')
+        : bundle.hospital.country === 'ES'
+          ? 'Equipo técnico'
+          : 'Equipa técnica';
     const { subject, htmlBody } = renderProposalEmail(
       template,
       { ano: String(planningYear), hospital: bundle.hospital.name, engenheiro },
@@ -329,6 +347,37 @@ export function Approvals() {
     }
   }
 
+  // Reinicia o workflow deste hospital: volta a 'draft' e limpa todas as confirmações/
+  // envios já registados (engenheiro, cliente, carta, assinatura). Usado quando as datas
+  // mudam depois de já ter arrancado o processo — obriga a revalidar tudo de novo.
+  async function runReset(bundle: HospitalBundle) {
+    if (!bundle.proposal) {
+      setResetTarget(null);
+      return;
+    }
+    setBusyId(bundle.hospital.id);
+    try {
+      await updateProposal(bundle.proposal.id, {
+        stage: 'draft',
+        engineer_approved_at: null,
+        engineer_approved_by: null,
+        client_approved_at: null,
+        client_approved_by: null,
+        letter_sent_at: null,
+        letter_sent_to: null,
+        signed_at: null,
+        signed_by: null,
+        rejected_reason: null,
+      });
+      pushToast({ variant: 'success', message: `${bundle.hospital.name}: workflow reiniciado.` });
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao reiniciar.' });
+    } finally {
+      setBusyId(null);
+      setResetTarget(null);
+    }
+  }
+
   function toggleSelected(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -352,15 +401,42 @@ export function Approvals() {
           envia a proposta ao cliente e, depois de aprovada, envia a carta de assinatura.
         </p>
 
-        {canAct && <TemplateEditor />}
+        {/* Separadores: o workflow de aprovações e a edição dos templates de email vivem
+            em tabs distintos — os templates são configuração, não fazem parte do dia-a-dia
+            do envio. */}
+        <div className="mb-4 flex gap-1 border-b border-gray-200">
+          {([
+            { key: 'approvals', label: 'Aprovações' },
+            { key: 'templates', label: 'Templates das aprovações' },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-        {bundles.length === 0 && (
+        {activeTab === 'templates' && canAct && <TemplateEditor />}
+        {activeTab === 'templates' && !canAct && (
+          <p className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
+            Sem permissões para editar templates.
+          </p>
+        )}
+
+        {activeTab === 'approvals' && bundles.length === 0 && (
           <p className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
             Sem PMs agendadas para {planningYear}.
           </p>
         )}
 
-        {bundles.length > 0 && (
+        {activeTab === 'approvals' && bundles.length > 0 && (
           <>
             {canAct && (
               <div className="mb-2 flex items-center gap-2">
@@ -433,6 +509,13 @@ export function Approvals() {
                               {action.label}
                             </Button>
                           )}
+                          {/* Reiniciar só faz sentido depois de o workflow ter arrancado
+                              (stage !== draft) — antes disso não há nada para revalidar. */}
+                          {canAct && stage !== 'draft' && (
+                            <Button variant="danger" onClick={() => setResetTarget(bundle)} disabled={busy}>
+                              Recomeçar
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -443,6 +526,35 @@ export function Approvals() {
           </>
         )}
       </div>
+
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+            <h2 className="mb-2 text-base font-semibold text-gray-900">Reiniciar workflow de aprovações</h2>
+            <p className="mb-4 text-sm text-gray-600">
+              Quer mesmo reiniciar o processo de <strong>{resetTarget.hospital.name}</strong>? O estado volta a
+              “Por enviar” e todas as confirmações já registadas (engenheiro, cliente, carta e assinatura) são
+              apagadas — implica <strong>revalidar de novo com o engenheiro e com o cliente</strong>.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setResetTarget(null)}
+                disabled={busyId === resetTarget.hospital.id}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => runReset(resetTarget)}
+                disabled={busyId === resetTarget.hospital.id}
+              >
+                Sim, reiniciar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

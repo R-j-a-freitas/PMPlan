@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { addDays, format } from 'date-fns';
 import { useConflictEngine } from '../../hooks';
 import { useAuthStore, useCalendarStore, useEquipmentStore, useUiStore } from '../../stores';
+import { countPmEventsForEquipmentInYear } from '../../lib/conflictRules';
 import type { PMStatus } from '../../types';
 import { Button } from '../ui';
 import { PMEventForm } from './PMEventForm';
@@ -32,6 +33,7 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
   const updateEvent = useCalendarStore((state) => state.updateEvent);
   const deleteEvent = useCalendarStore((state) => state.deleteEvent);
   const planningYear = useCalendarStore((state) => state.planningYear);
+  const yearEvents = useCalendarStore((state) => state.yearEvents);
   const equipment = useEquipmentStore((state) => state.equipment);
   const setSelectedEquipmentId = useEquipmentStore((state) => state.setSelectedEquipmentId);
   const permissions = useAuthStore((state) => state.permissions);
@@ -59,6 +61,17 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
     setEngineerId((current) => current || selected.engineer_primary_id || '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [equipmentId]);
+
+  // Contador de PMs já planeadas no ano deste equipamento vs. o contratado ("PM/ano" no
+  // formulário de equipamento) — mesma contagem usada pelo bloqueio em checkPmQuota,
+  // mostrada aqui para o utilizador ver a quota antes de tentar gravar.
+  const pmQuota = useMemo(() => {
+    const selected = equipment.find((item) => item.id === equipmentId);
+    if (!selected) return null;
+    const year = new Date(startDate).getFullYear() || planningYear;
+    const count = countPmEventsForEquipmentInYear(selected.id, year, yearEvents, eventId ?? undefined);
+    return { count, max: selected.pm_per_year, year };
+  }, [equipment, equipmentId, startDate, yearEvents, eventId, planningYear]);
 
   async function handleSave() {
     if (!equipmentId || !engineerId) {
@@ -146,6 +159,7 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
           notes={notes}
           showStatus={Boolean(eventId)}
           disabled={readOnly}
+          pmQuota={pmQuota}
           onEquipmentChange={setEquipmentId}
           onEngineerChange={setEngineerId}
           onStartDateChange={setStartDate}

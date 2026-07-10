@@ -20,6 +20,7 @@ import {
 } from '../../stores';
 import { useDragDrop } from '../../hooks';
 import { computeActiveLocalities, filterRelevantHolidays } from '../../lib/activeLocalities';
+import { addDaysToIsoDate } from '../../lib/dateFormat';
 import { renderEventContent } from './EventContent';
 import { buildHolidayBackgroundEvents, buildHolidayDayInfo } from './HolidayLayer';
 import { getConflictClassNames } from './ConflictIndicator';
@@ -118,10 +119,15 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
         id: event.id,
         title: eq?.name ?? 'Equipamento',
         start: event.start_date,
+        allDay: true,
         // event.end_date é o último dia inclusive da PM (convenção da app — BD, modal,
-        // conflictRules); o `end` do FullCalendar é exclusivo, por isso soma-se 1 dia,
-        // senão o último dia da PM aparece sempre por marcar no calendário.
-        end: addDays(new Date(event.end_date), 1),
+        // conflictRules); o `end` do FullCalendar é exclusivo, por isso soma-se 1 dia. Tem
+        // de continuar como string 'yyyy-MM-dd' (não `new Date(...)`) — o FullCalendar só
+        // reconhece o evento como allDay se AMBAS start/end não tiverem componente de hora;
+        // um objecto Date real conta sempre como "com hora", o que desalinhava allDay e
+        // fazia o último dia (com a hora do desvio UTC→local) transbordar para o dia seguinte
+        // na grelha, mostrando sempre +1 dia no calendário.
+        end: addDaysToIsoDate(event.end_date, 1),
         backgroundColor: eq?.color ?? '#3B82F6',
         borderColor: eq?.color ?? '#3B82F6',
         extendedProps: {
@@ -158,6 +164,9 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       height="100%"
       // Locale PT-BR + formato 24H (secção: datas em DD/MM/AAAA, sem AM/PM).
       locale={ptBrLocale}
+      // Semana começa sempre à segunda-feira — sobrepõe-se ao domingo que o locale pt-br
+      // traz por omissão (aplica-se a todas as vistas: mês, trimestre, ano e semana).
+      firstDay={1}
       slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
       eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
       // engineer/readonly: calendário só-consulta (secção: "engenheiros só podem

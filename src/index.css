@@ -19,3 +19,12 @@ body,
   outline: 2px solid #dc2626;
   outline-offset: -2px;
 }
+
+/* Fim-de-semana com fundo cinzento muito claro em todas as vistas (mês/trimestre/ano/
+   semana) — só para dar a perceber visualmente que é sábado/domingo, sem competir com os
+   eventos nem com o realce de feriado. O !important sobrepõe-se ao fundo próprio das
+   células do FullCalendar. */
+.fc .fc-day-sat,
+.fc .fc-day-sun {
+  background-color: #f4f4f5 !important;
+}

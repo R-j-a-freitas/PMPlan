@@ -19,7 +19,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'robots.txt'],
+      includeAssets: ['favicon.ico', 'robots.txt'],
       manifest: {
         name: 'PMPlan — Gestão de Manutenções Preventivas',
         short_name: 'PMPlan',

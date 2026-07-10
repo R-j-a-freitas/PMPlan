@@ -34,7 +34,7 @@ export function Login() {
         onSubmit={handleSubmit}
         className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
       >
-        <h1 className="mb-1 text-lg font-bold text-blue-700">PMPlan</h1>
+        <img src="/pmplan-logo.png" alt="PMPlan" className="mx-auto mb-3 h-32 w-auto" />
         <p className="mb-4 text-sm text-gray-500">Inicie sessão para aceder ao planeamento.</p>
 
         {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}

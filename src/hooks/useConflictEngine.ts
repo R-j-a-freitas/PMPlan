@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { checkZoneLoad, validatePMPlacement } from '../lib/conflictRules';
+import { checkPmQuota, checkZoneLoad, validatePMPlacement } from '../lib/conflictRules';
 import {
   useCalendarStore,
   useConflictStore,
@@ -54,6 +54,14 @@ export function useConflictEngine() {
         ...(params.excludeEventId ? { excludeEventId: params.excludeEventId } : {}),
       });
 
+      const quotaResult = checkPmQuota(
+        targetEquipment.id,
+        targetEquipment.pm_per_year,
+        params.startDate.getFullYear(),
+        yearEvents,
+        params.excludeEventId,
+      );
+
       const loadWarning = checkZoneLoad(
         targetEquipment.zone_id,
         params.startDate.getFullYear(),
@@ -63,7 +71,11 @@ export function useConflictEngine() {
         zones,
       );
 
-      const results = loadWarning.hasConflict ? [...blocking, loadWarning] : blocking;
+      const results = [
+        ...blocking,
+        ...(quotaResult.hasConflict ? [quotaResult] : []),
+        ...(loadWarning.hasConflict ? [loadWarning] : []),
+      ];
       setActiveConflicts(results);
       return results;
     },

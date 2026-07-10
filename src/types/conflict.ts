@@ -6,7 +6,11 @@ export type ConflictType =
   // Regra 5: PM em fim-de-semana sem contrato que o permita. NOTA: o CHECK da tabela
   // conflict_log não inclui este valor — actualizar a BD antes de alguma vez persistir
   // conflitos deste tipo via recordConflict (hoje sem chamadores).
-  | 'weekend_block';
+  | 'weekend_block'
+  // Regra 6: nº de PMs já planeadas no ano excede o contratado (equipment.pm_per_year).
+  // NOTA: mesmo caso do weekend_block acima — CHECK da tabela conflict_log não inclui
+  // este valor, actualizar a BD antes de persistir via recordConflict (hoje sem chamadores).
+  | 'pm_quota_exceeded';
 
 export type ConflictResult = {
   hasConflict: boolean;

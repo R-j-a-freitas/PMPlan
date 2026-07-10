@@ -31,7 +31,7 @@ export function Topbar() {
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b border-gray-200 bg-white px-3">
-      <span className="text-sm font-bold text-blue-700">PMPlan</span>
+      <img src="/pmplan-logo.png" alt="PMPlan" className="h-10 w-auto" />
 
       <nav className="flex items-center gap-1">
         {navLinks.map((link) => (
