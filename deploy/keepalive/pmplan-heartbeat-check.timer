@@ -1,0 +1,24 @@
+# PMPlan — timer do verificador. Instalar em /etc/systemd/system/ e activar com
+#   systemctl enable --now pmplan-heartbeat-check.timer
+
+[Unit]
+Description=PMPlan — verificação diária do heartbeat (VPS)
+Documentation=file:///opt/pmplan/DOCS/KEEP_ALIVE_VPS.md
+
+[Timer]
+# 10:00, entre o ping da VPS (04:00–07:00) e a verificação do GitHub Actions (16:00 UTC).
+# As três acções ficam espalhadas pelo dia: nenhuma janela horária problemática as apanha
+# às três, e um alerta chega em menos de 12h independentemente de qual delas falhe.
+OnCalendar=*-*-* 10:00:00
+RandomizedDelaySec=1h
+
+# Ao contrário do ping, aqui Persistent=true seria contraproducente: uma VPS que esteve
+# dias desligada dispararia a verificação em falta no arranque, provavelmente a alertar
+# sobre uma paragem que o utilizador já conhece (foi ele que desligou a máquina). A
+# verificação seguinte, à hora normal, dirá a mesma coisa se o problema for real.
+Persistent=false
+
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

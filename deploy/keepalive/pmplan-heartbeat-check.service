@@ -1,0 +1,48 @@
+# PMPlan — verificador de falhas do heartbeat. Instalar em /etc/systemd/system/.
+#
+# PORQUÊ TAMBÉM AQUI, se o GitHub Actions já verifica: porque o GitHub desactiva schedules
+# em repositórios sem commits há 60 dias. Um verificador que só corre lá desaparece
+# exactamente quando o projecto estabiliza — e o desaparecimento é silencioso. Duas
+# origens de verificação, em horas diferentes, sem dependência uma da outra.
+#
+# Partilha o ficheiro de ambiente com o keep-alive, mais RESEND_API_KEY e ALERT_EMAIL_TO.
+#
+# AJUSTAR ANTES DE INSTALAR: caminhos de /opt/pmplan e /usr/bin/node.
+
+[Unit]
+Description=PMPlan — verificação de falhas do heartbeat
+Documentation=file:///opt/pmplan/DOCS/KEEP_ALIVE_VPS.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pmplan
+Group=pmplan
+WorkingDirectory=/opt/pmplan
+EnvironmentFile=/etc/pmplan/keep-alive.env
+ExecStart=/usr/bin/node /opt/pmplan/scripts/heartbeat-check.mjs
+
+# Sai com 1 sempre que alerta. Isso é informação, não avaria: sem SuccessExitStatus o
+# systemd marcaria a unidade como failed em todos os alertas, o que está correcto — é
+# visível no `systemctl status` e não se perde. Deixa-se assim de propósito.
+TimeoutStartSec=120
+
+# ─── Endurecimento ────────────────────────────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/var/log/pmplan
+
+# MemoryDenyWriteExecute continua deliberadamente ausente — o V8 precisa de W+X.

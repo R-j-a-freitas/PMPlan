@@ -1,0 +1,55 @@
+# PMPlan — unidade de serviço do keep-alive. Instalar em /etc/systemd/system/.
+# Accionada pelo pmplan-keepalive.timer; não tem [Install] porque não deve arrancar
+# sozinha no boot — quem manda no calendário é o timer.
+#
+# AJUSTAR ANTES DE INSTALAR: os caminhos abaixo assumem o repositório em /opt/pmplan e
+# o Node em /usr/bin/node. Confirmar com `command -v node` e ajustar (ver DOCS/KEEP_ALIVE_VPS.md).
+
+[Unit]
+Description=PMPlan — heartbeat de continuidade do Supabase
+Documentation=file:///opt/pmplan/DOCS/KEEP_ALIVE_VPS.md
+# network-online (e não apenas network) porque com Persistent=true o timer pode disparar
+# logo no arranque, antes de haver rota para a Internet — a execução falharia por uma
+# razão que nada tem que ver com o Supabase.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pmplan
+Group=pmplan
+WorkingDirectory=/opt/pmplan
+EnvironmentFile=/etc/pmplan/keep-alive.env
+ExecStart=/usr/bin/node /opt/pmplan/scripts/keep-alive.mjs
+
+# Tecto generoso: 3 tentativas com recuo progressivo e timeout de 15s dão, no pior caso,
+# cerca de 65s. 180s deixa margem para um projecto a despausar sem que o systemd corte a
+# execução a meio — mas impede que uma ligação pendurada fique a ocupar a unidade até ao
+# disparo do dia seguinte.
+TimeoutStartSec=180
+
+# ─── Endurecimento ────────────────────────────────────────────────────────────
+# Este é o único processo da VPS que detém a service_role key. Se for comprometido, a
+# base de dados vai atrás dele. As directivas abaixo reduzem o que um processo desviado
+# consegue alcançar a partir daqui.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# ProtectSystem=strict deixa todo o sistema de ficheiros só de leitura; sem esta excepção
+# o script não conseguiria escrever o log (e desactivá-lo-ia silenciosamente).
+ReadWritePaths=/var/log/pmplan
+
+# MemoryDenyWriteExecute NÃO é activado de propósito: o V8 compila em tempo de execução e
+# precisa de páginas graváveis-e-executáveis. Com ela, o Node não arranca de todo.

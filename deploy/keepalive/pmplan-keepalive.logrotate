@@ -1,0 +1,23 @@
+# PMPlan — rotação do log do keep-alive. Instalar em /etc/logrotate.d/pmplan-keepalive
+# (sem extensão no nome do ficheiro de destino; o logrotate ignora ficheiros com sufixos
+# como .conf ou .example consoante a configuração da distribuição).
+#
+# O volume é ridículo — cinco linhas por dia — mas um ficheiro sem rotação cresce para
+# sempre, e o dia em que der problema é o dia em que ninguém está a olhar.
+
+/var/log/pmplan/keep-alive.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+
+    # O script corre como pmplan e não tem privilégio para criar o ficheiro em /var/log
+    # depois de o logrotate o mover: sem esta linha, o log deixa de ser escrito após a
+    # primeira rotação e a falha só se nota quando se for procurar o histórico.
+    create 0640 pmplan pmplan
+
+    # 8 semanas de histórico: o suficiente para reconstruir o que aconteceu à volta de um
+    # incidente, e mais do que a retenção de 90 registos da própria tabela.
+}

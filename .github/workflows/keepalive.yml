@@ -1,24 +1,64 @@
-name: Supabase Keepalive
+name: Supabase keep-alive
+
+# Redundância externa ao keep-alive da VPS (Fase 3). Corre o MESMO script, com
+# HEARTBEAT_SOURCE=github_actions — o que distingue as origens na tabela e permite
+# detectar que uma morreu enquanto a outra a mascara.
+#
+# LIMITAÇÃO CONHECIDA, DOCUMENTADA E NÃO IGNORADA: o GitHub desactiva automaticamente
+# schedules em repositórios sem commits há 60 dias, e envia um aviso por email antes de o
+# fazer. Um repositório parado — que é exactamente o estado de um projecto estável — perde
+# este workflow em silêncio. É por isso que o keep-alive da VPS é o mecanismo principal e
+# este é a rede de segurança, e não o contrário. Ver README, secção "Continuidade da BD".
+#
+# O GitHub também não garante pontualidade: schedules podem atrasar-se dezenas de minutos
+# em horas de pico. Irrelevante numa janela de 7 dias, mas explica desvios nos logs.
 
 on:
   schedule:
-    # Corre de 3 em 3 dias às 06:00 UTC (bem abaixo do limite de 7 dias do free tier)
-    - cron: '0 6 */3 * *'
-  workflow_dispatch: # permite correr manualmente a qualquer momento
+    # 16:00 UTC (o cron do GitHub é SEMPRE UTC). Desfasado ~10h do timer da VPS, que
+    # dispara entre as 04:00 e as 07:00 — assim as duas origens nunca caem juntas e uma
+    # falha de janela horária não apanha as duas.
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+
+# Um projecto pausado pode demorar a responder; sem isto, duas execuções sobrepostas
+# poderiam escrever heartbeats fora de ordem.
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
 
 jobs:
-  ping:
+  keepalive:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Ping Supabase health endpoint
-        run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://bwtodvouhjecjcuhfgvw.supabase.co/auth/v1/health")
-          echo "HTTP status: $STATUS"
-          # Qualquer resposta HTTP (incluindo 401) confirma que o projecto está activo.
-          # Só falha se não houve resposta de todo (STATUS = 000).
-          if [ "$STATUS" = "000" ]; then
-            echo "Sem resposta do servidor Supabase"
-            exit 1
-          fi
-          echo "Keepalive OK (projecto activo, status $STATUS)"
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # A verificação vem ANTES do ping, e a ordem é deliberada: se pingássemos primeiro,
+      # o nosso próprio heartbeat tornaria o agregado fresco e a verificação passaria
+      # sempre, mesmo com a VPS morta há uma semana.
+      - name: Verificar frescura dos heartbeats
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_HEARTBEAT_TOKEN: ${{ secrets.SUPABASE_HEARTBEAT_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+        run: node scripts/heartbeat-check.mjs
+
+      # `if: always()` é essencial: se a verificação falhar (heartbeat parado, ou Supabase
+      # inacessível), o ping é precisamente o que NÃO se deve saltar — é ele que impede a
+      # pausa. Sem isto, o primeiro dia de problemas cancelaria o remédio.
+      - name: Escrever heartbeat
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_HEARTBEAT_TOKEN: ${{ secrets.SUPABASE_HEARTBEAT_TOKEN }}
+          HEARTBEAT_SOURCE: github_actions
+        run: node scripts/keep-alive.mjs

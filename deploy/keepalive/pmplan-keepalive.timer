@@ -1,0 +1,29 @@
+# PMPlan — timer do keep-alive. Instalar em /etc/systemd/system/ e activar com
+#   systemctl enable --now pmplan-keepalive.timer
+
+[Unit]
+Description=PMPlan — heartbeat diário do Supabase (VPS)
+Documentation=file:///opt/pmplan/DOCS/KEEP_ALIVE_VPS.md
+
+[Timer]
+# 04:00 no fuso do SISTEMA — confirmar com `timedatectl` que a VPS está em UTC, senão o
+# desfasamento face ao GitHub Actions (Fase 3, ~16:00 UTC) deixa de ser o planeado.
+OnCalendar=*-*-* 04:00:00
+
+# O plano exige atraso aleatório, e a razão é dupla: (1) não bater sempre ao segundo na
+# mesma hora, que é o padrão que infraestruturas anti-abuso reconhecem como automação;
+# (2) não coincidir com a janela de backup da Fase 4. Dispara entre as 04:00 e as 07:00.
+RandomizedDelaySec=3h
+
+# Decisivo num keep-alive: se a VPS estiver desligada à hora marcada, um timer normal
+# salta a execução em silêncio e só tenta no dia seguinte. Com Persistent=true, o systemd
+# regista o disparo em falta e corre-o assim que a máquina volta. Três reinícios infelizes
+# seguidos chegariam para gastar a janela de 7 dias.
+Persistent=true
+
+# Sem isto o systemd agrupa timers numa janela de ~1min para poupar energia, o que anula
+# parte da aleatoriedade acima. Numa VPS a poupança não tem interesse.
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
