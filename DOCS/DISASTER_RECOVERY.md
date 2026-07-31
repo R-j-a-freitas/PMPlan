@@ -257,9 +257,41 @@ com `scripts/create-user.mjs` e mandar toda a gente redefinir a palavra-passe.
 saber se serve é experimentar, e o momento errado para descobrir que não serve é durante
 um incidente.
 
-### Fazer trimestralmente
+### Fazer trimestralmente — um comando
 
-Restaurar para um Postgres descartável, num contentor, sem tocar em nada em produção:
+Na VPS, depois de instalar o `postgresql-17` (servidor + cliente):
+
+```bash
+sudo -u postgres /opt/pmplan/scripts/test-restore.sh
+```
+
+Restaura o backup mais recente para uma base de dados descartável **no Postgres local**,
+verifica o conteúdo, e destrói a base de teste no fim — inclusive se algo correr mal
+(`trap EXIT`). Não toca no Supabase em momento nenhum: trabalha só sobre o ficheiro.
+
+Para testar um backup específico:
+
+```bash
+sudo -u postgres /opt/pmplan/scripts/test-restore.sh /var/backups/pmplan/monthly/pmplan-2026-07-01.dump
+```
+
+O que verifica, além de o restauro correr:
+
+- contagem de tabelas, vistas, políticas, funções e índices
+- contagens por tabela do domínio (`pm_events`, `equipment`, `hospitals`, …)
+- **tabelas sem RLS** — tem de vir vazio; uma tabela sem RLS depois de um restauro é uma
+  fuga de dados à espera de acontecer
+- **funções de segurança em falta** — `user_role`, `user_zone_ids` e as do heartbeat
+
+Instalar o servidor local (só uma vez):
+
+```bash
+sudo apt install -y postgresql-17    # traz também pg_dump/pg_restore/psql 17
+```
+
+### Alternativa com Docker
+
+Se preferir não ter um Postgres instalado na VPS, ou para correr o teste noutra máquina:
 
 ```bash
 # 1. Postgres 17 temporário
@@ -307,8 +339,13 @@ com password `teste` exposta em `localhost:55432`, é pior do que não ter backu
 > **Ainda não foi feito nenhum teste de restauro.** A Fase 4 do plano exigia-o, mas o
 > ambiente onde este procedimento foi escrito não tem `pg_dump`, `pg_restore`, `psql` nem
 > Docker instalados, e não tem a password da base de dados. Os passos acima estão
-> escritos com os comandos exactos, mas **não foram executados**. Até a primeira linha
-> desta tabela estar preenchida, o procedimento é teoria.
+> escritos com os comandos exactos, e o `test-restore.sh` foi verificado sintacticamente,
+> mas **nunca correram contra dados reais**. Até a primeira linha desta tabela estar
+> preenchida, o procedimento é teoria.
+>
+> Por decisão tomada a 2026-07-31, o teste fica para o momento da instalação na VPS, onde
+> as ferramentas serão instaladas de qualquer forma. **É o passo que falta para a Fase 4
+> estar realmente concluída.**
 
 ---
 
