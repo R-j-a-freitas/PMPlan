@@ -85,12 +85,47 @@ alert() {
   return 0
 }
 
+# Reporta o resultado para a tabela system_backups, que alimenta o ecrã de saúde da
+# aplicação (Fase 5). A VPS é o único sítio que sabe se o backup correu; sem este passo,
+# o ecrã não teria de onde tirar a informação.
+#
+# Nunca faz falhar o backup: o dump no disco vale por si, e perder o relatório é um
+# incómodo, não um desastre. Requer psql (que vem com o postgresql-client, tal como o
+# pg_dump) — se não existir, avisa e segue.
+report() {
+  local status="$1" size="$2" objects="$3" note="${4:-}"
+  if ! command -v psql >/dev/null 2>&1; then
+    log WARN "psql não encontrado — resultado não reportado para system_backups"
+    return 0
+  fi
+  # A ligação é feita como `postgres`, dono da tabela, logo isento de RLS. Purga na mesma
+  # instrução: manter os últimos 90 relatórios chega para o ecrã e para ver a tendência.
+  if psql "$PGURL" -v ON_ERROR_STOP=1 -q \
+      -v st="$status" -v sz="$size" -v ob="${objects:-0}" -v nt="$note" <<'SQL' 2>>"$LOG_FILE"
+insert into system_backups (size_bytes, object_count, status, note)
+values (:'sz'::bigint, nullif(:'ob','0')::integer, :'st', nullif(:'nt',''));
+
+delete from system_backups
+where id in (select id from system_backups order by ran_at desc, id desc offset 90);
+SQL
+  then
+    log INFO "resultado reportado para system_backups ($status)"
+  else
+    log WARN "não foi possível reportar para system_backups (ver log)"
+  fi
+  return 0
+}
+
 die() {
   # Apagar SEMPRE os artefactos desta execução antes de sair. Sem isto, um dump que
   # falhou a verificação de integridade ficava em daily/ e — o problema a sério — contava
   # para a retenção de 7, expulsando um backup BOM para dar lugar a um inútil. Ao fim de
   # uma semana de falhas silenciosas não sobrava um único backup restaurável.
   rm -f "$DUMP" "$USERS"
+  # Reportar a FALHA também. Sem isto, o ecrã de saúde mostraria simplesmente um backup
+  # mais antigo e o utilizador teria de deduzir que houve problema; assim, o ecrã diz que
+  # houve uma tentativa e que correu mal.
+  report failed 0 0 "$1"
 
   alert "[PMPlan] Backup FALHOU ($DATE)" "$1
 
@@ -173,6 +208,7 @@ fi
 log INFO "integridade OK ($OBJECTS objectos no arquivo)"
 
 # ─── 4. Dimensão ──────────────────────────────────────────────────────────────
+SHRINK_NOTE=""
 SIZE="$(stat -c %s "$DUMP")"
 if [ "$SIZE" -lt "$MIN_BYTES" ]; then
   die "O dump tem $SIZE bytes (mínimo aceitável: $MIN_BYTES). Backup inútil."
@@ -182,6 +218,7 @@ if [ "$PREV_SIZE" -gt 0 ]; then
   # exactamente o caso em que se quer o alerta ANTES de os backups bons expirarem.
   THRESHOLD=$(( PREV_SIZE * (100 - SHRINK_PCT) / 100 ))
   if [ "$SIZE" -lt "$THRESHOLD" ]; then
+    SHRINK_NOTE="Encolheu de $PREV_SIZE para $SIZE bytes face ao backup anterior."
     alert "[PMPlan] Backup com dimensão anómala ($DATE)" \
       "O backup de hoje tem $SIZE bytes; o anterior tinha $PREV_SIZE bytes.
 Uma redução superior a ${SHRINK_PCT}% sugere perda de dados na base de dados de origem.
@@ -215,6 +252,12 @@ prune() {
   [ "$removed" -gt 0 ] && log INFO "purgados $removed de $(basename "$dir")"
   return 0
 }
+
+if [ -n "$SHRINK_NOTE" ]; then
+  report warning "$SIZE" "$OBJECTS" "$SHRINK_NOTE"
+else
+  report ok "$SIZE" "$OBJECTS"
+fi
 
 prune "$DAILY_DIR"   "$KEEP_DAILY"   'pmplan-2*.dump'
 prune "$DAILY_DIR"   "$KEEP_DAILY"   'pmplan-users-*.sql.gz'
