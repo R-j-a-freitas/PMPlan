@@ -1,0 +1,15 @@
+# PMPlan — rotação do log do backup. Instalar em /etc/logrotate.d/pmplan-backup
+#
+# Nota: isto roda o LOG, não os backups. A retenção dos dumps (7/4/3) é feita pelo
+# próprio script, que sabe distinguir diário de semanal e de mensal — coisa que o
+# logrotate não saberia fazer.
+
+/var/log/pmplan/backup.log {
+    monthly
+    rotate 6
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 pmplan pmplan
+}

@@ -1,0 +1,43 @@
+# PMPlan — backup diário da base de dados. Instalar em /etc/systemd/system/.
+#
+# AJUSTAR ANTES DE INSTALAR: caminhos de /opt/pmplan. Requer pg_dump e pg_restore da
+# versão 17 ou superior (o servidor é PostgreSQL 17.6) — ver DOCS/DISASTER_RECOVERY.md.
+
+[Unit]
+Description=PMPlan — backup diário da base de dados Supabase
+Documentation=file:///opt/pmplan/DOCS/DISASTER_RECOVERY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pmplan
+Group=pmplan
+WorkingDirectory=/opt/pmplan
+EnvironmentFile=/etc/pmplan/backup.env
+ExecStart=/opt/pmplan/scripts/backup-supabase.sh
+
+# Uma base de dados de 12 MB despacha-se em segundos, mas o pooler pode estar lento e o
+# projecto pode estar a despausar. 30 min é folgado sem permitir uma ligação pendurada
+# até ao dia seguinte.
+TimeoutStartSec=1800
+
+# ─── Endurecimento ────────────────────────────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# ProtectSystem=strict deixa o sistema de ficheiros só de leitura; sem estas excepções o
+# backup não teria onde escrever.
+ReadWritePaths=/var/backups/pmplan /var/log/pmplan

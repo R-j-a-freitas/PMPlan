@@ -1,0 +1,26 @@
+# PMPlan — timer do backup. Instalar em /etc/systemd/system/ e activar com
+#   systemctl enable --now pmplan-backup.timer
+
+[Unit]
+Description=PMPlan — backup diário da base de dados
+Documentation=file:///opt/pmplan/DOCS/DISASTER_RECOVERY.md
+
+[Timer]
+# 02:00, antes de tudo o resto. O dia fica assim distribuído:
+#   02:00–03:00  backup
+#   04:00–07:00  keep-alive (ping)
+#   10:00–11:00  verificação de heartbeat
+#   16:00        GitHub Actions (verificação + ping)
+# Nenhuma janela horária problemática apanha tudo, e o backup é o primeiro a correr
+# para que o dump do dia seja anterior a qualquer alteração feita durante o dia útil.
+OnCalendar=*-*-* 02:00:00
+RandomizedDelaySec=1h
+
+# Ao contrário da verificação, aqui Persistent=true é claramente desejável: uma VPS que
+# esteve desligada deve fazer o backup em falta assim que voltar, e não esperar mais 24h.
+Persistent=true
+
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

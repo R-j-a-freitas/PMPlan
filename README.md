@@ -19,8 +19,14 @@ Três mecanismos, deliberadamente independentes:
 | **Keep-alive da VPS** | diário, 04:00–07:00 UTC | Escreve em `system_heartbeat`, conta PMs, purga. Mecanismo **principal**. |
 | **Keep-alive no GitHub Actions** | diário, 16:00 UTC | O mesmo script, `source=github_actions`. Rede de segurança. |
 | **Verificador de falhas** | VPS 10:00 · GitHub 16:00 | Alerta por email (Resend) se o heartbeat passar das 48h, ou se o Supabase não responder. |
+| **Backup** | diário, 02:00–03:00 UTC | `pg_dump` para a VPS. Retenção 7 diários / 4 semanais / 3 mensais. |
 
 Instalação e operação: **[DOCS/KEEP_ALIVE_VPS.md](DOCS/KEEP_ALIVE_VPS.md)**.
+Recuperação de desastre: **[DOCS/DISASTER_RECOVERY.md](DOCS/DISASTER_RECOVERY.md)**.
+
+O keep-alive evita a pausa; o backup protege do que a apaga. São problemas diferentes e
+nenhum dos dois substitui o outro — um projecto sempre activo com um `DELETE` sem `WHERE`
+fica igualmente sem dados.
 
 ### Limitação conhecida do GitHub Actions
 
