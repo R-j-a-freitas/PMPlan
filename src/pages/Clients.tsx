@@ -1,14 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Topbar } from '../app/Topbar';
 import { buildHospitalExportRows, parseHospitalImportRows } from '../lib/importers/hospitalImportExport';
 import { SPANISH_REGIONS, spanishRegionName } from '../lib/spanishRegions';
 import { exportRowsToSpreadsheet, readSpreadsheetFile } from '../lib/spreadsheet';
 import type { ParsedImportRow } from '../lib/spreadsheet';
 import { getLeafZones } from '../lib/zoneTree';
-import { useAuthStore, useHolidayRuleStore, useHospitalStore, useUiStore, useZoneStore } from '../stores';
+import {
+  useAuthStore,
+  useHolidayRuleStore,
+  useHospitalStore,
+  useSignedDocumentStore,
+  useUiStore,
+  useZoneStore,
+} from '../stores';
 import type { Country, HospitalInsert, Zone } from '../types';
 import { HospitalContactsModal } from '../components/modals/HospitalContactsModal';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
+import { HospitalSignedDocuments, UnmatchedSignedDocuments } from '../components/documents';
 import { Badge, Button, ImportExportButtons } from '../components/ui';
 
 const EMPTY_FORM = { name: '', shortName: '', country: 'PT' as Country, locality: '', city: '', zoneId: '' };
@@ -112,6 +120,89 @@ function ZoneSelect({
   );
 }
 
+type HospitalForm = typeof EMPTY_FORM;
+
+// Introdução de novo hospital — em modal, para a lista não ficar permanentemente empurrada
+// para baixo por um formulário que só se usa de vez em quando. Estado próprio: como só é
+// montado enquanto está aberto, cada abertura começa com os campos limpos.
+function HospitalFormModal({
+  leafZones,
+  zones,
+  saving,
+  onCancel,
+  onSubmit,
+}: {
+  leafZones: Zone[];
+  zones: Zone[];
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: (values: HospitalForm) => void;
+}) {
+  const [form, setForm] = useState(EMPTY_FORM);
+  const valid = Boolean(form.name.trim() && form.zoneId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
+        <h2 className="mb-3 text-base font-semibold text-gray-900">Novo hospital</h2>
+
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          <input
+            autoFocus
+            placeholder="Nome"
+            className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+          />
+          <input
+            placeholder="Nome curto (ex: IPO Porto)"
+            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+            value={form.shortName}
+            onChange={(event) => setForm({ ...form, shortName: event.target.value })}
+          />
+          <select
+            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+            value={form.country}
+            onChange={(event) => setForm({ ...form, country: event.target.value as Country, locality: '', city: '' })}
+          >
+            <option value="PT">Portugal</option>
+            <option value="ES">Espanha</option>
+          </select>
+          <LocalityField
+            country={form.country}
+            value={form.locality}
+            onChange={(locality) => setForm({ ...form, locality })}
+          />
+          {form.country === 'ES' && (
+            <input
+              placeholder="Cidade (ex: Vigo)"
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={form.city}
+              onChange={(event) => setForm({ ...form, city: event.target.value })}
+            />
+          )}
+          <ZoneSelect
+            value={form.zoneId}
+            onChange={(zoneId) => setForm({ ...form, zoneId })}
+            leafZones={leafZones}
+            zones={zones}
+            placeholder="Zona… (obrigatório)"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button onClick={() => onSubmit(form)} disabled={saving || !valid}>
+            Adicionar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // CRUD clientes/hospitais (secção 3) — zona é sempre obrigatória (secção 4: é a origem da
 // hierarquia; equipment.zone_id deriva sempre de hospitals.zone_id). País fica aqui (não
 // na zona): a mesma zona pode agrupar hospitais de PT e de ES. Gestão exclusiva do admin.
@@ -128,14 +219,19 @@ export function Clients() {
   const pushToast = useUiStore((state) => state.pushToast);
   const holidayRules = useHolidayRuleStore((state) => state.rules);
   const fetchHolidayRules = useHolidayRuleStore((state) => state.fetchRules);
+  const signedDocuments = useSignedDocumentStore((state) => state.documents);
+  const fetchSignedDocuments = useSignedDocumentStore((state) => state.fetchSignedDocuments);
 
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [creating, setCreating] = useState(false);
+  const [searchText, setSearchText] = useState('');
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [importRows, setImportRows] = useState<ParsedImportRow<HospitalInsert>[] | null>(null);
   const [importing, setImporting] = useState(false);
   const [contactsHospitalId, setContactsHospitalId] = useState<string | null>(null);
+  // Hospital com o arquivo de documentos assinados aberto (linha expandida por baixo).
+  const [documentsHospitalId, setDocumentsHospitalId] = useState<string | null>(null);
 
   const leafZones = getLeafZones(zones);
 
@@ -147,13 +243,26 @@ export function Clients() {
     [holidayRules],
   );
 
+  // Filtro de texto sobre a lista — nome e nome curto, que é por onde se procura um
+  // hospital (o mesmo hospital tanto é "ULS Braga E.P.E." como "Braga").
+  const filteredHospitals = useMemo(() => {
+    if (!searchText.trim()) return hospitals;
+    const needle = searchText.toLowerCase();
+    return hospitals.filter((hospital) =>
+      [hospital.name, hospital.short_name ?? ''].some((field) => field.toLowerCase().includes(needle)),
+    );
+  }, [hospitals, searchText]);
+
   useEffect(() => {
     fetchHospitals();
     fetchZones();
     fetchHolidayRules();
-  }, [fetchHospitals, fetchZones, fetchHolidayRules]);
+    // Documentos assinados devolvidos pelos clientes — arquivados a partir das respostas
+    // à carta de assinatura (Edge Function inbound-signed-document).
+    fetchSignedDocuments();
+  }, [fetchHospitals, fetchZones, fetchHolidayRules, fetchSignedDocuments]);
 
-  async function handleCreate() {
+  async function handleCreate(form: HospitalForm) {
     if (!form.name || !form.zoneId) return;
     setSaving(true);
     try {
@@ -168,7 +277,9 @@ export function Clients() {
         contacts: [],
         active: true,
       });
-      setForm(EMPTY_FORM);
+      setCreating(false);
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao criar hospital.' });
     } finally {
       setSaving(false);
     }
@@ -260,58 +371,26 @@ export function Clients() {
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-lg font-semibold text-gray-900">Hospitais</h1>
-          {canManageZones && <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />}
+          {canManageZones && (
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setCreating(true)}>Adicionar</Button>
+              <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
+            </div>
+          )}
         </div>
 
-        {canManageZones && (
-          <div className="mb-4 flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
-            <input
-              placeholder="Nome"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-            />
-            <input
-              placeholder="Nome curto (ex: IPO Porto)"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.shortName}
-              onChange={(event) => setForm({ ...form, shortName: event.target.value })}
-            />
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.country}
-              onChange={(event) =>
-                setForm({ ...form, country: event.target.value as Country, locality: '', city: '' })
-              }
-            >
-              <option value="PT">Portugal</option>
-              <option value="ES">Espanha</option>
-            </select>
-            <LocalityField
-              country={form.country}
-              value={form.locality}
-              onChange={(locality) => setForm({ ...form, locality })}
-            />
-            {form.country === 'ES' && (
-              <input
-                placeholder="Cidade (ex: Vigo)"
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                value={form.city}
-                onChange={(event) => setForm({ ...form, city: event.target.value })}
-              />
-            )}
-            <ZoneSelect
-              value={form.zoneId}
-              onChange={(zoneId) => setForm({ ...form, zoneId })}
-              leafZones={leafZones}
-              zones={zones}
-              placeholder="Zona… (obrigatório)"
-            />
-            <Button onClick={handleCreate} disabled={saving || !form.name || !form.zoneId}>
-              Adicionar
-            </Button>
-          </div>
-        )}
+        {/* Documentos assinados que chegaram sem hospital identificado — no topo, porque
+            ficarem esquecidos numa fila que ninguém vê é a única forma de este mecanismo
+            falhar em silêncio. Só aparece quando existe algum. */}
+        <UnmatchedSignedDocuments hospitals={hospitals} />
+
+        <input
+          type="search"
+          placeholder="Procurar hospital por nome ou nome curto…"
+          className="mb-4 w-full max-w-md rounded-md border border-gray-300 px-2 py-1 text-sm"
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
+        />
 
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -327,10 +406,15 @@ export function Clients() {
             </tr>
           </thead>
           <tbody>
-            {hospitals.map((hospital) => {
+            {filteredHospitals.map((hospital) => {
               const editing = editingId === hospital.id;
+              const documentsOpen = documentsHospitalId === hospital.id;
+              const documentCount = signedDocuments.filter(
+                (document) => document.hospital_id === hospital.id,
+              ).length;
               return (
-                <tr key={hospital.id} className="border-b border-gray-100">
+                <Fragment key={hospital.id}>
+                <tr className="border-b border-gray-100">
                   {editing ? (
                     <>
                       <td className="py-1.5 pr-2">
@@ -423,28 +507,62 @@ export function Clients() {
                         {hospital.contacts.length > 0 ? hospital.contacts.map((c) => c.name).join(', ') : '—'}
                       </td>
                       <td className="py-1.5 pr-2 text-right">
-                        {canManageZones && (
-                          <div className="flex justify-end gap-2">
-                            <Button variant="secondary" onClick={() => setContactsHospitalId(hospital.id)}>
-                              Contactos
-                            </Button>
-                            <Button variant="secondary" onClick={() => startEdit(hospital)}>
-                              Editar
-                            </Button>
-                            <Button variant="danger" onClick={() => deleteHospital(hospital.id)}>
-                              Eliminar
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex justify-end gap-2">
+                          {/* Documentos assinados é consulta, não gestão — fica disponível
+                              também para quem não pode editar hospitais. */}
+                          <Button
+                            variant="secondary"
+                            onClick={() => setDocumentsHospitalId(documentsOpen ? null : hospital.id)}
+                          >
+                            Documentos{documentCount > 0 ? ` (${documentCount})` : ''}
+                          </Button>
+                          {canManageZones && (
+                            <>
+                              <Button variant="secondary" onClick={() => setContactsHospitalId(hospital.id)}>
+                                Contactos
+                              </Button>
+                              <Button variant="secondary" onClick={() => startEdit(hospital)}>
+                                Editar
+                              </Button>
+                              <Button variant="danger" onClick={() => deleteHospital(hospital.id)}>
+                                Eliminar
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </>
                   )}
                 </tr>
+                {documentsOpen && !editing && (
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <td colSpan={8} className="p-2">
+                      <HospitalSignedDocuments hospitalId={hospital.id} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
+
+        {filteredHospitals.length === 0 && (
+          <p className="mt-3 text-sm text-gray-400">
+            {hospitals.length === 0 ? 'Sem hospitais registados.' : 'Nenhum hospital corresponde à pesquisa.'}
+          </p>
+        )}
       </div>
+
+      {creating && (
+        <HospitalFormModal
+          leafZones={leafZones}
+          zones={zones}
+          saving={saving}
+          onCancel={() => setCreating(false)}
+          onSubmit={handleCreate}
+        />
+      )}
 
       {importRows && (
         <ImportPreviewModal

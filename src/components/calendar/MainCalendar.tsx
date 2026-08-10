@@ -16,6 +16,7 @@ import {
   useEngineerStore,
   useEquipmentStore,
   useHolidayStore,
+  useUiStore,
   useZoneStore,
 } from '../../stores';
 import { useDragDrop } from '../../hooks';
@@ -28,8 +29,21 @@ import { getConflictClassNames } from './ConflictIndicator';
 // Vistas Standard apenas (secção 6) — sem Timeline/Resource View (Premium).
 // Tipo inferido a partir da prop `views` do FullCalendar (ViewConfigInputHash não é exportado publicamente).
 const CALENDAR_VIEWS = {
-  multiMonthYear: { type: 'multiMonth', duration: { years: 1 }, multiMonthMaxColumns: 3, fixedWeekCount: false },
-  multiMonthQuarter: { type: 'multiMonth', duration: { months: 3 }, multiMonthMaxColumns: 3 },
+  // NOTA sobre PMs sobrepostas nas vistas multi-mês: o plugin multimonth (v6.1.20)
+  // IGNORA dayMaxEvents no ecrã (hardcoded `!forPrint`), por isso o limite "mais +N"
+  // não é desligável por opção. A mitigação real é o toggle "1 linha"/"2 linhas" da
+  // CalendarToolbar (uiStore.eventLineDensity, aplicado em EventContent.renderEventContent)
+  // — density=1 encolhe cada barra a uma linha, cabendo 2-3 PMs por célula em vez de 1.
+  // dayMaxEvents: false fica na mesma — é inócuo hoje e activa-se sozinho se o
+  // FullCalendar corrigir o plugin.
+  multiMonthYear: {
+    type: 'multiMonth',
+    duration: { years: 1 },
+    multiMonthMaxColumns: 3,
+    fixedWeekCount: false,
+    dayMaxEvents: false,
+  },
+  multiMonthQuarter: { type: 'multiMonth', duration: { months: 3 }, multiMonthMaxColumns: 3, dayMaxEvents: false },
   dayGridMonth: { type: 'dayGrid', duration: { months: 1 } },
   timeGridWeek: { type: 'timeGrid', duration: { weeks: 1 } },
 };
@@ -50,13 +64,17 @@ interface MainCalendarProps {
 
 export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: MainCalendarProps) {
   const events = useCalendarStore((state) => state.events);
+  const previewEvents = useCalendarStore((state) => state.previewEvents);
   const activeView = useCalendarStore((state) => state.activeView);
   const planningYear = useCalendarStore((state) => state.planningYear);
+  const setPlanningYear = useCalendarStore((state) => state.setPlanningYear);
   const fetchEvents = useCalendarStore((state) => state.fetchEvents);
   const setVisibleTitle = useCalendarStore((state) => state.setVisibleTitle);
+  const eventLineDensity = useUiStore((state) => state.eventLineDensity);
   const equipment = useEquipmentStore((state) => state.equipment);
   const selectedEquipmentId = useEquipmentStore((state) => state.selectedEquipmentId);
   const selectedEquipmentIds = useEquipmentStore((state) => state.selectedEquipmentIds);
+  const selectedModalities = useEquipmentStore((state) => state.filters.modalities);
   const selectedEngineerIds = useEngineerStore((state) => state.selectedEngineerIds);
   const holidays = useHolidayStore((state) => state.holidays);
   const zones = useZoneStore((state) => state.zones);
@@ -70,9 +88,14 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
   }, [activeView, calendarRef]);
 
   // "obrigatório separar os anos": mudar o ano de planeamento (Topbar) navega o
-  // calendário para esse ano — nunca mistura o ano corrente com o ano em planeamento.
+  // calendário para esse ano. Guarda: só reposiciona se o calendário estiver noutro ano,
+  // para não puxar a vista de volta a Janeiro quando o planningYear foi sincronizado A
+  // PARTIR da própria navegação do calendário (setas ‹ › da CalendarToolbar → datesSet).
   useEffect(() => {
-    calendarRef.current?.getApi().gotoDate(`${planningYear}-01-01`);
+    const api = calendarRef.current?.getApi();
+    if (api && api.getDate().getFullYear() !== planningYear) {
+      api.gotoDate(`${planningYear}-01-01`);
+    }
   }, [planningYear, calendarRef]);
 
   const conflictedEventIds = useMemo(
@@ -93,16 +116,19 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
 
   const calendarEvents = useMemo<EventInput[]>(() => {
     // O calendário reflecte sempre exactamente o que está marcado no planeamento (zonas,
-    // engenheiros, equipamentos — em OR entre si). `selectedZoneIds` já vem com a cascata
-    // zona-mãe → filhas aplicada no momento do clique (ver zoneStore.toggleZoneSelection)
+    // engenheiros, equipamentos e modalidades — em OR entre si). `selectedZoneIds` já vem com
+    // a cascata zona-mãe → filhas aplicada no momento do clique (ver zoneStore.toggleZoneSelection)
     // — NÃO voltar a expandir aqui, ou desmarcar uma filha individual deixaria de ter
-    // efeito (a mãe reincluía-a sempre). Nada marcado em nenhum dos três = calendário
-    // vazio, não "mostra tudo" — é o utilizador quem decide o que quer ver.
+    // efeito (a mãe reincluía-a sempre). A modalidade (secção EQUIPAMENTOS da sidebar) mostra
+    // as PMs de todo o equipamento dessa modalidade, tal como uma zona mostra as da zona.
+    // Nada marcado em nenhum dos quatro = calendário vazio, não "mostra tudo" — é o
+    // utilizador quem decide o que quer ver.
     const hasZoneFilter = selectedZoneIds.length > 0;
     const hasEngineerFilter = selectedEngineerIds.length > 0;
     const hasEquipmentFilter = selectedEquipmentIds.length > 0;
+    const hasModalityFilter = selectedModalities.length > 0;
     const visibleEvents =
-      !hasZoneFilter && !hasEngineerFilter && !hasEquipmentFilter
+      !hasZoneFilter && !hasEngineerFilter && !hasEquipmentFilter && !hasModalityFilter
         ? []
         : events.filter((event) => {
             const eq = equipment.find((item) => item.id === event.equipment_id);
@@ -110,7 +136,8 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
             const engineerMatch =
               hasEngineerFilter && !!event.engineer_id && selectedEngineerIds.includes(event.engineer_id);
             const equipmentMatch = hasEquipmentFilter && selectedEquipmentIds.includes(event.equipment_id);
-            return zoneMatch || engineerMatch || equipmentMatch;
+            const modalityMatch = hasModalityFilter && !!eq && selectedModalities.includes(eq.modality);
+            return zoneMatch || engineerMatch || equipmentMatch || modalityMatch;
           });
 
     const pmEvents: EventInput[] = visibleEvents.map((event) => {
@@ -139,8 +166,42 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       };
     });
 
-    return [...pmEvents, ...buildHolidayBackgroundEvents(relevantHolidays)];
-  }, [events, equipment, relevantHolidays, selectedZoneIds, selectedEngineerIds, selectedEquipmentIds]);
+    // Eventos de pré-visualização (propostas do AutoSchedulerModal ainda não guardadas):
+    // ignoram por completo o filtro de zonas/engenheiros/equipamentos — o objectivo é ver
+    // toda a distribuição proposta do ano de uma vez. Estilo tracejado (pmplan-event-preview)
+    // e não editáveis/clicáveis (são propostas, não PMs reais).
+    const previewPmEvents: EventInput[] = previewEvents.map((event) => {
+      const eq = equipment.find((item) => item.id === event.equipment_id);
+      return {
+        id: event.id,
+        title: eq?.name ?? 'Equipamento',
+        start: event.start_date,
+        allDay: true,
+        end: addDaysToIsoDate(event.end_date, 1),
+        backgroundColor: eq?.color ?? '#3B82F6',
+        borderColor: eq?.color ?? '#3B82F6',
+        editable: false,
+        extendedProps: {
+          equipmentId: event.equipment_id,
+          engineerId: event.engineer_id,
+          status: event.status,
+          hospitalName: eq?.hospital_name,
+          isPreview: true,
+        },
+      };
+    });
+
+    return [...pmEvents, ...previewPmEvents, ...buildHolidayBackgroundEvents(relevantHolidays)];
+  }, [
+    events,
+    previewEvents,
+    equipment,
+    relevantHolidays,
+    selectedZoneIds,
+    selectedEngineerIds,
+    selectedEquipmentIds,
+    selectedModalities,
+  ]);
 
   // A prop `events` do @fullcalendar/react nem sempre redesenha quando o array muda de
   // referência (bug conhecido do wrapper) — sincroniza-se aqui de forma imperativa via
@@ -174,8 +235,11 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       selectable={permissions.canCreatePM}
       editable={permissions.canEditPM}
       droppable={permissions.canCreatePM}
-      eventContent={renderEventContent}
-      eventClassNames={(arg) => getConflictClassNames(conflictedEventIds.has(arg.event.id))}
+      eventContent={(arg) => renderEventContent(arg, eventLineDensity)}
+      eventClassNames={(arg) => [
+        ...getConflictClassNames(conflictedEventIds.has(arg.event.id)),
+        ...(arg.event.extendedProps.isPreview ? ['pmplan-event-preview'] : []),
+      ]}
       dayCellContent={(arg: DayCellContentArg) => {
         // Feriado nesse dia → mostra de que zona é (se regional) e um tooltip nativo
         // (title) com o detalhe completo ao passar o rato (secção: "quando passado o
@@ -198,6 +262,13 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
         // headerToolbar está desligado (toolbar própria) — sem isto, dayGridMonth/
         // timeGridWeek ficam sem indicação nenhuma de que mês/semana se está a ver.
         setVisibleTitle(arg.view.title);
+        // Navegar o calendário (setas ‹ ›, "Hoje", ou o próprio Topbar) mantém o
+        // planningYear alinhado com o ano em vista — senão a geração de plano usaria um
+        // ano diferente do que o utilizador está a ver (bug: ver 2027, gerar 2026).
+        // currentStart é o início do período activo (Jan do ano na vista Ano/Trimestre;
+        // 1.º dia do mês na vista Mês), não o intervalo com dias de padding.
+        const viewYear = arg.view.currentStart.getFullYear();
+        if (viewYear !== planningYear) setPlanningYear(viewYear);
       }}
       select={(arg: DateSelectArg) => {
         // Equipamento "armado" na sidebar (EquipmentList) → cria já a PM com hospital/
@@ -216,13 +287,21 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       }}
       eventClick={(arg: EventClickArg) => {
         if (arg.event.display === 'background') return;
+        // Propostas em pré-visualização não são PMs reais — não abrem o modal de edição.
+        if (arg.event.extendedProps.isPreview) return;
         onSelectEvent(arg.event.id);
       }}
       eventDidMount={(arg) => {
-        // Tooltip nativo no próprio fundo do feriado, não só perto do número do dia.
-        if (arg.event.display !== 'background') return;
-        const info = arg.event.start ? holidayDayInfo.get(format(arg.event.start, 'yyyy-MM-dd')) : undefined;
-        if (info) arg.el.setAttribute('title', info.tooltip);
+        if (arg.event.display === 'background') {
+          // Tooltip nativo no próprio fundo do feriado, não só perto do número do dia.
+          const info = arg.event.start ? holidayDayInfo.get(format(arg.event.start, 'yyyy-MM-dd')) : undefined;
+          if (info) arg.el.setAttribute('title', info.tooltip);
+          return;
+        }
+        // PMs: tooltip com equipamento + hospital — nas vistas multi-mês a barra compacta
+        // (EventContent) esconde a linha do hospital, que fica acessível ao passar o rato.
+        const { hospitalName } = arg.event.extendedProps as { hospitalName?: string };
+        arg.el.setAttribute('title', hospitalName ? `${arg.event.title} — ${hospitalName}` : arg.event.title);
       }}
       eventDrop={handleEventDrop}
       eventResize={handleEventResize}

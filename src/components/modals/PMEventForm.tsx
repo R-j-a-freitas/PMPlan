@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useEngineerStore, useEquipmentStore } from '../../stores';
-import type { PMStatus } from '../../types';
+import type { PMEvent, PMStatus } from '../../types';
+import { toDisplayDate } from '../../lib/dateFormat';
 import { DateInput } from '../ui';
 
 const STATUS_OPTIONS: { value: PMStatus; label: string }[] = [
@@ -21,9 +23,10 @@ interface PMEventFormProps {
   showStatus: boolean;
   /** Modo só-leitura (engineer/readonly, ou utilizador sem canCreatePM/canEditPM). */
   disabled: boolean;
-  /** PMs já planeadas no ano vs. o contratado ("PM/ano" do equipamento) — null enquanto
-   *  nenhum equipamento está seleccionado. */
-  pmQuota: { count: number; max: number; year: number } | null;
+  /** PMs já planeadas no ano vs. o contratado ("PM/ano" do equipamento), com as próprias
+   *  PMs (para a lista expansível de datas) — null enquanto nenhum equipamento está
+   *  seleccionado. */
+  pmQuota: { count: number; max: number; year: number; dates: PMEvent[] } | null;
   onEquipmentChange: (id: string) => void;
   onEngineerChange: (id: string) => void;
   onStartDateChange: (value: string) => void;
@@ -35,6 +38,7 @@ interface PMEventFormProps {
 export function PMEventForm(props: PMEventFormProps) {
   const equipment = useEquipmentStore((state) => state.equipment);
   const engineers = useEngineerStore((state) => state.engineers);
+  const [datesExpanded, setDatesExpanded] = useState(false);
 
   return (
     <div className="flex flex-col gap-3">
@@ -56,13 +60,32 @@ export function PMEventForm(props: PMEventFormProps) {
       </label>
 
       {props.pmQuota && (
-        <p
-          className={`-mt-2 text-xs ${
-            props.pmQuota.count >= props.pmQuota.max ? 'font-medium text-red-600' : 'text-gray-500'
-          }`}
-        >
-          PMs planeadas em {props.pmQuota.year}: {props.pmQuota.count}/{props.pmQuota.max}
-        </p>
+        <div className="-mt-2">
+          <button
+            type="button"
+            className={`flex items-center gap-1 text-xs ${
+              props.pmQuota.count >= props.pmQuota.max ? 'font-medium text-red-600' : 'text-gray-500'
+            } ${props.pmQuota.dates.length === 0 ? 'cursor-default' : 'hover:underline'}`}
+            onClick={() => setDatesExpanded((expanded) => !expanded)}
+            disabled={props.pmQuota.dates.length === 0}
+          >
+            {props.pmQuota.dates.length > 0 && <span>{datesExpanded ? '▾' : '▸'}</span>}
+            PMs planeadas em {props.pmQuota.year}: {props.pmQuota.count}/{props.pmQuota.max}
+          </button>
+          {datesExpanded && props.pmQuota.dates.length > 0 && (
+            <ul className="mt-1 flex flex-col gap-0.5 border-l-2 border-gray-200 pl-2 text-xs text-gray-500">
+              {props.pmQuota.dates.map((event) => {
+                const statusLabel = STATUS_OPTIONS.find((option) => option.value === event.status)?.label;
+                return (
+                  <li key={event.id}>
+                    {toDisplayDate(event.start_date)} → {toDisplayDate(event.end_date)}
+                    {statusLabel && ` — ${statusLabel}`}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       )}
 
       <label className="flex flex-col gap-1 text-sm">

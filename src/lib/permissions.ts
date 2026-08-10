@@ -13,6 +13,7 @@ export const PERMISSIONS: Record<UserRole, Permissions> = {
     canApproveSchedule: true,
     canSendEmails: true,
     canExportReports: true,
+    canViewSystemHealth: true,
   },
   planner: {
     canCreatePM: true,
@@ -26,6 +27,7 @@ export const PERMISSIONS: Record<UserRole, Permissions> = {
     canApproveSchedule: true,
     canSendEmails: true,
     canExportReports: true,
+    canViewSystemHealth: false,
   },
   engineer: {
     canCreatePM: false,
@@ -41,6 +43,7 @@ export const PERMISSIONS: Record<UserRole, Permissions> = {
     canApproveSchedule: false,
     canSendEmails: false,
     canExportReports: true,
+    canViewSystemHealth: false,
   },
   readonly: {
     canCreatePM: false,
@@ -54,6 +57,7 @@ export const PERMISSIONS: Record<UserRole, Permissions> = {
     canApproveSchedule: false,
     canSendEmails: false,
     canExportReports: true,
+    canViewSystemHealth: false,
   },
 };
 

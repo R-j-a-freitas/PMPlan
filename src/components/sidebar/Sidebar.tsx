@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { useUiStore } from '../../stores';
 import { EquipmentList } from './EquipmentList';
 import { EngineerFilter } from './EngineerFilter';
+import { ModalityFilter } from './ModalityFilter';
 import { ZoneScopeFilter } from './ZoneScopeFilter';
 import { LoadMap } from './LoadMap';
 
@@ -47,6 +48,7 @@ export function Sidebar() {
           <div className="flex-1 overflow-y-auto">
             <ZoneScopeFilter />
             <EngineerFilter />
+            <ModalityFilter />
             <EquipmentList />
             <LoadMap />
           </div>

@@ -4,6 +4,7 @@ import { Badge, Button } from '../components/ui';
 
 const NAV_LINKS = [
   { to: '/', label: 'Calendário', end: true },
+  { to: '/painel', label: 'Painel' },
   { to: '/equipment', label: 'Equipamentos' },
   { to: '/engineers', label: 'Engenheiros' },
   { to: '/clients', label: 'Hospitais' },
@@ -21,6 +22,7 @@ export function Topbar() {
   const canApprove = useAuthStore(
     (state) => state.permissions.canApproveSchedule || state.permissions.canSendEmails,
   );
+  const canViewSystemHealth = useAuthStore((state) => state.permissions.canViewSystemHealth);
   const signOut = useAuthStore((state) => state.signOut);
   const planningYear = useCalendarStore((state) => state.planningYear);
   const setPlanningYear = useCalendarStore((state) => state.setPlanningYear);
@@ -28,6 +30,7 @@ export function Topbar() {
   let navLinks = NAV_LINKS;
   if (canApprove) navLinks = [...navLinks, { to: '/approvals', label: 'Aprovações' }];
   if (canManageUsers) navLinks = [...navLinks, { to: '/users', label: 'Utilizadores' }];
+  if (canViewSystemHealth) navLinks = [...navLinks, { to: '/system', label: 'Sistema' }];
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b border-gray-200 bg-white px-3">

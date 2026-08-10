@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Topbar } from '../app/Topbar';
 import { exportRowsToSpreadsheet } from '../lib/spreadsheet';
-import { useHospitalStore } from '../stores';
-import type { HospitalWithZone } from '../types';
+import { useAuthStore, useHospitalStore, useUiStore } from '../stores';
+import type { HospitalContact, HospitalWithZone } from '../types';
 import { Badge, Button } from '../components/ui';
 
 interface ContactRow {
@@ -10,19 +10,33 @@ interface ContactRow {
   hospitalName: string;
   zoneName: string;
   zoneColor: string;
+  /** Índice do contacto dentro de hospital.contacts — necessário para editar/apagar a
+   *  posição certa (os contactos vivem num array JSON no próprio hospital, não têm id). */
+  contactIndex: number;
   name: string;
   role: string;
   email: string;
   phone: string;
 }
 
+type ContactForm = { name: string; role: string; email: string; phone: string };
+
+const EMPTY_FORM: ContactForm & { hospitalId: string } = {
+  hospitalId: '',
+  name: '',
+  role: '',
+  email: '',
+  phone: '',
+};
+
 function buildContactRows(hospitals: HospitalWithZone[]): ContactRow[] {
   return hospitals.flatMap((hospital) =>
-    hospital.contacts.map((contact) => ({
+    hospital.contacts.map((contact, contactIndex) => ({
       hospitalId: hospital.id,
       hospitalName: hospital.name,
       zoneName: hospital.zone_name,
       zoneColor: hospital.zone_color,
+      contactIndex,
       name: contact.name,
       role: contact.role ?? '',
       email: contact.email ?? '',
@@ -32,12 +46,19 @@ function buildContactRows(hospitals: HospitalWithZone[]): ContactRow[] {
 }
 
 // Vista consolidada de todos os contactos registados em todos os hospitais (secção:
-// "mostra todos os contactos registados") — só leitura aqui; a edição continua a ser
-// feita por hospital, no botão "Contactos" da página Hospitais (Clients.tsx).
+// "mostra todos os contactos registados"). A gestão (criar/editar/apagar) fica reservada
+// a quem gere hospitais (canManageZones), já que os contactos vivem em hospitals.contacts.
 export function Contacts() {
+  const canManage = useAuthStore((state) => state.permissions.canManageZones);
   const hospitals = useHospitalStore((state) => state.hospitals);
   const fetchHospitals = useHospitalStore((state) => state.fetchHospitals);
+  const updateHospital = useHospitalStore((state) => state.updateHospital);
+  const pushToast = useUiStore((state) => state.pushToast);
   const [searchText, setSearchText] = useState('');
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<{ hospitalId: string; contactIndex: number } | null>(null);
+  const [editForm, setEditForm] = useState<ContactForm>({ name: '', role: '', email: '', phone: '' });
 
   useEffect(() => {
     fetchHospitals();
@@ -70,6 +91,70 @@ export function Contacts() {
     );
   }
 
+  // Converte o form em HospitalContact, omitindo campos vazios (a coluna é texto livre e o
+  // resto da app trata email/phone/role como opcionais).
+  function toContact(source: ContactForm): HospitalContact {
+    return {
+      name: source.name.trim(),
+      role: source.role.trim() || undefined,
+      email: source.email.trim() || undefined,
+      phone: source.phone.trim() || undefined,
+    };
+  }
+
+  async function handleAdd() {
+    if (!form.hospitalId || !form.name.trim()) return;
+    const hospital = hospitals.find((h) => h.id === form.hospitalId);
+    if (!hospital) return;
+    setSaving(true);
+    try {
+      await updateHospital(hospital.id, { contacts: [...hospital.contacts, toContact(form)] });
+      setForm({ ...EMPTY_FORM, hospitalId: form.hospitalId });
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao adicionar contacto.' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function startEdit(row: ContactRow) {
+    setEditing({ hospitalId: row.hospitalId, contactIndex: row.contactIndex });
+    setEditForm({ name: row.name, role: row.role, email: row.email, phone: row.phone });
+  }
+
+  async function handleSaveEdit() {
+    if (!editing || !editForm.name.trim()) return;
+    const hospital = hospitals.find((h) => h.id === editing.hospitalId);
+    if (!hospital) return;
+    setSaving(true);
+    try {
+      const contacts = hospital.contacts.map((contact, index) =>
+        index === editing.contactIndex ? toContact(editForm) : contact,
+      );
+      await updateHospital(hospital.id, { contacts });
+      setEditing(null);
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao actualizar contacto.' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(row: ContactRow) {
+    const hospital = hospitals.find((h) => h.id === row.hospitalId);
+    if (!hospital) return;
+    if (!window.confirm(`Apagar o contacto "${row.name}" de ${row.hospitalName}?`)) return;
+    setSaving(true);
+    try {
+      const contacts = hospital.contacts.filter((_, index) => index !== row.contactIndex);
+      await updateHospital(hospital.id, { contacts });
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao apagar contacto.' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
       <Topbar />
@@ -80,6 +165,51 @@ export function Contacts() {
             Exportar
           </Button>
         </div>
+
+        {canManage && (
+          <div className="mb-4 flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
+            <select
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={form.hospitalId}
+              onChange={(event) => setForm({ ...form, hospitalId: event.target.value })}
+            >
+              <option value="">Hospital… (obrigatório)</option>
+              {hospitals.map((hospital) => (
+                <option key={hospital.id} value={hospital.id}>
+                  {hospital.name}
+                </option>
+              ))}
+            </select>
+            <input
+              placeholder="Nome"
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={form.name}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+            />
+            <input
+              placeholder="Cargo (ex: Coordenador Técnico)"
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={form.role}
+              onChange={(event) => setForm({ ...form, role: event.target.value })}
+            />
+            <input
+              type="email"
+              placeholder="Email"
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={form.email}
+              onChange={(event) => setForm({ ...form, email: event.target.value })}
+            />
+            <input
+              placeholder="Telefone"
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={form.phone}
+              onChange={(event) => setForm({ ...form, phone: event.target.value })}
+            />
+            <Button onClick={handleAdd} disabled={saving || !form.hospitalId || !form.name.trim()}>
+              Adicionar
+            </Button>
+          </div>
+        )}
 
         <input
           type="search"
@@ -92,7 +222,9 @@ export function Contacts() {
         {filteredRows.length === 0 ? (
           <p className="text-sm text-gray-400">
             {allRows.length === 0
-              ? 'Sem contactos registados — adiciona-os a partir da página Hospitais.'
+              ? canManage
+                ? 'Sem contactos registados — adiciona o primeiro no formulário acima.'
+                : 'Sem contactos registados.'
               : 'Nenhum contacto corresponde à pesquisa.'}
           </p>
         ) : (
@@ -105,21 +237,88 @@ export function Contacts() {
                 <th className="py-1.5 pr-2">Telefone</th>
                 <th className="py-1.5 pr-2">Hospital</th>
                 <th className="py-1.5 pr-2">Zona</th>
+                {canManage && <th className="py-1.5 pr-2" />}
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((row, index) => (
-                <tr key={`${row.hospitalId}-${index}`} className="border-b border-gray-100">
-                  <td className="py-1.5 pr-2">{row.name}</td>
-                  <td className="py-1.5 pr-2">{row.role || '—'}</td>
-                  <td className="py-1.5 pr-2">{row.email || '—'}</td>
-                  <td className="py-1.5 pr-2">{row.phone || '—'}</td>
-                  <td className="py-1.5 pr-2">{row.hospitalName}</td>
-                  <td className="py-1.5 pr-2">
-                    <Badge color={row.zoneColor}>{row.zoneName}</Badge>
-                  </td>
-                </tr>
-              ))}
+              {filteredRows.map((row) => {
+                const isEditing =
+                  editing?.hospitalId === row.hospitalId && editing?.contactIndex === row.contactIndex;
+                return (
+                  <tr key={`${row.hospitalId}-${row.contactIndex}`} className="border-b border-gray-100">
+                    {isEditing ? (
+                      <>
+                        <td className="py-1.5 pr-2">
+                          <input
+                            className="w-full rounded-md border border-gray-300 px-2 py-1"
+                            value={editForm.name}
+                            onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
+                          />
+                        </td>
+                        <td className="py-1.5 pr-2">
+                          <input
+                            className="w-full rounded-md border border-gray-300 px-2 py-1"
+                            value={editForm.role}
+                            onChange={(event) => setEditForm({ ...editForm, role: event.target.value })}
+                          />
+                        </td>
+                        <td className="py-1.5 pr-2">
+                          <input
+                            type="email"
+                            className="w-full rounded-md border border-gray-300 px-2 py-1"
+                            value={editForm.email}
+                            onChange={(event) => setEditForm({ ...editForm, email: event.target.value })}
+                          />
+                        </td>
+                        <td className="py-1.5 pr-2">
+                          <input
+                            className="w-full rounded-md border border-gray-300 px-2 py-1"
+                            value={editForm.phone}
+                            onChange={(event) => setEditForm({ ...editForm, phone: event.target.value })}
+                          />
+                        </td>
+                        <td className="py-1.5 pr-2">{row.hospitalName}</td>
+                        <td className="py-1.5 pr-2">
+                          <Badge color={row.zoneColor}>{row.zoneName}</Badge>
+                        </td>
+                        <td className="py-1.5 pr-2 text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="secondary" onClick={() => setEditing(null)} disabled={saving}>
+                              Cancelar
+                            </Button>
+                            <Button onClick={handleSaveEdit} disabled={saving || !editForm.name.trim()}>
+                              Guardar
+                            </Button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-1.5 pr-2">{row.name}</td>
+                        <td className="py-1.5 pr-2">{row.role || '—'}</td>
+                        <td className="py-1.5 pr-2">{row.email || '—'}</td>
+                        <td className="py-1.5 pr-2">{row.phone || '—'}</td>
+                        <td className="py-1.5 pr-2">{row.hospitalName}</td>
+                        <td className="py-1.5 pr-2">
+                          <Badge color={row.zoneColor}>{row.zoneName}</Badge>
+                        </td>
+                        {canManage && (
+                          <td className="py-1.5 pr-2 text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button variant="secondary" onClick={() => startEdit(row)} disabled={saving}>
+                                Editar
+                              </Button>
+                              <Button variant="danger" onClick={() => handleDelete(row)} disabled={saving}>
+                                Eliminar
+                              </Button>
+                            </div>
+                          </td>
+                        )}
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

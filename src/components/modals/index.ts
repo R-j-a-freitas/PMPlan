@@ -3,4 +3,5 @@ export * from './PMEventForm';
 export * from './SourceChangeModal';
 export * from './ConflictModal';
 export * from './HospitalContactsModal';
+export * from './ModalityManagerModal';
 export * from './AutoSchedulerModal';

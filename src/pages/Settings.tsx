@@ -35,6 +35,9 @@ export function Settings() {
         description: null,
         color: form.color,
         parent_zone_id: form.parentZoneId || null,
+        // Zona nova nasce sem TL próprio: se for filha, herda o da zona-mãe (que é o caso
+        // normal); se for de topo, define-se em "Editar" depois de criada.
+        team_leader_engineer_id: null,
         active: true,
       });
       setForm(EMPTY_FORM);

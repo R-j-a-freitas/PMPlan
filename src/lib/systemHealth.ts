@@ -1,0 +1,105 @@
+import type {
+  HealthLevel,
+  HeartbeatSource,
+  HeartbeatSourceStatus,
+  SystemHeartbeat,
+} from '../types';
+
+/** Limiares do semáforo, em horas (secção da Fase 5 do plano de continuidade).
+ *  36h dá margem para uma execução diária falhar uma vez sem alarmar; 72h significa que
+ *  três oportunidades seguidas se perderam e a janela de 7 dias do free tier já vai a
+ *  meio. */
+export const WARNING_AFTER_HOURS = 36;
+export const CRITICAL_AFTER_HOURS = 72;
+
+/** Origens que se espera ver a funcionar. 'manual' não está aqui: é uma execução à mão,
+ *  não um mecanismo automático, e a sua ausência não é sinal de problema nenhum. */
+export const EXPECTED_SOURCES: HeartbeatSource[] = ['vps', 'github_actions'];
+
+export const SOURCE_LABELS: Record<HeartbeatSource, string> = {
+  vps: 'VPS (systemd)',
+  github_actions: 'GitHub Actions',
+  manual: 'Manual',
+};
+
+export function levelForAge(ageHours: number | null): HealthLevel {
+  if (ageHours === null) return 'unknown';
+  if (ageHours > CRITICAL_AFTER_HOURS) return 'critical';
+  if (ageHours > WARNING_AFTER_HOURS) return 'warning';
+  return 'ok';
+}
+
+export function hoursSince(iso: string, now: Date = new Date()): number {
+  return (now.getTime() - new Date(iso).getTime()) / 3_600_000;
+}
+
+/** Reduz a lista de heartbeats ao último de cada origem esperada, mais as origens
+ *  inesperadas que existam (ex.: 'manual', se alguém correu o script à mão).
+ *  Fazer isto no cliente e não por RPC é deliberado: a retenção é de 90 registos, e ler
+ *  90 linhas é mais barato do que manter uma função SQL a mais para as agregar. */
+export function summariseHeartbeats(
+  heartbeats: SystemHeartbeat[],
+  now: Date = new Date(),
+): HeartbeatSourceStatus[] {
+  const latest = new Map<HeartbeatSource, string>();
+  for (const beat of heartbeats) {
+    const current = latest.get(beat.source);
+    if (!current || beat.pinged_at > current) latest.set(beat.source, beat.pinged_at);
+  }
+
+  // As esperadas aparecem sempre, mesmo sem nunca terem pingado — é assim que o ecrã
+  // mostra "por instalar" em vez de simplesmente omitir a linha e dar a ideia de que
+  // está tudo coberto.
+  const sources: HeartbeatSource[] = [...EXPECTED_SOURCES];
+  for (const source of latest.keys()) {
+    if (!sources.includes(source)) sources.push(source);
+  }
+
+  return sources.map((source) => {
+    const lastPing = latest.get(source) ?? null;
+    const ageHours = lastPing === null ? null : hoursSince(lastPing, now);
+    return { source, lastPing, ageHours, level: levelForAge(ageHours) };
+  });
+}
+
+/** O estado global é o da MELHOR origem, não o da pior: enquanto uma escrever, o projecto
+ *  não é pausado. As origens paradas continuam sinalizadas linha a linha — perder a
+ *  redundância é um aviso, não uma emergência. */
+export function overallHeartbeatLevel(statuses: HeartbeatSourceStatus[]): HealthLevel {
+  const ages = statuses.map((s) => s.ageHours).filter((a): a is number => a !== null);
+  if (ages.length === 0) return 'unknown';
+  return levelForAge(Math.min(...ages));
+}
+
+export function formatAge(ageHours: number | null): string {
+  if (ageHours === null) return '—';
+  if (ageHours < 1) return `${Math.round(ageHours * 60)} min`;
+  if (ageHours < 48) return `${ageHours.toFixed(1)} h`;
+  return `${Math.floor(ageHours / 24)} dias`;
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
+}
+
+export const LEVEL_COLORS: Record<HealthLevel, string> = {
+  ok: '#16A34A',
+  warning: '#D97706',
+  critical: '#DC2626',
+  unknown: '#6B7280',
+};
+
+export const LEVEL_LABELS: Record<HealthLevel, string> = {
+  ok: 'OK',
+  warning: 'Aviso',
+  critical: 'Crítico',
+  unknown: 'Sem dados',
+};

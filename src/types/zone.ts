@@ -13,6 +13,11 @@ export type Zone = {
   color: string;
   /** Zona-mãe (ex: "Northwest" agrupando "Galiza", "Canárias"...) — null = zona de topo. */
   parent_zone_id: string | null;
+  /** Team Leader responsável pela zona (FK para engineers — o email vem sempre de lá, para
+   *  nunca dessincronizar). Herdado pelas zonas-filhas que não tenham TL próprio: só é
+   *  preciso defini-lo na zona-mãe (ver resolveZoneTeamLeaderId em lib/zoneTree). Entra
+   *  sempre em CC nos emails enviados a clientes desta zona. */
+  team_leader_engineer_id: string | null;
   active: boolean;
   created_at: string;
 };

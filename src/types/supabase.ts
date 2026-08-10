@@ -11,6 +11,9 @@ import type {
   ConflictLog,
   ConflictLogInsert,
   EmailLogEntry,
+  EmailRecipient,
+  EmailRecipientInsert,
+  EmailRecipientUpdate,
   EmailTemplate,
   Engineer,
   EngineerInsert,
@@ -29,12 +32,19 @@ import type {
   HospitalInsert,
   HospitalUpdate,
   HospitalWithZone,
+  Modality,
+  ModalityInsert,
+  ModalityUpdate,
   PMEvent,
   PMEventInsert,
   PMEventUpdate,
+  SignedDocument,
+  SignedDocumentUpdate,
   SourceChange,
   SourceChangeInsert,
   SourceChangeUpdate,
+  SystemBackup,
+  SystemHeartbeat,
   UserProfile,
   Zone,
   ZoneInsert,
@@ -67,6 +77,12 @@ export type Database = {
         Row: Equipment;
         Insert: EquipmentInsert;
         Update: EquipmentUpdate;
+        Relationships: [];
+      };
+      modalities: {
+        Row: Modality;
+        Insert: Partial<ModalityInsert> & Pick<ModalityInsert, 'name'>;
+        Update: ModalityUpdate;
         Relationships: [];
       };
       pm_events: {
@@ -105,6 +121,22 @@ export type Database = {
         Update: Partial<Omit<UserProfile, 'id' | 'created_at'>>;
         Relationships: [];
       };
+      // Continuidade da BD (migrações 0010 e 0013). A aplicação SÓ LÊ destas duas: quem
+      // escreve é a VPS e o GitHub Actions, com credenciais próprias. Os tipos de Insert
+      // e Update são `never` para que uma tentativa de escrita a partir do frontend seja
+      // um erro de compilação, e não um 403 descoberto em produção.
+      system_heartbeat: {
+        Row: SystemHeartbeat;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      system_backups: {
+        Row: SystemBackup;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       client_proposals: {
         Row: ClientProposal;
         Insert: Partial<ClientProposalInsert> & Pick<ClientProposalInsert, 'hospital_id' | 'year'>;
@@ -129,6 +161,28 @@ export type Database = {
         Update: Partial<Omit<EmailLogEntry, 'id'>>;
         Relationships: [];
       };
+      email_recipients: {
+        Row: EmailRecipient;
+        Insert: Partial<EmailRecipientInsert> & Pick<EmailRecipientInsert, 'email'>;
+        Update: EmailRecipientUpdate;
+        Relationships: [];
+      };
+      // Insert nunca é usado pelo frontend: as linhas são criadas pela Edge Function
+      // inbound-signed-document com a service_role (não há policy de insert — migração 0015).
+      signed_documents: {
+        Row: SignedDocument;
+        Insert: never;
+        Update: SignedDocumentUpdate;
+        Relationships: [];
+      };
+      // Definições globais em chave/valor (migração 0016). `value` é jsonb — o store
+      // trata-o como unknown e cada chave é lida com o tipo que lhe corresponde.
+      app_settings: {
+        Row: { key: string; value: unknown; description: string | null; updated_at: string; updated_by: string | null };
+        Insert: { key: string; value: unknown; description?: string | null };
+        Update: { value?: unknown; updated_at?: string; updated_by?: string | null };
+        Relationships: [];
+      };
     };
     Views: {
       hospitals_with_zone: { Row: HospitalWithZone; Relationships: [] };
@@ -138,6 +192,12 @@ export type Database = {
       // Actualiza engineers.primary_zone_id + engineer_zones na mesma transacção (secção 4, regra 2).
       set_engineer_zones: {
         Args: { p_engineer_id: string; p_zone_ids: string[]; p_primary_zone_id: string | null };
+        Returns: undefined;
+      };
+      // Renomeia uma modalidade e propaga o novo nome a equipment.modality na mesma
+      // transacção (migração 0008).
+      rename_modality: {
+        Args: { p_old_name: string; p_new_name: string };
         Returns: undefined;
       };
     };

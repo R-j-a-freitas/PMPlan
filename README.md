@@ -5,6 +5,65 @@ React + TypeScript + Vite, com Supabase como base de dados.
 
 ---
 
+## Correr e fazer deploy
+
+Um único script por sistema. Sem opções, sem passos manuais: corre-se e no fim a
+aplicação está a servir.
+
+| Linux / macOS | Windows |
+|---|---|
+| `./deploy.sh` | `.\deploy.ps1` |
+
+Cada execução faz, por esta ordem:
+
+1. **Actualiza** a partir do GitHub (`git pull --ff-only`);
+2. **Instala** dependências, se faltarem ou estiverem incompletas;
+3. **Build** de produção (`npm run build`);
+4. **Arranca** o servidor e imprime o endereço.
+
+Para mudar de porta (8080 por omissão): `PORT=9000 ./deploy.sh` ou
+`.\deploy.ps1 -Port 9000`.
+
+O passo 1 é *best-effort*: sem rede, sem remote, ou com alterações locais por commitar, o
+script avisa e segue com o código que está em disco. Actualizar é uma conveniência, não
+deve ser aquilo que impede a aplicação de arrancar. Os passos 2–4 são o contrário: qualquer
+falha aborta, para nunca servir em cima de um build falhado.
+
+O script limpa a instância anterior que tenha ficado a segurar a porta. Se quem lá estiver
+não for o PMPlan, pára e diz qual é o processo em vez de matar software alheio. O momento
+em que o faz difere por sistema, e não é arbitrário: em **Windows** tem de ser antes do
+build, porque o `serve` mantém abertos os ficheiros de `dist/` e o Vite começa por esvaziar
+essa pasta — com o servidor antigo vivo o build falha com `EPERM`. Em **Linux** apagar
+ficheiros abertos não incomoda ninguém, por isso a paragem fica para o fim e o site
+continua a servir a versão antiga enquanto o build corre.
+
+Requisitos: Node.js e um `.env` preenchido. Se não existir `.env`, o script cria-o a partir
+do `.env.example` e pára a pedir as chaves — arrancar com valores de exemplo daria uma
+aplicação que abre mas não autentica.
+
+**Onde fica o processo:** em Linux, se o `pm2` estiver instalado (o caso da VPS) o servidor
+fica sob a gestão dele e sobrevive ao logout; caso contrário fica em primeiro plano, com
+`Ctrl+C` a parar. Em Windows fica sempre em primeiro plano — para produção a sério, registar
+como serviço (NSSM ou equivalente) em vez de depender do script.
+
+**Desenvolvimento** (Vite com hot reload) continua a ser `npm run dev` — o `deploy` serve
+sempre o build de produção.
+
+Se o PowerShell recusar correr o `.ps1` (política de execução):
+`powershell -ExecutionPolicy Bypass -File .\deploy.ps1`
+
+---
+
+## Emails
+
+Propostas, cartas de assinatura e o arquivo dos documentos assinados devolvidos pelos
+clientes passam todos pela Resend (domínio `stockmate.pt`).
+
+- Quem recebe o quê, configuração da Resend e do DNS: **[DOCS/EMAILS_E_RESEND.md](DOCS/EMAILS_E_RESEND.md)**
+- Arquivo dos documentos assinados: **[DOCS/DOCUMENTOS_ASSINADOS.md](DOCS/DOCUMENTOS_ASSINADOS.md)**
+
+---
+
 ## Continuidade da base de dados
 
 O projecto Supabase está em **free tier**, que é pausado ao fim de **7 dias sem

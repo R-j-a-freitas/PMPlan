@@ -36,10 +36,17 @@ function jsonResponse(body: unknown, status = 200): Response {
 const EmailInputSchema = z.object({
   to: z.array(z.string().email()).min(1),
   cc: z.array(z.string().email()).optional(),
+  // Sobrepõe-se ao EMAIL_REPLY_TO_DEFAULT — a carta de assinatura usa-o para que a
+  // resposta do cliente (com o PDF assinado) chegue também à caixa de documentos.
+  replyTo: z.array(z.string().email()).min(1).optional(),
   subject: z.string().min(1).max(200),
   html: z.string().min(1),
-  // Conteúdo em base64 (ex: PDF/ICS gerados no frontend).
-  attachments: z.array(z.object({ filename: z.string(), content: z.string() })).optional(),
+  // Conteúdo em base64 (ex: PDF/ICS gerados no frontend). contentType opcional — mapeado
+  // para o content_type da Resend (o .ics precisa de "text/calendar; charset=utf-8", senão
+  // o Outlook trata-o como US-ASCII e remove os acentos).
+  attachments: z
+    .array(z.object({ filename: z.string(), content: z.string(), contentType: z.string().optional() }))
+    .optional(),
 });
 
 function ensureHtmlDocument(html: string): string {
@@ -82,8 +89,17 @@ async function sendEmailViaResend(input: z.infer<typeof EmailInputSchema>): Prom
     html: ensureHtmlDocument(input.html),
   };
   if (input.cc?.length) body.cc = input.cc;
-  if (DEFAULT_REPLY_TO) body.reply_to = [DEFAULT_REPLY_TO];
-  if (input.attachments?.length) body.attachments = input.attachments;
+  if (input.replyTo?.length) body.reply_to = input.replyTo;
+  else if (DEFAULT_REPLY_TO) body.reply_to = [DEFAULT_REPLY_TO];
+  // A Resend usa content_type (snake_case); só se envia quando explícito, senão deixa-se a
+  // Resend inferir pela extensão do ficheiro (ex.: o PDF).
+  if (input.attachments?.length) {
+    body.attachments = input.attachments.map((attachment) => ({
+      filename: attachment.filename,
+      content: attachment.content,
+      ...(attachment.contentType ? { content_type: attachment.contentType } : {}),
+    }));
+  }
 
   const retries = [500, 1000, 2000];
   let lastError: SendResult = { success: false, error: 'Unknown error' };

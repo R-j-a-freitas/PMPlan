@@ -4,8 +4,10 @@ import { buildEngineerExportRows, parseEngineerImportRows } from '../lib/importe
 import type { EngineerImportRow } from '../lib/importers/engineerImportExport';
 import { exportRowsToSpreadsheet, readSpreadsheetFile } from '../lib/spreadsheet';
 import type { ParsedImportRow } from '../lib/spreadsheet';
+import { supabase } from '../lib/supabase';
+import { edgeFunctionErrorMessage } from '../lib/edgeError';
 import { useAuthStore, useEngineerStore, useUiStore, useZoneStore } from '../stores';
-import type { EngineerWithZones } from '../types';
+import type { EngineerWithZones, UserProfile } from '../types';
 import { ZoneMultiSelect } from '../components/engineers';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
 import { Badge, Button, ImportExportButtons } from '../components/ui';
@@ -25,6 +27,27 @@ function splitSkills(value: string): string[] {
     .split(',')
     .map((skill) => skill.trim())
     .filter((skill) => skill.length > 0);
+}
+
+// Traduz o erro de eliminação numa mensagem accionável. Um engenheiro não pode ser
+// apagado enquanto for referenciado por outros registos (FK sem cascata): equipamentos,
+// PMs ou uma conta de login associada.
+function describeDeleteEngineerError(err: unknown): string {
+  const e = err as { code?: string; message?: string; details?: string };
+  const text = `${e.message ?? ''} ${e.details ?? ''}`;
+  if (e.code === '23503' || /foreign key|violates/i.test(text)) {
+    if (/user_profiles/.test(text)) {
+      return 'Este engenheiro tem uma conta de login associada. Em "Editar", clique em "Remover acesso" antes de o eliminar.';
+    }
+    if (/pm_events/.test(text)) {
+      return 'Este engenheiro tem PMs (manutenções) associadas. Reatribua ou remova essas PMs antes de o eliminar.';
+    }
+    if (/equipment/.test(text)) {
+      return 'Este engenheiro está atribuído a equipamentos (principal/secundário). Reatribua esses equipamentos antes de o eliminar.';
+    }
+    return 'Não é possível eliminar: existem registos associados a este engenheiro.';
+  }
+  return e.message ?? 'Falha ao eliminar o engenheiro.';
 }
 
 // CRUD engenheiros (secção 3). Um engenheiro pode cobrir várias zonas em simultâneo
@@ -49,11 +72,78 @@ export function Engineers() {
   const [editForm, setEditForm] = useState(EMPTY_FORM);
   const [importRows, setImportRows] = useState<ParsedImportRow<EngineerImportRow>[] | null>(null);
   const [importing, setImporting] = useState(false);
+  // Contas de login existentes (user_profiles) — para saber que engenheiros já têm acesso.
+  const [accounts, setAccounts] = useState<UserProfile[]>([]);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchEngineers();
     fetchZones();
   }, [fetchEngineers, fetchZones]);
+
+  // Só admin (canManageEngineers) consegue ler os perfis de outros (RLS) e criar contas.
+  useEffect(() => {
+    if (canManageEngineers) fetchAccounts();
+  }, [canManageEngineers]);
+
+  async function fetchAccounts() {
+    const { data, error } = await supabase.from('user_profiles').select('*');
+    if (!error && data) setAccounts(data);
+  }
+
+  // Cria a conta de login do engenheiro (role 'engineer', ligada por engineer_id) via a
+  // Edge Function admin-create-user — a criação exige a service_role key, que nunca pode
+  // estar no browser. A partir daí o engenheiro define a palavra-passe em "Esqueci-me da
+  // palavra-passe" (envio via Resend), sem precisar da temporária.
+  async function handleActivateLogin(engineer: EngineerWithZones) {
+    setActivatingId(engineer.id);
+    try {
+      const { data, error } = await supabase.functions.invoke<{ existed?: boolean }>('admin-create-user', {
+        body: { email: engineer.email, name: engineer.name, role: 'engineer', engineerId: engineer.id },
+      });
+      if (error) throw error;
+      pushToast({
+        variant: 'success',
+        message: `${data?.existed ? 'Conta de login associada a' : 'Conta de login criada para'} ${engineer.email}. O engenheiro pode agora definir a palavra-passe em "Esqueci-me da palavra-passe".`,
+      });
+      await fetchAccounts();
+    } catch (err) {
+      pushToast({
+        variant: 'error',
+        message: await edgeFunctionErrorMessage(
+          err,
+          'Falha ao criar a conta de login (a Edge Function admin-create-user está deployed?).',
+        ),
+      });
+    } finally {
+      setActivatingId(null);
+    }
+  }
+
+  // Remove a conta de login do engenheiro (apaga o utilizador de auth via Edge Function
+  // admin-delete-user; o perfil desaparece em cascata). Pode recriar-se depois com
+  // "Criar acesso". Acção destrutiva — pede confirmação.
+  async function handleRemoveLogin(engineer: EngineerWithZones, userId: string) {
+    const confirmed = window.confirm(
+      `Remover o acesso de login de ${engineer.name}? A conta será eliminada; poderá recriá-la depois com "Criar acesso".`,
+    );
+    if (!confirmed) return;
+    setRemovingId(engineer.id);
+    try {
+      const { error } = await supabase.functions.invoke('admin-delete-user', { body: { userId } });
+      if (error) throw error;
+      pushToast({ variant: 'success', message: `Acesso de login removido para ${engineer.email}.` });
+      await fetchAccounts();
+    } catch (err) {
+      pushToast({
+        variant: 'error',
+        message: await edgeFunctionErrorMessage(err, 'Falha ao remover o acesso de login.'),
+      });
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   async function handleCreate() {
     if (!form.name || !form.email) return;
@@ -123,6 +213,17 @@ export function Engineers() {
       zoneIds: engineer.zones.map((zone) => zone.zone_id),
       primaryZoneId: engineer.primary_zone_id ?? '',
     });
+  }
+
+  async function handleDeleteEngineer(engineer: EngineerWithZones) {
+    const confirmed = window.confirm(`Eliminar o engenheiro ${engineer.name}? Esta acção não pode ser desfeita.`);
+    if (!confirmed) return;
+    try {
+      await deleteEngineer(engineer.id);
+      pushToast({ variant: 'success', message: `Engenheiro ${engineer.name} eliminado.` });
+    } catch (err) {
+      pushToast({ variant: 'error', message: describeDeleteEngineerError(err) });
+    }
   }
 
   async function handleSaveEdit(engineer: EngineerWithZones) {
@@ -217,12 +318,17 @@ export function Engineers() {
               <th className="py-1.5 pr-2">Zonas</th>
               <th className="py-1.5 pr-2">Skills</th>
               <th className="py-1.5 pr-2">Activo</th>
+              {canManageEngineers && <th className="py-1.5 pr-2">Login</th>}
               <th className="py-1.5 pr-2" />
             </tr>
           </thead>
           <tbody>
             {engineers.map((engineer) => {
               const editing = editingId === engineer.id;
+              // "Activa" = conta de login já ligada a este engenheiro. Uma conta órfã
+              // (email igual mas sem engineer_id) não conta como activa — o botão fica
+              // disponível e a Edge Function idempotente completa a ligação ao clicar.
+              const account = accounts.find((a) => a.engineer_id === engineer.id);
               return (
                 <tr key={engineer.id} className="border-b border-gray-100">
                   {editing ? (
@@ -272,6 +378,21 @@ export function Engineers() {
                           onChange={(event) => setEditForm({ ...editForm, active: event.target.checked })}
                         />
                       </td>
+                      {canManageEngineers && (
+                        <td className="py-1.5 pr-2 align-top">
+                          {account ? (
+                            <Button
+                              variant="danger"
+                              onClick={() => handleRemoveLogin(engineer, account.id)}
+                              disabled={removingId === engineer.id}
+                            >
+                              {removingId === engineer.id ? 'A remover…' : 'Remover acesso'}
+                            </Button>
+                          ) : (
+                            <span className="text-gray-300">Sem acesso</span>
+                          )}
+                        </td>
+                      )}
                       <td className="py-1.5 pr-2 text-right align-top">
                         <div className="flex justify-end gap-2">
                           <Button variant="secondary" onClick={() => setEditingId(null)} disabled={saving}>
@@ -304,13 +425,35 @@ export function Engineers() {
                       </td>
                       <td className="py-1.5 pr-2">{engineer.skills.length > 0 ? engineer.skills.join(', ') : '—'}</td>
                       <td className="py-1.5 pr-2">{engineer.active ? 'Sim' : 'Não'}</td>
+                      {canManageEngineers && (
+                        <td className="py-1.5 pr-2">
+                          <label
+                            className="flex items-center gap-1.5 text-sm text-gray-600"
+                            title={account ? 'Conta de login activa' : 'Criar conta de login para este engenheiro'}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!account}
+                              disabled={!!account || activatingId === engineer.id}
+                              onChange={() => handleActivateLogin(engineer)}
+                            />
+                            {account
+                              ? account.must_change_password
+                                ? 'Activa · 1º login pendente'
+                                : 'Activa'
+                              : activatingId === engineer.id
+                                ? 'A criar…'
+                                : 'Criar acesso'}
+                          </label>
+                        </td>
+                      )}
                       <td className="py-1.5 pr-2 text-right">
                         {canManageEngineers && (
                           <div className="flex justify-end gap-2">
                             <Button variant="secondary" onClick={() => startEdit(engineer)}>
                               Editar
                             </Button>
-                            <Button variant="danger" onClick={() => deleteEngineer(engineer.id)}>
+                            <Button variant="danger" onClick={() => handleDeleteEngineer(engineer)}>
                               Eliminar
                             </Button>
                           </div>

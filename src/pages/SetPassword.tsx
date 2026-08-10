@@ -44,7 +44,12 @@ export function SetPassword() {
         if (profileError) throw profileError;
       }
 
-      navigate('/', { replace: true });
+      // Termina a sessão e volta ao login. O perfil em memória (store) ainda tem
+      // must_change_password=true — se navegássemos para "/" com a sessão activa, o
+      // RequireAuth reenviava logo para cá (o loop reportado). Ao reautenticar, a store
+      // recarrega o perfil já a false e o utilizador entra directamente.
+      await supabase.auth.signOut();
+      navigate('/login', { replace: true, state: { passwordChanged: true } });
     } catch (err) {
       setError(
         err instanceof Error

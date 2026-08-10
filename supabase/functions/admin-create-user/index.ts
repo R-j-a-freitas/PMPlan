@@ -3,13 +3,17 @@
 // role/engineer_id. Só pode correr aqui (precisa de SUPABASE_SERVICE_ROLE_KEY, que
 // nunca pode estar no bundle do frontend — ver lib/supabase.ts e a discussão de
 // segurança sobre a service_role key). Chamada via supabase.functions.invoke() a
-// partir de pages/Users.tsx, restrita a quem já é 'admin' (verificado abaixo).
+// partir de pages/Users.tsx e pages/Engineers.tsx ("Criar acesso"), restrita a quem já
+// é 'admin' (verificado abaixo).
+//
+// Idempotente: se já existir uma conta com o email (ex: re-tentativa após uma falha
+// parcial), reutiliza-a e apenas corrige o perfil, em vez de rebentar com "já registado".
 //
 // Deploy: supabase functions deploy admin-create-user
 // (SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já existem como secrets por defeito
 // em qualquer projecto Supabase — não é preciso configurar nada extra.)
 
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient, type User } from 'jsr:@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -34,6 +38,19 @@ function generateTempPassword(): string {
   return btoa(String.fromCharCode(...bytes))
     .replace(/[^a-zA-Z0-9]/g, '')
     .slice(0, 16);
+}
+
+async function findUserByEmail(admin: SupabaseClient, email: string): Promise<User | null> {
+  const target = email.toLowerCase();
+  const perPage = 200;
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const found = data.users.find((u) => (u.email ?? '').toLowerCase() === target);
+    if (found) return found;
+    if (data.users.length < perPage) break;
+  }
+  return null;
 }
 
 interface CreateUserBody {
@@ -99,25 +116,56 @@ Deno.serve(async (req) => {
     user_metadata: { name: body.name ?? null },
   });
 
-  if (createError || !created.user) {
-    return jsonResponse({ error: createError?.message ?? 'Falha ao criar utilizador.' }, 400);
+  // Idempotência: se a criação falhar por a conta já existir, reutiliza-a. Só devolvemos
+  // erro se realmente não houver conta com este email.
+  let userId: string;
+  let createdNow = false;
+  if (createError || !created?.user) {
+    const existing = await findUserByEmail(adminClient, body.email);
+    if (!existing) {
+      return jsonResponse({ error: createError?.message ?? 'Falha ao criar utilizador.' }, 400);
+    }
+    userId = existing.id;
+  } else {
+    userId = created.user.id;
+    createdNow = true;
   }
 
   // O trigger handle_new_user já criou a linha em user_profiles (role 'readonly' por
-  // omissão) — actualiza-a com o role pedido e força a troca de password.
-  const { error: profileError } = await adminClient
-    .from('user_profiles')
-    .update({
-      name: body.name ?? null,
-      role: body.role,
-      engineer_id: body.engineerId ?? null,
-      must_change_password: true,
-    })
-    .eq('id', created.user.id);
+  // omissão). Actualiza-a com o role/engineer_id pedidos.
+  const profileUpdate: Record<string, unknown> = {
+    name: body.name ?? null,
+    engineer_id: body.engineerId ?? null,
+  };
+
+  if (createdNow) {
+    // Conta nova: aplica o role pedido e força a troca da password temporária.
+    profileUpdate.role = body.role;
+    profileUpdate.must_change_password = true;
+  } else {
+    // Conta já existente: não despromover uma conta já configurada (admin/planner) só
+    // por partilhar email — aplica o role pedido apenas se ainda estiver por configurar
+    // ('readonly', o default). Não mexe na password nem no must_change_password: se
+    // precisar de entrar, usa "Esqueci-me da palavra-passe".
+    const { data: existingProfile } = await adminClient
+      .from('user_profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+    if ((existingProfile?.role ?? 'readonly') === 'readonly') {
+      profileUpdate.role = body.role;
+    }
+  }
+
+  const { error: profileError } = await adminClient.from('user_profiles').update(profileUpdate).eq('id', userId);
 
   if (profileError) {
     return jsonResponse({ error: profileError.message }, 400);
   }
 
-  return jsonResponse({ email: body.email, tempPassword });
+  return jsonResponse({
+    email: body.email,
+    tempPassword: createdNow ? tempPassword : null,
+    existed: !createdNow,
+  });
 });

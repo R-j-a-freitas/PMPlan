@@ -28,8 +28,6 @@ export function Dashboard() {
   // Feriados do ano de planeamento activo (Topbar), não do ano civil corrente —
   // planear 2027 em 2026 precisa dos feriados de 2027, não dos de 2026.
   const planningYear = useCalendarStore((state) => state.planningYear);
-  const yearEvents = useCalendarStore((state) => state.yearEvents);
-  const yearEventsLoading = useCalendarStore((state) => state.yearEventsLoading);
   const fetchYearEvents = useCalendarStore((state) => state.fetchYearEvents);
   useHolidays(planningYear);
 
@@ -40,20 +38,19 @@ export function Dashboard() {
     fetchEngineers();
   }, [fetchZones, fetchHospitals, fetchEquipment, fetchEngineers]);
 
-  // Carregar os eventos do ano de planeamento sempre que ele mudar — necessário para
-  // saber se o ano já tem PMs criadas (condição de visibilidade do botão de geração).
-  // ÚNICO dono deste fetch: o LoadMap (na Sidebar, montada por esta página) consome
-  // os yearEvents do store sem voltar a pedi-los.
+  // Carregar os eventos do ano de planeamento sempre que ele mudar — usado só pelo
+  // LoadMap (na Sidebar, montada por esta página) para as métricas de carga; não
+  // condiciona a visibilidade do botão de geração (cada zona/team leader gera
+  // independentemente, mesmo que outras zonas já tenham PMs criadas nesse ano).
   useEffect(() => {
     fetchYearEvents(planningYear);
   }, [planningYear, fetchYearEvents]);
 
   const currentYear = new Date().getFullYear();
-  const yearHasActivePMs = yearEvents.some((e) => e.status !== 'cancelled');
-  // Botão visível para o ano corrente ou futuros sem PMs activas: planear 2027 em 2026,
-  // ou gerar o próprio 2026 se ainda não tiver qualquer PM planeada ou aprovada.
-  const showGenerateButton =
-    canCreatePM && planningYear >= currentYear && !yearHasActivePMs && !yearEventsLoading;
+  // Botão visível para o ano corrente ou futuros: planear 2027 em 2026, ou gerar o
+  // próprio 2026. Fica sempre disponível independentemente de já existirem PMs nesse
+  // ano — o AutoSchedulerModal é que decide, por equipamento, o que pode (re)gerar.
+  const showGenerateButton = canCreatePM && planningYear >= currentYear;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">

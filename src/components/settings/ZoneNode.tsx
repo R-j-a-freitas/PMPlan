@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { useHospitalStore, useUiStore, useZoneStore } from '../../stores';
+import { useEffect, useState } from 'react';
+import { useEngineerStore, useHospitalStore, useUiStore, useZoneStore } from '../../stores';
+import { resolveZoneTeamLeaderId } from '../../lib/zoneTree';
 import type { Zone } from '../../types';
 import { Badge, Button } from '../ui';
 import { ZoneEngineers } from './ZoneEngineers';
@@ -12,7 +13,13 @@ interface ZoneNodeProps {
 }
 
 function buildForm(zone: Zone) {
-  return { name: zone.name, code: zone.code, color: zone.color, parentZoneId: zone.parent_zone_id ?? '' };
+  return {
+    name: zone.name,
+    code: zone.code,
+    color: zone.color,
+    parentZoneId: zone.parent_zone_id ?? '',
+    teamLeaderId: zone.team_leader_engineer_id ?? '',
+  };
 }
 
 // Todos os descendentes de uma zona — usado para nunca a deixar escolher um dos seus
@@ -39,6 +46,8 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
   const updateZone = useZoneStore((state) => state.updateZone);
   const deleteZone = useZoneStore((state) => state.deleteZone);
   const hospitals = useHospitalStore((state) => state.hospitals);
+  const engineers = useEngineerStore((state) => state.engineers);
+  const fetchEngineers = useEngineerStore((state) => state.fetchEngineers);
   const pushToast = useUiStore((state) => state.pushToast);
 
   const [editing, setEditing] = useState(false);
@@ -46,12 +55,25 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(() => buildForm(zone));
 
+  // A página de Zonas não carregava engenheiros — passa a precisar deles para o selector
+  // de Team Leader.
+  useEffect(() => {
+    if (engineers.length === 0) fetchEngineers();
+  }, [engineers.length, fetchEngineers]);
+
   const children = allZones.filter((candidate) => candidate.parent_zone_id === zone.id);
   const zoneHospitals = hospitals.filter((hospital) => hospital.zone_id === zone.id);
   const descendantIds = getDescendantIds(zone.id, allZones);
   const parentOptions = allZones.filter(
     (candidate) => candidate.id !== zone.id && !descendantIds.has(candidate.id),
   );
+
+  // TL próprio vs. herdado da zona-mãe — a distinção importa na UI: uma zona-filha sem TL
+  // próprio não está "sem responsável", está a usar o da mãe, e mostrar isso evita que
+  // alguém o volte a definir zona a zona.
+  const ownTeamLeader = engineers.find((engineer) => engineer.id === zone.team_leader_engineer_id) ?? null;
+  const inheritedTeamLeaderId = zone.team_leader_engineer_id ? null : resolveZoneTeamLeaderId(zone.parent_zone_id, allZones);
+  const inheritedTeamLeader = engineers.find((engineer) => engineer.id === inheritedTeamLeaderId) ?? null;
 
   function startEdit() {
     setForm(buildForm(zone));
@@ -67,6 +89,7 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
         code: form.code,
         color: form.color,
         parent_zone_id: form.parentZoneId || null,
+        team_leader_engineer_id: form.teamLeaderId || null,
       });
       setEditing(false);
     } catch (err) {
@@ -117,12 +140,43 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
                 </option>
               ))}
             </select>
+            {/* Team Leader: entra sempre em CC nos emails aos clientes desta zona. Vazio
+                numa zona-filha não é "sem TL" — herda o da zona-mãe (ver placeholder). */}
+            <select
+              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              title="Team Leader — entra em CC nos emails aos clientes desta zona"
+              value={form.teamLeaderId}
+              onChange={(event) => setForm({ ...form, teamLeaderId: event.target.value })}
+            >
+              <option value="">
+                {inheritedTeamLeader ? `TL herdado: ${inheritedTeamLeader.name}` : '(sem Team Leader)'}
+              </option>
+              {engineers.map((engineer) => (
+                <option key={engineer.id} value={engineer.id}>
+                  {engineer.name}
+                </option>
+              ))}
+            </select>
           </>
         ) : (
           <>
             <Badge color={zone.color}>{zone.code}</Badge>
             <span className="text-sm font-medium">{zone.name}</span>
             <span className="text-xs text-gray-400">{zoneHospitals.length} hospital(is)</span>
+            {/* O TL é a informação que decide o CC dos emails ao cliente — fica visível
+                sem ter de abrir a edição, e um vazio a sério (nem próprio nem herdado)
+                aparece a vermelho porque significa envios sem TL em cópia. */}
+            {ownTeamLeader && (
+              <span className="text-xs text-gray-500">
+                TL: <span className="font-medium text-gray-700">{ownTeamLeader.name}</span>
+              </span>
+            )}
+            {!ownTeamLeader && inheritedTeamLeader && (
+              <span className="text-xs text-gray-400">TL (herdado): {inheritedTeamLeader.name}</span>
+            )}
+            {!ownTeamLeader && !inheritedTeamLeader && (
+              <span className="text-xs font-medium text-red-600">Sem Team Leader</span>
+            )}
           </>
         )}
         <div className="ml-auto flex gap-2">

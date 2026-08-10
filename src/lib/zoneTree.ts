@@ -28,6 +28,30 @@ export function expandZoneSelection(zoneIds: string[], zones: Zone[]): Set<strin
   return result;
 }
 
+/** Team Leader efectivo de uma zona: o seu próprio, ou — se não tiver — o da zona-mãe mais
+ *  próxima que tenha um. É por isso que basta definir o TL nas zonas de topo ("North & West",
+ *  "South & Eastern Spain") para todos os hospitais das zonas-filhas (Galiza, Lisboa, Norte,
+ *  Madrid, ...) ficarem cobertos, sem repetir a configuração zona a zona. Definir um TL numa
+ *  zona-filha sobrepõe-se ao da mãe, para o caso de uma zona vir a ter responsável próprio.
+ *
+ *  Devolve o id do engenheiro TL, ou null se nem a zona nem nenhuma ascendente tiver um. */
+export function resolveZoneTeamLeaderId(zoneId: string | null, zones: Zone[]): string | null {
+  // `visited` protege de um ciclo pai↔filho: o Postgres já o impede (trigger
+  // prevent_zone_cycle), mas os dados aqui vêm do estado do cliente e um ciclo tornaria
+  // isto num loop infinito no meio de um envio de emails.
+  const visited = new Set<string>();
+  let current = zoneId ? zones.find((zone) => zone.id === zoneId) : undefined;
+
+  while (current && !visited.has(current.id)) {
+    if (current.team_leader_engineer_id) return current.team_leader_engineer_id;
+    visited.add(current.id);
+    current = current.parent_zone_id
+      ? zones.find((zone) => zone.id === current!.parent_zone_id)
+      : undefined;
+  }
+  return null;
+}
+
 /** Zonas-folha (sem filhas) — só estas podem receber hospitais directamente; zonas-mãe
  *  (ex: "Northwest") são apenas agrupamentos para atribuição de engenheiros. */
 export function getLeafZones(zones: Zone[]): Zone[] {

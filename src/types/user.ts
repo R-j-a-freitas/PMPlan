@@ -29,4 +29,7 @@ export type Permissions = {
   canApproveSchedule: boolean;
   canSendEmails: boolean;
   canExportReports: boolean;
+  /** Ver o ecrã de saúde da infraestrutura (heartbeats e backups) — exclusivo do admin.
+   *  O ritmo de funcionamento da infraestrutura não é informação de planeamento. */
+  canViewSystemHealth: boolean;
 };

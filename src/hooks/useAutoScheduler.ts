@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { compareSchedules, generateAnnualSchedule } from '../lib/autoScheduler';
 import type { HistoricalPM, ProposedPMEvent, ScheduleComparison } from '../lib/autoScheduler';
+import { buildEquipmentSiteIndex, cityKeyOfEquipment } from '../lib/conflictRules';
 import { useCalendarStore, useEquipmentStore, useHolidayStore } from '../stores';
 
 interface GenerateParams {
@@ -56,10 +57,14 @@ export function useAutoScheduler(): UseAutoSchedulerResult {
           .order('start_date');
         if (historyError) throw historyError;
 
-        // Detecta automaticamente o histórico 'completed' do ano anterior (modo histórico);
-        // se vier vazio, generateAnnualSchedule recai sozinho na distribuição base (modo 1).
+        // Regra 1: ancora à semana já agendada no ano anterior, esteja ou não marcada
+        // 'completed' — o plano de {previousYear} reflecte a semana acordada com o
+        // cliente mesmo que ninguém tenha fechado o estado da PM entretanto. Só as
+        // 'cancelled' ficam de fora (mesma convenção de eventIsActive em conflictRules).
+        // Se vier vazio (equipamento novo, sem PMs em {previousYear}), generateAnnualSchedule
+        // recai sozinho na distribuição base (modo 1).
         const previousYearHistory: HistoricalPM[] = previousEvents
-          .filter((event) => event.status === 'completed')
+          .filter((event) => event.status !== 'cancelled')
           .map((event) => ({
             plannedDate: new Date(event.start_date),
             actualDate: event.actual_start_date ? new Date(event.actual_start_date) : null,
@@ -91,6 +96,9 @@ export function useAutoScheduler(): UseAutoSchedulerResult {
           // Fallback defensivo para ambientes onde a migração weekend_work ainda não
           // correu (a coluna vem undefined) — 'none' é o comportamento mais restritivo.
           weekendWork: targetEquipment.weekend_work ?? 'none',
+          hospitalId: targetEquipment.hospital_id,
+          cityKey: cityKeyOfEquipment(targetEquipment),
+          siteIndex: buildEquipmentSiteIndex(equipment),
         });
 
         setProposals(generated);

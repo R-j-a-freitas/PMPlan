@@ -1,10 +1,11 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo } from 'react';
 import {
   computeEngineerLoadRatio,
   computeZoneLoadRatio,
   ZONE_LOAD_WARNING_THRESHOLD,
 } from '../../lib/conflictRules';
 import { useCalendarStore, useEngineerStore, useEquipmentStore, useZoneStore } from '../../stores';
+import { SidebarSection } from './SidebarSection';
 
 const LOAD_LOW_THRESHOLD = 0.6;
 
@@ -37,34 +38,6 @@ function InfoIcon({ text }: { text: string }) {
   );
 }
 
-interface LoadSectionProps {
-  title: string;
-  infoText: string;
-  collapsed: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}
-
-function LoadSection({ title, infoText, collapsed, onToggle, children }: LoadSectionProps) {
-  return (
-    <div className="border-b border-gray-200 p-2">
-      <div className="mb-1 flex items-center gap-1 px-1">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={collapsed ? `Expandir ${title}` : `Colapsar ${title}`}
-          className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 hover:text-gray-600"
-        >
-          {collapsed ? '▸' : '▾'}
-        </button>
-        <h3 className="text-xs font-semibold uppercase text-gray-500">{title}</h3>
-        <InfoIcon text={infoText} />
-      </div>
-      {!collapsed && <div className="flex flex-col gap-1">{children}</div>}
-    </div>
-  );
-}
-
 // Mapa de carga verde/amarelo/vermelho (secção 10) — calculado no Zustand/selectors, não
 // no FullCalendar (sem Resource View Premium). Cálculo anual sobre o ano de planeamento
 // activo (Topbar) — não mensal. Duas leituras, por zona (zona-mãe agrega as filhas, ver
@@ -80,9 +53,6 @@ export function LoadMap() {
   const zones = useZoneStore((state) => state.zones);
   const equipment = useEquipmentStore((state) => state.equipment);
   const engineers = useEngineerStore((state) => state.engineers);
-
-  const [zoneCollapsed, setZoneCollapsed] = useState(true);
-  const [engineerCollapsed, setEngineerCollapsed] = useState(true);
 
   const zoneLoads = useMemo(
     () =>
@@ -106,35 +76,37 @@ export function LoadMap() {
 
   return (
     <>
-      <LoadSection
+      <SidebarSection
         title={`Carga de zona (${planningYear})`}
-        infoText={ZONE_METRICS_INFO}
-        collapsed={zoneCollapsed}
-        onToggle={() => setZoneCollapsed((value) => !value)}
+        titleAccessory={<InfoIcon text={ZONE_METRICS_INFO} />}
+        defaultCollapsed
       >
-        {zoneLoads.map(({ id, name, ratio }) => (
-          <div key={id} className="flex items-center gap-2 px-1 py-0.5 text-sm">
-            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${loadColorClassName(ratio)}`} />
-            <span className="truncate">{name}</span>
-            <span className="ml-auto text-xs text-gray-500">{Math.round(ratio * 100)}%</span>
-          </div>
-        ))}
-      </LoadSection>
+        <div className="flex flex-col gap-1">
+          {zoneLoads.map(({ id, name, ratio }) => (
+            <div key={id} className="flex items-center gap-2 px-1 py-0.5 text-sm">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${loadColorClassName(ratio)}`} />
+              <span className="truncate">{name}</span>
+              <span className="ml-auto text-xs text-gray-500">{Math.round(ratio * 100)}%</span>
+            </div>
+          ))}
+        </div>
+      </SidebarSection>
 
-      <LoadSection
+      <SidebarSection
         title={`Carga por engenheiro (${planningYear})`}
-        infoText={ENGINEER_METRICS_INFO}
-        collapsed={engineerCollapsed}
-        onToggle={() => setEngineerCollapsed((value) => !value)}
+        titleAccessory={<InfoIcon text={ENGINEER_METRICS_INFO} />}
+        defaultCollapsed
       >
-        {engineerLoads.map(({ id, name, ratio }) => (
-          <div key={id} className="flex items-center gap-2 px-1 py-0.5 text-sm">
-            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${loadColorClassName(ratio)}`} />
-            <span className="truncate">{name}</span>
-            <span className="ml-auto text-xs text-gray-500">{Math.round(ratio * 100)}%</span>
-          </div>
-        ))}
-      </LoadSection>
+        <div className="flex flex-col gap-1">
+          {engineerLoads.map(({ id, name, ratio }) => (
+            <div key={id} className="flex items-center gap-2 px-1 py-0.5 text-sm">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${loadColorClassName(ratio)}`} />
+              <span className="truncate">{name}</span>
+              <span className="ml-auto text-xs text-gray-500">{Math.round(ratio * 100)}%</span>
+            </div>
+          ))}
+        </div>
+      </SidebarSection>
     </>
   );
 }

@@ -3,11 +3,20 @@ import { Topbar } from '../app/Topbar';
 import { buildEquipmentExportRows, parseEquipmentImportRows } from '../lib/importers/equipmentImportExport';
 import { exportRowsToSpreadsheet, readSpreadsheetFile } from '../lib/spreadsheet';
 import type { ParsedImportRow } from '../lib/spreadsheet';
-import { useAuthStore, useEngineerStore, useEquipmentStore, useHospitalStore, useUiStore, useZoneStore } from '../stores';
+import {
+  useAuthStore,
+  useEngineerStore,
+  useEquipmentStore,
+  useHospitalStore,
+  useModalityStore,
+  useUiStore,
+  useZoneStore,
+} from '../stores';
 import { KNOWN_MODALITIES } from '../types';
 import type { EquipmentInsert, PmPerYear, WeekendWork } from '../types';
 import { EquipmentRow } from '../components/equipment';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
+import { ModalityManagerModal, MODALITY_MANAGE_VALUE } from '../components/modals';
 import { Button, ImportExportButtons } from '../components/ui';
 
 const EMPTY_FORM = {
@@ -38,19 +47,30 @@ export function Equipment() {
   const engineers = useEngineerStore((state) => state.engineers);
   const fetchEngineers = useEngineerStore((state) => state.fetchEngineers);
   const fetchZones = useZoneStore((state) => state.fetchZones);
+  const modalities = useModalityStore((state) => state.modalities);
+  const fetchModalities = useModalityStore((state) => state.fetchModalities);
   const pushToast = useUiStore((state) => state.pushToast);
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [importRows, setImportRows] = useState<ParsedImportRow<EquipmentInsert>[] | null>(null);
   const [importing, setImporting] = useState(false);
+  const [showModalityManager, setShowModalityManager] = useState(false);
 
   useEffect(() => {
     fetchEquipment();
     fetchHospitals();
     fetchEngineers();
     fetchZones();
-  }, [fetchEquipment, fetchHospitals, fetchEngineers, fetchZones]);
+    fetchModalities();
+  }, [fetchEquipment, fetchHospitals, fetchEngineers, fetchZones, fetchModalities]);
+
+  // Nomes das modalidades para o dropdown (da BD; fallback à lista fixa antes do fetch),
+  // garantindo que o valor actual do formulário aparece mesmo que não esteja na lista.
+  const modalityNames = modalities.length > 0 ? modalities.map((modality) => modality.name) : [...KNOWN_MODALITIES];
+  const modalityOptions = form.modality && !modalityNames.includes(form.modality)
+    ? [form.modality, ...modalityNames]
+    : modalityNames;
 
   async function handleCreate() {
     const hospital = hospitals.find((item) => item.id === form.hospitalId);
@@ -164,13 +184,21 @@ export function Equipment() {
             <select
               className="rounded-md border border-gray-300 px-2 py-1 text-sm"
               value={form.modality}
-              onChange={(event) => setForm({ ...form, modality: event.target.value })}
+              onChange={(event) => {
+                if (event.target.value === MODALITY_MANAGE_VALUE) {
+                  setShowModalityManager(true);
+                  return;
+                }
+                setForm({ ...form, modality: event.target.value });
+              }}
             >
-              {KNOWN_MODALITIES.map((modality) => (
+              {modalityOptions.map((modality) => (
                 <option key={modality} value={modality}>
                   {modality}
                 </option>
               ))}
+              <option disabled>──────────</option>
+              <option value={MODALITY_MANAGE_VALUE}>✏️ Editar modalidades…</option>
             </select>
             <select
               className="rounded-md border border-gray-300 px-2 py-1 text-sm"
@@ -274,7 +302,12 @@ export function Equipment() {
           </thead>
           <tbody>
             {equipment.map((item) => (
-              <EquipmentRow key={item.id} item={item} canManageEquipment={canManageEquipment} />
+              <EquipmentRow
+                key={item.id}
+                item={item}
+                canManageEquipment={canManageEquipment}
+                onManageModalities={() => setShowModalityManager(true)}
+              />
             ))}
           </tbody>
         </table>
@@ -290,6 +323,8 @@ export function Equipment() {
           onClose={() => setImportRows(null)}
         />
       )}
+
+      {showModalityManager && <ModalityManagerModal onClose={() => setShowModalityManager(false)} />}
     </div>
   );
 }

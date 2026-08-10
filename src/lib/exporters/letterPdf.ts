@@ -4,6 +4,9 @@ import type { Country, EquipmentFull, PMEvent } from '../../types';
 
 export interface LetterEquipmentGroup {
   serialNumber: string;
+  /** Modelo do equipamento (ex.: "Versa HD"), mostrado ao lado do N/S para o destinatário
+   *  identificar o equipamento sem ter de decorar o número de série. Vazio se desconhecido. */
+  model: string;
   taskLabel: string;
   /** Uma entrada por dia (não por intervalo) — mesma convenção das cartas de referência
    *  (DOCS/), que listam cada dia de uma intervenção em linhas separadas. */
@@ -52,6 +55,7 @@ export function buildProposalLetterData(
         .map(formatDateDDMMYYYY);
       return {
         serialNumber: equipment.serial_number ?? equipment.name,
+        model: equipment.model ?? '',
         taskLabel: taskLabel(equipment.modality, country),
         dates,
       };
@@ -82,11 +86,12 @@ const COPY = {
       'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
     ],
     dateCity: 'Madrid',
+    subjectLabel: 'Asunto',
     subject: (year: number) => `Plan de Mantenimiento Preventivo ${year}`,
     greeting: 'Muy Sres nuestros,',
     intro: (year: number) =>
       `De acuerdo con el programa de mantenimiento recomendado, a continuación, les informamos de las fechas propuestas para la realización de los Mantenimientos Preventivos durante el Año de ${year}:`,
-    columns: { hospital: 'HOSPITAL', serial: 'N/S', task: 'TAREA', dates: 'FECHAS' },
+    columns: { hospital: 'HOSPITAL', model: 'MODELO', serial: 'N/S', task: 'TAREA', dates: 'FECHAS' },
     closing: [
       'Rogamos que en las fechas indicadas dejen el sistema a disposición de nuestros ingenieros a fin de poder realizar las revisiones.',
       'La realización de dichas intervenciones queda condicionada a la existencia de un contrato de mantenimiento en la fecha de intervención.',
@@ -105,11 +110,12 @@ const COPY = {
       'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
     ],
     dateCity: 'Madrid',
+    subjectLabel: 'Assunto',
     subject: (year: number) => `Plano de Manutenções Preventivas ${year}`,
     greeting: 'Exmos Srs,',
     intro: (year: number) =>
       `De acordo com o programa de manutenção previsto para os vossos equipamentos, enviamos neste documento a proposta de datas para a realização das Manutenções Preventivas durante o ano de ${year}.`,
-    columns: { hospital: 'HOSPITAL', serial: 'N/S', task: 'TAREA', dates: 'FECHAS' },
+    columns: { hospital: 'HOSPITAL', model: 'MODELO', serial: 'N/S', task: 'TAREFA', dates: 'DATAS' },
     closing: [
       'No seguimento deste plano solicitamos que coloquem o equipamento à disposição dos nossos engenheiros por forma a viabilizar as referidas manutenções. As tarefas do Programa de Manutenções a realizar podem ser modificadas devido a obsolescências técnicas que apresentem os equipamentos. Caso as mesmas se verifiquem, serão atempadamente comunicadas.',
       'A realização das intervenções acima listadas está condicionada à existência de um Contrato de Manutenção vigente à data de cada intervenção.',
@@ -184,6 +190,10 @@ export async function generateProposalLetterPdf(data: ProposalLetterData): Promi
     doc.setFontSize(10);
     const lines = doc.splitTextToSize(text, PAGE_WIDTH - PAGE_MARGIN * 2) as string[];
     ensureSpace(lines.length * 5 + (options.gap ?? 5));
+    // Reafirmar a fonte depois de ensureSpace: se houve quebra de página, newPage() →
+    // drawFooter() deixou o tamanho em 7pt (rodapé legal) e o texto sairia mais pequeno.
+    doc.setFont('helvetica', options.bold ? 'bold' : 'normal');
+    doc.setFontSize(10);
     doc.text(lines, PAGE_MARGIN, y);
     y += lines.length * 5 + (options.gap ?? 5);
   }
@@ -195,16 +205,17 @@ export async function generateProposalLetterPdf(data: ProposalLetterData): Promi
   doc.text(formatLetterDate(new Date(), data.country), PAGE_WIDTH - PAGE_MARGIN, y + 6, { align: 'right' });
   y += LOGO_HEIGHT + 12;
 
-  paragraph(`Asunto: ${copy.subject(data.year)}`, { bold: true, gap: 6 });
+  paragraph(`${copy.subjectLabel}: ${copy.subject(data.year)}`, { bold: true, gap: 6 });
   paragraph(copy.greeting, { gap: 6 });
   paragraph(copy.intro(data.year), { gap: 6 });
 
   // ─── Tabela ───
   const columns = [
-    { label: copy.columns.hospital, width: 55 },
-    { label: copy.columns.serial, width: 25 },
-    { label: copy.columns.task, width: 60 },
-    { label: copy.columns.dates, width: 30 },
+    { label: copy.columns.hospital, width: 44 },
+    { label: copy.columns.model, width: 28 },
+    { label: copy.columns.serial, width: 20 },
+    { label: copy.columns.task, width: 50 },
+    { label: copy.columns.dates, width: 28 },
   ];
   const tableWidth = columns.reduce((total, column) => total + column.width, 0);
   const rowHeight = 6;
@@ -254,9 +265,9 @@ export async function generateProposalLetterPdf(data: ProposalLetterData): Promi
   tableHeader();
   const multipleEquipment = data.equipmentGroups.length > 1;
   for (const group of data.equipmentGroups) {
-    if (multipleEquipment) tableRow([group.serialNumber, '', '', ''], true);
+    if (multipleEquipment) tableRow([group.serialNumber, '', '', '', ''], true);
     for (const date of group.dates) {
-      tableRow([data.hospitalName, group.serialNumber, group.taskLabel, date]);
+      tableRow([data.hospitalName, group.model, group.serialNumber, group.taskLabel, date]);
     }
   }
   y += 8;

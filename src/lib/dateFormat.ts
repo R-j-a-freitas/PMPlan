@@ -11,5 +11,6 @@ export function toDisplayDate(isoDate: string): string {
  *  o desvio de fuso horário que motivou o bug do calendário a mostrar um dia a mais. */
 export function addDaysToIsoDate(isoDate: string, amount: number): string {
   const [year, month, day] = isoDate.split('-').map(Number);
+  if (year === undefined || month === undefined || day === undefined) return isoDate;
   return new Date(Date.UTC(year, month - 1, day + amount)).toISOString().slice(0, 10);
 }

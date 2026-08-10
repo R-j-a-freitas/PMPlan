@@ -1,5 +1,11 @@
-import { useCallback } from 'react';
-import { checkPmQuota, checkZoneLoad, validatePMPlacement } from '../lib/conflictRules';
+import { useCallback, useMemo } from 'react';
+import {
+  buildEquipmentSiteIndex,
+  checkPmQuota,
+  checkZoneLoad,
+  cityKeyOfEquipment,
+  validatePMPlacement,
+} from '../lib/conflictRules';
 import {
   useCalendarStore,
   useConflictStore,
@@ -31,6 +37,10 @@ export function useConflictEngine() {
   const zones = useZoneStore((state) => state.zones);
   const setActiveConflicts = useConflictStore((state) => state.setActiveConflicts);
 
+  // Regras 7/8 (hospital/cidade) — classifica os eventos existentes pelo local do
+  // respectivo equipamento; recalculado só quando a lista de equipamentos muda.
+  const siteIndex = useMemo(() => buildEquipmentSiteIndex(equipment), [equipment]);
+
   const validate = useCallback(
     (params: ValidatePlacementParams): ConflictResult[] => {
       const targetEquipment = equipment.find((item) => item.id === params.equipmentId);
@@ -39,6 +49,13 @@ export function useConflictEngine() {
         return [{ hasConflict: false }];
       }
 
+      // As regras que comparam com outros eventos (engenheiro/hospital/cidade) vêem a
+      // união da fatia visível do calendário com o ano completo do LoadMap — juntar os
+      // dois pools só acrescenta detecção (uma PM de Novembro do mesmo hospital bloqueia
+      // mesmo com o calendário em Março), nunca a reduz.
+      const visibleIds = new Set(events.map((event) => event.id));
+      const eventPool = [...events, ...yearEvents.filter((event) => !visibleIds.has(event.id))];
+
       // O país vem do hospital (não da zona): uma zona pode ter hospitais de PT e ES.
       const blocking = validatePMPlacement({
         engineerId: params.engineerId,
@@ -46,11 +63,15 @@ export function useConflictEngine() {
         zoneCountry: targetEquipment.hospital_country,
         startDate: params.startDate,
         endDate: params.endDate,
-        existingEvents: events,
+        existingEvents: eventPool,
         holidays,
         weekendWork: targetEquipment.weekend_work,
         hospitalLocality: targetEquipment.hospital_locality,
         hospitalCity: targetEquipment.hospital_city,
+        equipmentId: targetEquipment.id,
+        hospitalId: targetEquipment.hospital_id,
+        cityKey: cityKeyOfEquipment(targetEquipment),
+        siteIndex,
         ...(params.excludeEventId ? { excludeEventId: params.excludeEventId } : {}),
       });
 
@@ -79,7 +100,7 @@ export function useConflictEngine() {
       setActiveConflicts(results);
       return results;
     },
-    [events, yearEvents, holidays, equipment, engineers, zones, setActiveConflicts],
+    [events, yearEvents, holidays, equipment, engineers, zones, siteIndex, setActiveConflicts],
   );
 
   return { validate };

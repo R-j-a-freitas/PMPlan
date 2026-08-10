@@ -17,6 +17,10 @@ export type ClientProposal = {
   hospital_id: string;
   year: number;
   stage: ProposalStage;
+  /** Código que vai no assunto da carta de assinatura ("[PM-XXXXXXXX]") e pelo qual a
+   *  resposta do cliente com o documento assinado é reconhecida e arquivada no hospital
+   *  certo (ver Edge Function inbound-signed-document). Gerado pela BD na criação. */
+  reference_code: string;
   engineer_approved_at: string | null;
   engineer_approved_by: string | null;
   client_approved_at: string | null;

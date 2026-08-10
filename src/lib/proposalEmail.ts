@@ -3,8 +3,8 @@ import type { EmailTemplate } from '../types';
 import type { ProposalLetterData } from './exporters/letterPdf';
 
 const TABLE_HEADERS = {
-  PT: { hospital: 'Hospital', serial: 'N/S', task: 'Tarefa', date: 'Data' },
-  ES: { hospital: 'Hospital', serial: 'N/S', task: 'Tarea', date: 'Fecha' },
+  PT: { hospital: 'Hospital', model: 'Modelo', serial: 'N/S', task: 'Tarefa', date: 'Data' },
+  ES: { hospital: 'Hospital', model: 'Modelo', serial: 'N/S', task: 'Tarea', date: 'Fecha' },
 } as const;
 
 // Tabela HTML agrupada por equipamento — usada no placeholder {{tabela}} dos templates.
@@ -16,14 +16,14 @@ export function buildProposalEmailTableHtml(data: ProposalLetterData): string {
     .flatMap((group) =>
       group.dates.map(
         (date) =>
-          `<tr><td style="${cell}">${data.hospitalName}</td><td style="${cell}">${group.serialNumber}</td><td style="${cell}">${group.taskLabel}</td><td style="${cell}">${date}</td></tr>`,
+          `<tr><td style="${cell}">${data.hospitalName}</td><td style="${cell}">${group.model}</td><td style="${cell}">${group.serialNumber}</td><td style="${cell}">${group.taskLabel}</td><td style="${cell}">${date}</td></tr>`,
       ),
     )
     .join('');
   return (
     `<table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;">` +
     `<thead><tr style="background:#f3f4f6;text-align:left;">` +
-    `<th style="${cell}">${headers.hospital}</th><th style="${cell}">${headers.serial}</th><th style="${cell}">${headers.task}</th><th style="${cell}">${headers.date}</th>` +
+    `<th style="${cell}">${headers.hospital}</th><th style="${cell}">${headers.model}</th><th style="${cell}">${headers.serial}</th><th style="${cell}">${headers.task}</th><th style="${cell}">${headers.date}</th>` +
     `</tr></thead><tbody>${rows}</tbody></table>`
   );
 }
@@ -64,11 +64,35 @@ export interface EmailAttachment {
   filename: string;
   /** Conteúdo em base64. */
   content: string;
+  /** Content-Type MIME explícito (ex.: 'text/calendar; charset=utf-8'). Sem isto, o
+   *  Resend infere do nome do ficheiro e o text/calendar fica sem charset — aí o Outlook
+   *  assume US-ASCII e remove os acentos do .ics. */
+  contentType?: string;
+}
+
+/** Caixa que recebe os documentos assinados devolvidos pelos clientes. Vai em CC e em
+ *  Reply-To na carta de assinatura, para que um simples "Responder" no cliente de email
+ *  chegue cá — depender de o cliente se lembrar de a pôr em CC seria depender do passo
+ *  mais frágil da cadeia.
+ *
+ *  Tem de ser exactamente o endereço configurado como inbound na Resend (Receiving →
+ *  domínio com MX apontado à Resend). Mudar aqui sem mudar lá — ou ao contrário — faz os
+ *  documentos deixarem de ser arquivados sem nenhum erro visível. */
+export const SIGNED_DOCUMENTS_MAILBOX = 'documentos@stockmate.pt';
+
+/** Marca o assunto da carta com o código da proposta ("... [PM-3F2A9C1B]"). É por aqui que
+ *  a resposta do cliente é reconhecida: o assunto sobrevive ao "Re:" de qualquer cliente de
+ *  email, ao contrário do In-Reply-To, que traz o Message-ID RFC e não o id que a Resend
+ *  devolve no envio — os dois não são cruzáveis. */
+export function withReferenceCode(subject: string, referenceCode: string): string {
+  return subject.includes(referenceCode) ? subject : `${subject} [${referenceCode}]`;
 }
 
 export interface SendProposalEmailParams {
   to: string[];
   cc?: string[];
+  /** Para onde vão as respostas. Sem isto a Edge Function usa o EMAIL_REPLY_TO_DEFAULT. */
+  replyTo?: string[];
   subject: string;
   html: string;
   attachments?: EmailAttachment[];

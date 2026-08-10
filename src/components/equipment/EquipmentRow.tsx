@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { useEngineerStore, useEquipmentStore, useHospitalStore, useUiStore } from '../../stores';
+import { useEngineerStore, useEquipmentStore, useHospitalStore, useModalityStore, useUiStore } from '../../stores';
 import { KNOWN_MODALITIES } from '../../types';
 import type { EquipmentFull, PmPerYear, WeekendWork } from '../../types';
+import { MODALITY_MANAGE_VALUE } from '../modals/ModalityManagerModal';
 import { Badge, Button } from '../ui';
 
 interface EquipmentRowProps {
   item: EquipmentFull;
   canManageEquipment: boolean;
+  /** Abre o modal de gestão de modalidades (a opção "Editar modalidades…" do dropdown). */
+  onManageModalities: () => void;
 }
 
 const WEEKEND_WORK_LABELS: Record<string, string> = {
@@ -36,9 +39,10 @@ function buildForm(item: EquipmentFull) {
 // Linha de equipamento com edição inline — mesmos campos do formulário de criação em
 // Equipment.tsx e do export/import (secção: "tudo o que o admin criar, também tem de
 // editar"). Fabricante fica de fora (sempre a mesma marca, não vale a pena por linha).
-export function EquipmentRow({ item, canManageEquipment }: EquipmentRowProps) {
+export function EquipmentRow({ item, canManageEquipment, onManageModalities }: EquipmentRowProps) {
   const hospitals = useHospitalStore((state) => state.hospitals);
   const engineers = useEngineerStore((state) => state.engineers);
+  const modalities = useModalityStore((state) => state.modalities);
   const updateEquipment = useEquipmentStore((state) => state.updateEquipment);
   const deleteEquipment = useEquipmentStore((state) => state.deleteEquipment);
   const pushToast = useUiStore((state) => state.pushToast);
@@ -120,6 +124,13 @@ export function EquipmentRow({ item, canManageEquipment }: EquipmentRowProps) {
     );
   }
 
+  // Modalidades da BD (fallback à lista fixa antes do fetch), garantindo que o valor
+  // actual do equipamento aparece mesmo que já não conste da lista gerida.
+  const modalityNames = modalities.length > 0 ? modalities.map((modality) => modality.name) : [...KNOWN_MODALITIES];
+  const modalityOptions = form.modality && !modalityNames.includes(form.modality)
+    ? [form.modality, ...modalityNames]
+    : modalityNames;
+
   return (
     <tr className="border-b border-gray-100">
       <td className="py-1.5 pr-2">
@@ -171,13 +182,21 @@ export function EquipmentRow({ item, canManageEquipment }: EquipmentRowProps) {
         <select
           className="rounded-md border border-gray-300 px-2 py-1"
           value={form.modality}
-          onChange={(event) => setForm({ ...form, modality: event.target.value })}
+          onChange={(event) => {
+            if (event.target.value === MODALITY_MANAGE_VALUE) {
+              onManageModalities();
+              return;
+            }
+            setForm({ ...form, modality: event.target.value });
+          }}
         >
-          {KNOWN_MODALITIES.map((modality) => (
+          {modalityOptions.map((modality) => (
             <option key={modality} value={modality}>
               {modality}
             </option>
           ))}
+          <option disabled>──────────</option>
+          <option value={MODALITY_MANAGE_VALUE}>✏️ Editar modalidades…</option>
         </select>
       </td>
       <td className="py-1.5 pr-2">

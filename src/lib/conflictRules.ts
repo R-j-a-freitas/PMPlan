@@ -4,12 +4,14 @@ import {
   eachDayOfInterval,
   endOfYear,
   format,
+  getISOWeek,
+  getISOWeekYear,
   isSameDay,
   isWeekend,
   startOfYear,
 } from 'date-fns';
 import type { Interval } from 'date-fns';
-import type { ConflictResult, Country, Equipment, EngineerWithZones, Holiday, PMEvent, WeekendWork, Zone } from '../types';
+import type { ConflictResult, Country, Equipment, EquipmentFull, EngineerWithZones, Holiday, PMEvent, WeekendWork, Zone } from '../types';
 import { toDisplayDate } from './dateFormat';
 import { expandZoneSelection } from './zoneTree';
 
@@ -179,23 +181,150 @@ export function checkWeekendConflict(
   };
 }
 
+// ─── REGRAS 7 E 8: EXCLUSIVIDADE POR HOSPITAL E POR CIDADE ───────────────────
+//
+// Regra 7 (cliente): o mesmo hospital não pode ter PMs em mais de UM equipamento no
+// mesmo dia. Regra 8 (cidade): a mesma cidade não pode ter mais de UMA PM no mesmo dia
+// (só uma PM em Lisboa por dia; Lisboa + Porto em simultâneo é permitido). Ambas
+// comparam o candidato com eventos de OUTROS equipamentos, por isso precisam de saber
+// a que hospital/cidade pertence o equipamento de cada evento — daí o EquipmentSiteIndex.
+
+export interface EquipmentSite {
+  hospitalId: string;
+  /** Chave de cidade: hospital_city (cidade espanhola) com fallback para
+   *  hospital_locality (concelho PT / Comunidade Autónoma). null = sem cidade conhecida
+   *  → a Regra 8 não se aplica a este equipamento. */
+  cityKey: string | null;
+}
+
+export type EquipmentSiteIndex = Map<string, EquipmentSite>;
+
+export function cityKeyOfEquipment(eq: Pick<EquipmentFull, 'hospital_city' | 'hospital_locality'>): string | null {
+  return eq.hospital_city ?? eq.hospital_locality ?? null;
+}
+
+export function buildEquipmentSiteIndex(equipment: EquipmentFull[]): EquipmentSiteIndex {
+  return new Map(
+    equipment.map((eq) => [eq.id, { hospitalId: eq.hospital_id, cityKey: cityKeyOfEquipment(eq) }]),
+  );
+}
+
+interface SiteConflictParams {
+  /** Equipamento candidato — os eventos DELE próprio não contam (o espaçamento entre
+   *  PMs do mesmo equipamento é a Regra 6/intervalo mínimo, não estas regras). */
+  equipmentId: string;
+  startDate: Date;
+  endDate: Date;
+  existingEvents: PMEvent[];
+  siteIndex: EquipmentSiteIndex;
+  excludeEventId?: string;
+}
+
+function findOverlappingSiteEvent(
+  params: SiteConflictParams,
+  matchesSite: (site: EquipmentSite) => boolean,
+): PMEvent | undefined {
+  const candidateInterval = toInterval(params.startDate, params.endDate);
+  return params.existingEvents.find((event) => {
+    if (event.equipment_id === params.equipmentId) return false;
+    if (params.excludeEventId && event.id === params.excludeEventId) return false;
+    if (!eventIsActive(event)) return false;
+    const site = params.siteIndex.get(event.equipment_id);
+    if (!site || !matchesSite(site)) return false;
+    return areIntervalsOverlapping(
+      candidateInterval,
+      toInterval(new Date(event.start_date), new Date(event.end_date)),
+      { inclusive: true },
+    );
+  });
+}
+
+function isoWeekKey(date: Date): string {
+  return `${getISOWeekYear(date)}-W${getISOWeek(date)}`;
+}
+
+function isoWeekKeysOfInterval(start: Date, end: Date): Set<string> {
+  return new Set(eachDayOfInterval({ start, end }).map(isoWeekKey));
+}
+
+// Regra 7: o mesmo hospital (cliente) não pode ter PMs em mais de um equipamento na
+// MESMA SEMANA ISO (segunda a domingo) — mais restritivo que "mesmo dia": duas PMs do
+// mesmo hospital em dias diferentes da mesma semana também colidem.
+export function checkHospitalSameWeekConflict(
+  params: SiteConflictParams & { hospitalId: string },
+): ConflictResult {
+  const candidateWeeks = isoWeekKeysOfInterval(params.startDate, params.endDate);
+  const overlapping = params.existingEvents.find((event) => {
+    if (event.equipment_id === params.equipmentId) return false;
+    if (params.excludeEventId && event.id === params.excludeEventId) return false;
+    if (!eventIsActive(event)) return false;
+    const site = params.siteIndex.get(event.equipment_id);
+    if (!site || site.hospitalId !== params.hospitalId) return false;
+    const eventWeeks = isoWeekKeysOfInterval(new Date(event.start_date), new Date(event.end_date));
+    for (const week of candidateWeeks) {
+      if (eventWeeks.has(week)) return true;
+    }
+    return false;
+  });
+  if (!overlapping) return NO_CONFLICT;
+
+  return {
+    hasConflict: true,
+    type: 'hospital_same_week',
+    message: `O hospital já tem outro equipamento em PM na mesma semana (${toDisplayDate(overlapping.start_date)} a ${toDisplayDate(overlapping.end_date)}) — não pode haver PM no mesmo cliente na mesma semana.`,
+  };
+}
+
+// Regra 8: máximo 1 PM por cidade por dia. Eventos do MESMO hospital não contam aqui —
+// esses já são bloqueados pela Regra 7 (evita reportar o mesmo choque duas vezes).
+export function checkCitySameDayConflict(
+  params: SiteConflictParams & { hospitalId: string; cityKey: string | null },
+): ConflictResult {
+  if (!params.cityKey) return NO_CONFLICT;
+  const overlapping = findOverlappingSiteEvent(
+    params,
+    (site) => site.cityKey === params.cityKey && site.hospitalId !== params.hospitalId,
+  );
+  if (!overlapping) return NO_CONFLICT;
+
+  return {
+    hasConflict: true,
+    type: 'city_same_day',
+    message: `Já existe outra PM em ${params.cityKey} entre ${toDisplayDate(overlapping.start_date)} e ${toDisplayDate(overlapping.end_date)} — só pode haver 1 PM por cidade por dia.`,
+  };
+}
+
 // Regra 6: nº de PMs planeadas no ano não pode exceder o contratado (equipment.pm_per_year,
 // campo "PM/ano" no formulário de equipamento). Conta só eventos activos (cancelados não
 // ocupam quota) do mesmo equipamento a começar nesse ano — partilhada entre o motor de
 // conflitos (bloqueio na criação/edição) e o contador mostrado no PMEventModal.
+// Lista as PMs activas (não canceladas) de um equipamento num ano — usada tanto para a
+// contagem da quota (checkPmQuota/countPmEventsForEquipmentInYear) como para mostrar as
+// datas já agendadas no PMEventModal (secção "PMs planeadas: N/max", expansível).
+export function listPmEventsForEquipmentInYear(
+  equipmentId: string,
+  year: number,
+  events: PMEvent[],
+  excludeEventId?: string,
+): PMEvent[] {
+  return events
+    .filter(
+      (event) =>
+        event.equipment_id === equipmentId &&
+        eventIsActive(event) &&
+        (!excludeEventId || event.id !== excludeEventId) &&
+        new Date(event.start_date).getFullYear() === year,
+    )
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
+}
+
 export function countPmEventsForEquipmentInYear(
   equipmentId: string,
   year: number,
   events: PMEvent[],
   excludeEventId?: string,
 ): number {
-  return events.filter(
-    (event) =>
-      event.equipment_id === equipmentId &&
-      eventIsActive(event) &&
-      (!excludeEventId || event.id !== excludeEventId) &&
-      new Date(event.start_date).getFullYear() === year,
-  ).length;
+  return listPmEventsForEquipmentInYear(equipmentId, year, events, excludeEventId).length;
 }
 
 export function checkPmQuota(
@@ -333,8 +462,9 @@ export function checkZoneLoad(
 }
 
 // Função principal que agrega todas as regras de bloqueio (feriados em qualquer dia do
-// intervalo + fim-de-semana não contratualizado + sobreposição de engenheiro). A carga
-// de zona não bloqueia — ver checkZoneLoad.
+// intervalo + fim-de-semana não contratualizado + sobreposição de engenheiro + Regras
+// 7/8 de hospital/cidade quando o chamador fornece equipmentId+hospitalId+siteIndex).
+// A carga de zona não bloqueia — ver checkZoneLoad.
 export function validatePMPlacement(params: {
   engineerId: string | null;
   zoneId: string;
@@ -347,6 +477,11 @@ export function validatePMPlacement(params: {
   excludeEventId?: string;
   hospitalLocality?: string | null;
   hospitalCity?: string | null;
+  /** Regras 7/8 — opcionais para não partir chamadores que ainda não têm o índice. */
+  equipmentId?: string;
+  hospitalId?: string;
+  cityKey?: string | null;
+  siteIndex?: EquipmentSiteIndex;
 }): ConflictResult[] {
   const {
     engineerId,
@@ -360,6 +495,10 @@ export function validatePMPlacement(params: {
     excludeEventId,
     hospitalLocality = null,
     hospitalCity = null,
+    equipmentId,
+    hospitalId,
+    cityKey = null,
+    siteIndex,
   } = params;
 
   const results: ConflictResult[] = [];
@@ -380,6 +519,23 @@ export function validatePMPlacement(params: {
     excludeEventId,
   );
   if (overlapResult.hasConflict) results.push(overlapResult);
+
+  if (equipmentId && hospitalId && siteIndex) {
+    const siteParams = {
+      equipmentId,
+      hospitalId,
+      startDate,
+      endDate,
+      existingEvents,
+      siteIndex,
+      ...(excludeEventId ? { excludeEventId } : {}),
+    };
+    const hospitalResult = checkHospitalSameWeekConflict(siteParams);
+    if (hospitalResult.hasConflict) results.push(hospitalResult);
+
+    const cityResult = checkCitySameDayConflict({ ...siteParams, cityKey });
+    if (cityResult.hasConflict) results.push(cityResult);
+  }
 
   return results;
 }

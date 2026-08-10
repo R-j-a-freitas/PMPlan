@@ -31,6 +31,10 @@ interface CalendarState {
    *  ano completo para o cálculo dar certo. */
   yearEvents: PMEvent[];
   yearEventsLoading: boolean;
+  /** PMs propostas mostradas em modo de pré-visualização (tracejadas, não persistidas) —
+   *  alimentadas pelo AutoSchedulerModal para o utilizador ver a distribuição do ano
+   *  inteiro no calendário antes de confirmar. Vazio fora da pré-visualização. */
+  previewEvents: PMEvent[];
 
   fetchEvents: (range: DateRange) => Promise<void>;
   fetchYearEvents: (year: number) => Promise<void>;
@@ -38,10 +42,12 @@ interface CalendarState {
   createBulkEvents: (events: PMEventInsert[]) => Promise<PMEvent[]>;
   updateEvent: (id: string, patch: PMEventUpdate) => Promise<void>;
   deleteEvent: (id: string) => Promise<void>;
+  deleteEvents: (ids: string[]) => Promise<void>;
   setActiveView: (view: CalendarViewName) => void;
   setSelectedEventId: (id: string | null) => void;
   setPlanningYear: (year: number) => void;
   setVisibleTitle: (title: string) => void;
+  setPreviewEvents: (events: PMEvent[]) => void;
 }
 
 // Consulta pura dos eventos de um ano — NÃO escreve no store. Usada pelo
@@ -70,6 +76,7 @@ export const useCalendarStore = create<CalendarState>()(
       planningYear: new Date().getFullYear(),
       yearEvents: [],
       yearEventsLoading: false,
+      previewEvents: [],
 
       fetchEvents: async (range) => {
         set({ loading: true, error: null, visibleRange: range });
@@ -154,10 +161,28 @@ export const useCalendarStore = create<CalendarState>()(
         });
       },
 
+      // Usa os ids devolvidos pelo delete (não os pedidos) para actualizar o estado local —
+      // protege contra o caso de um evento ter mudado de status entretanto (ex: passou a
+      // 'confirmed'), que a RLS exclui silenciosamente do delete real.
+      deleteEvents: async (ids) => {
+        if (ids.length === 0) return;
+        const { data, error } = await supabase.from('pm_events').delete().in('id', ids).select();
+        if (error) {
+          set({ error: error.message });
+          throw error;
+        }
+        const deletedIds = new Set((data ?? []).map((event) => event.id));
+        set({
+          events: get().events.filter((event) => !deletedIds.has(event.id)),
+          yearEvents: get().yearEvents.filter((event) => !deletedIds.has(event.id)),
+        });
+      },
+
       setActiveView: (activeView) => set({ activeView }),
       setSelectedEventId: (selectedEventId) => set({ selectedEventId }),
       setPlanningYear: (planningYear) => set({ planningYear }),
       setVisibleTitle: (visibleTitle) => set({ visibleTitle }),
+      setPreviewEvents: (previewEvents) => set({ previewEvents }),
     }),
     { name: 'calendar-store' },
   ),

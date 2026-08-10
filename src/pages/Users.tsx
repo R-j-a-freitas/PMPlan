@@ -16,7 +16,10 @@ const EMPTY_FORM = { name: '', email: '', role: 'readonly' as UserRole, engineer
 
 interface CreateUserResponse {
   email: string;
-  tempPassword: string;
+  // null quando a conta já existia (idempotente) — nesse caso usa-se "Esqueci-me da
+  // palavra-passe" para definir a password, em vez de uma temporária.
+  tempPassword: string | null;
+  existed?: boolean;
 }
 
 // Gestão de utilizadores (secção: "todos os outros serão criados e aprovados pelos
@@ -130,9 +133,18 @@ export function Users() {
 
         {lastCreated && (
           <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
-            Conta criada para <strong>{lastCreated.email}</strong>. Palavra-passe temporária (comunique-a
-            uma única vez — será substituída no primeiro login):{' '}
-            <code className="rounded bg-amber-100 px-1.5 py-0.5">{lastCreated.tempPassword}</code>
+            {lastCreated.tempPassword ? (
+              <>
+                Conta criada para <strong>{lastCreated.email}</strong>. Palavra-passe temporária (comunique-a
+                uma única vez — será substituída no primeiro login):{' '}
+                <code className="rounded bg-amber-100 px-1.5 py-0.5">{lastCreated.tempPassword}</code>
+              </>
+            ) : (
+              <>
+                Já existia uma conta para <strong>{lastCreated.email}</strong> — o perfil foi actualizado. Para
+                definir a palavra-passe, use <em>“Esqueci-me da palavra-passe”</em> no ecrã de login.
+              </>
+            )}
           </div>
         )}
 

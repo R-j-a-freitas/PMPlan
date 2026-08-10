@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDays, format } from 'date-fns';
 import { useConflictEngine } from '../../hooks';
 import { useAuthStore, useCalendarStore, useEquipmentStore, useUiStore } from '../../stores';
-import { countPmEventsForEquipmentInYear } from '../../lib/conflictRules';
+import { listPmEventsForEquipmentInYear } from '../../lib/conflictRules';
 import type { PMStatus } from '../../types';
 import { Button } from '../ui';
 import { PMEventForm } from './PMEventForm';
@@ -62,16 +62,18 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [equipmentId]);
 
-  // Contador de PMs já planeadas no ano deste equipamento vs. o contratado ("PM/ano" no
-  // formulário de equipamento) — mesma contagem usada pelo bloqueio em checkPmQuota,
-  // mostrada aqui para o utilizador ver a quota antes de tentar gravar.
+  // PMs já planeadas no ano deste equipamento vs. o contratado ("PM/ano" no formulário de
+  // equipamento) — mostrado aqui (contagem + datas expansíveis) para o utilizador ver a quota
+  // antes de tentar gravar. Ao contrário do bloqueio em checkPmQuota (que exclui o próprio
+  // evento em edição para poder validar a gravação), esta lista NÃO exclui o evento actual —
+  // tem de reflectir o nº real de PMs já agendadas, incluindo a que está a ser editada.
   const pmQuota = useMemo(() => {
     const selected = equipment.find((item) => item.id === equipmentId);
     if (!selected) return null;
     const year = new Date(startDate).getFullYear() || planningYear;
-    const count = countPmEventsForEquipmentInYear(selected.id, year, yearEvents, eventId ?? undefined);
-    return { count, max: selected.pm_per_year, year };
-  }, [equipment, equipmentId, startDate, yearEvents, eventId, planningYear]);
+    const dates = listPmEventsForEquipmentInYear(selected.id, year, yearEvents);
+    return { count: dates.length, max: selected.pm_per_year, year, dates };
+  }, [equipment, equipmentId, startDate, yearEvents, planningYear]);
 
   async function handleSave() {
     if (!equipmentId || !engineerId) {

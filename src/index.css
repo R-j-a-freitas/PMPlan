@@ -20,6 +20,14 @@ body,
   outline-offset: -2px;
 }
 
+/* Pré-visualização de propostas (AutoSchedulerModal) — contorno tracejado + ligeiramente
+   translúcido, para distinguir claramente as PMs propostas (ainda não guardadas) das reais. */
+.pmplan-event-preview {
+  outline: 2px dashed #1e3a8a;
+  outline-offset: -2px;
+  opacity: 0.7;
+}
+
 /* Fim-de-semana com fundo cinzento muito claro em todas as vistas (mês/trimestre/ano/
    semana) — só para dar a perceber visualmente que é sábado/domingo, sem competir com os
    eventos nem com o realce de feriado. O !important sobrepõe-se ao fundo próprio das
@@ -27,4 +35,20 @@ body,
 .fc .fc-day-sat,
 .fc .fc-day-sun {
   background-color: #f4f4f5 !important;
+}
+
+/* Espaçamento vertical reduzido entre barras de PM na grelha (todas as vistas com
+   dia-a-dia: Ano/Trimestre/Mês, e o all-day da Semana) — sobretudo relevante com o
+   toggle "1 linha" (CalendarToolbar), onde encolher os espaços entre barras é o que
+   permite 2+ PMs sobrepostas no mesmo dia caberem sem colapsar em "mais +N" (o plugin
+   multimonth força dayMaxEvents no ecrã, ignora a opção — não há como desligar por config). */
+.fc-daygrid-event {
+  margin: 1px 1px 0 !important;
+}
+.fc-daygrid-day-events {
+  margin-bottom: 1px !important;
+}
+.fc-multimonth .fc-daygrid-day-bottom {
+  padding-top: 0 !important;
+  font-size: 10px;
 }

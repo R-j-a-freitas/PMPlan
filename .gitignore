@@ -17,6 +17,9 @@ dist-ssr
 .env.*
 !.env.example
 
+# Token do heartbeat gerado localmente (scripts/mint-heartbeat-token.mjs)
+hb.token
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

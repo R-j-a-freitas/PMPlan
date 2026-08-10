@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useEquipmentStore, useZoneStore } from '../../stores';
 import { expandZoneSelection } from '../../lib/zoneTree';
 import type { Zone } from '../../types';
+import { SidebarSection } from './SidebarSection';
 
 interface ZoneRowProps {
   zone: Zone;
@@ -104,8 +105,7 @@ export function ZoneScopeFilter() {
   if (topLevelZones.length === 0) return null;
 
   return (
-    <div className="border-b border-gray-200 p-2">
-      <h3 className="mb-1 px-1 text-xs font-semibold uppercase text-gray-500">Zonas</h3>
+    <SidebarSection title="Zonas">
       <div className="flex flex-col gap-0.5">
         {topLevelZones.map((zone) => (
           <ZoneRow
@@ -120,6 +120,6 @@ export function ZoneScopeFilter() {
           />
         ))}
       </div>
-    </div>
+    </SidebarSection>
   );
 }

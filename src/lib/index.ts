@@ -4,3 +4,4 @@ export * from './permissions';
 export { supabase } from './supabase';
 export * from './graphClient';
 export * from './exporters';
+export * from './systemHealth';
