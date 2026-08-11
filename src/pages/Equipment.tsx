@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Topbar } from '../app/Topbar';
 import { buildEquipmentExportRows, parseEquipmentImportRows } from '../lib/importers/equipmentImportExport';
+import { matchesSearch } from '../lib/searchText';
 import { exportRowsToSpreadsheet, readSpreadsheetFile } from '../lib/spreadsheet';
 import type { ParsedImportRow } from '../lib/spreadsheet';
 import {
@@ -13,11 +14,11 @@ import {
   useZoneStore,
 } from '../stores';
 import { KNOWN_MODALITIES } from '../types';
-import type { EquipmentInsert, PmPerYear, WeekendWork } from '../types';
+import type { EngineerWithZones, EquipmentInsert, HospitalWithZone, PmPerYear, WeekendWork } from '../types';
 import { EquipmentRow } from '../components/equipment';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
 import { ModalityManagerModal, MODALITY_MANAGE_VALUE } from '../components/modals';
-import { Button, ImportExportButtons } from '../components/ui';
+import { Button, FormModal, ImportExportButtons, SearchInput } from '../components/ui';
 
 const EMPTY_FORM = {
   name: '',
@@ -35,6 +36,176 @@ const EMPTY_FORM = {
   active: true,
 };
 
+type EquipmentForm = typeof EMPTY_FORM;
+
+// Introdução de novo equipamento — ver FormModal para o porquê de estar em modal. É o
+// formulário mais longo da app (13 campos), o que o tornava o mais incómodo de ter
+// sempre aberto por cima da lista.
+function EquipmentFormModal({
+  hospitals,
+  engineers,
+  modalityNames,
+  onManageModalities,
+  saving,
+  onCancel,
+  onSubmit,
+}: {
+  hospitals: HospitalWithZone[];
+  engineers: EngineerWithZones[];
+  modalityNames: string[];
+  onManageModalities: () => void;
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: (values: EquipmentForm) => void;
+}) {
+  const [form, setForm] = useState(EMPTY_FORM);
+  // Garante que a modalidade actual aparece na lista mesmo que já não exista na BD.
+  const modalityOptions =
+    form.modality && !modalityNames.includes(form.modality) ? [form.modality, ...modalityNames] : modalityNames;
+
+  return (
+    <FormModal
+      title="Novo equipamento"
+      size="lg"
+      saving={saving}
+      canSubmit={Boolean(form.name.trim() && form.hospitalId)}
+      onCancel={onCancel}
+      onSubmit={() => onSubmit(form)}
+    >
+      <input
+        autoFocus
+        placeholder="Nome"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.name}
+        onChange={(event) => setForm({ ...form, name: event.target.value })}
+      />
+      <select
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.hospitalId}
+        onChange={(event) => setForm({ ...form, hospitalId: event.target.value })}
+      >
+        <option value="">Hospital… (obrigatório)</option>
+        {hospitals.map((hospital) => (
+          <option key={hospital.id} value={hospital.id}>
+            {hospital.name} ({hospital.zone_code})
+          </option>
+        ))}
+      </select>
+      <input
+        placeholder="Modelo"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.model}
+        onChange={(event) => setForm({ ...form, model: event.target.value })}
+      />
+      <input
+        placeholder="Nº de Série"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.serialNumber}
+        onChange={(event) => setForm({ ...form, serialNumber: event.target.value })}
+      />
+      <select
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.modality}
+        onChange={(event) => {
+          if (event.target.value === MODALITY_MANAGE_VALUE) {
+            onManageModalities();
+            return;
+          }
+          setForm({ ...form, modality: event.target.value });
+        }}
+      >
+        {modalityOptions.map((modality) => (
+          <option key={modality} value={modality}>
+            {modality}
+          </option>
+        ))}
+        <option disabled>──────────</option>
+        <option value={MODALITY_MANAGE_VALUE}>✏️ Editar modalidades…</option>
+      </select>
+      <select
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.pmPerYear}
+        onChange={(event) => setForm({ ...form, pmPerYear: event.target.value as `${PmPerYear}` })}
+      >
+        {[1, 2, 3, 4].map((n) => (
+          <option key={n} value={n}>
+            {n}x PM/ano
+          </option>
+        ))}
+      </select>
+      <label className="flex items-center gap-2 text-sm text-gray-600">
+        Duração (dias)
+        <input
+          type="number"
+          min={1}
+          className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm"
+          value={form.pmDurationDays}
+          onChange={(event) => setForm({ ...form, pmDurationDays: event.target.value })}
+        />
+      </label>
+      <select
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.weekendWork}
+        title="Trabalho ao fim-de-semana (contrato)"
+        onChange={(event) => setForm({ ...form, weekendWork: event.target.value as WeekendWork })}
+      >
+        <option value="none">Só dias úteis</option>
+        <option value="saturday">Inclui sábado</option>
+        <option value="both">Inclui sáb + dom</option>
+      </select>
+      <select
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.engineerPrimaryId}
+        onChange={(event) => setForm({ ...form, engineerPrimaryId: event.target.value })}
+      >
+        <option value="">Engenheiro principal…</option>
+        {engineers.map((engineer) => (
+          <option key={engineer.id} value={engineer.id}>
+            {engineer.name}
+          </option>
+        ))}
+      </select>
+      <select
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.engineerSecondaryId}
+        onChange={(event) => setForm({ ...form, engineerSecondaryId: event.target.value })}
+      >
+        <option value="">Engenheiro secundário…</option>
+        {engineers.map((engineer) => (
+          <option key={engineer.id} value={engineer.id}>
+            {engineer.name}
+          </option>
+        ))}
+      </select>
+      <label className="flex items-center gap-2 text-sm text-gray-600">
+        Cor no calendário
+        <input
+          type="color"
+          className="h-8 w-10 rounded-md border border-gray-300"
+          value={form.color}
+          onChange={(event) => setForm({ ...form, color: event.target.value })}
+        />
+      </label>
+      <label className="flex items-center gap-1 text-sm text-gray-600">
+        <input
+          type="checkbox"
+          checked={form.needsShutdown}
+          onChange={(event) => setForm({ ...form, needsShutdown: event.target.checked })}
+        />
+        Necessita paragem
+      </label>
+      <label className="flex items-center gap-1 text-sm text-gray-600">
+        <input
+          type="checkbox"
+          checked={form.active}
+          onChange={(event) => setForm({ ...form, active: event.target.checked })}
+        />
+        Activo
+      </label>
+    </FormModal>
+  );
+}
+
 // CRUD equipamentos (secção 3) — zone_id é sempre derivado do hospital seleccionado (secção 4, regra 1).
 export function Equipment() {
   const canManageEquipment = useAuthStore((state) => state.permissions.canManageEquipment);
@@ -51,7 +222,8 @@ export function Equipment() {
   const fetchModalities = useModalityStore((state) => state.fetchModalities);
   const pushToast = useUiStore((state) => state.pushToast);
 
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [creating, setCreating] = useState(false);
+  const [searchText, setSearchText] = useState('');
   const [saving, setSaving] = useState(false);
   const [importRows, setImportRows] = useState<ParsedImportRow<EquipmentInsert>[] | null>(null);
   const [importing, setImporting] = useState(false);
@@ -65,14 +237,20 @@ export function Equipment() {
     fetchModalities();
   }, [fetchEquipment, fetchHospitals, fetchEngineers, fetchZones, fetchModalities]);
 
-  // Nomes das modalidades para o dropdown (da BD; fallback à lista fixa antes do fetch),
-  // garantindo que o valor actual do formulário aparece mesmo que não esteja na lista.
+  // Nomes das modalidades para o dropdown (da BD; fallback à lista fixa antes do fetch).
   const modalityNames = modalities.length > 0 ? modalities.map((modality) => modality.name) : [...KNOWN_MODALITIES];
-  const modalityOptions = form.modality && !modalityNames.includes(form.modality)
-    ? [form.modality, ...modalityNames]
-    : modalityNames;
 
-  async function handleCreate() {
+  // Procura pelos campos que identificam a máquina na lista — nome, hospital, modelo,
+  // nº de série e modalidade.
+  const filteredEquipment = useMemo(
+    () =>
+      equipment.filter((item) =>
+        matchesSearch(searchText, [item.name, item.hospital_name, item.model, item.serial_number, item.modality]),
+      ),
+    [equipment, searchText],
+  );
+
+  async function handleCreate(form: EquipmentForm) {
     const hospital = hospitals.find((item) => item.id === form.hospitalId);
     if (!form.name || !hospital) return;
 
@@ -95,7 +273,9 @@ export function Equipment() {
         color: form.color,
         active: form.active,
       });
-      setForm(EMPTY_FORM);
+      setCreating(false);
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao criar equipamento.' });
     } finally {
       setSaving(false);
     }
@@ -146,140 +326,19 @@ export function Equipment() {
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-lg font-semibold text-gray-900">Equipamentos</h1>
-          {canManageEquipment && <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />}
+          {canManageEquipment && (
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setCreating(true)}>Adicionar</Button>
+              <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
+            </div>
+          )}
         </div>
 
-        {canManageEquipment && (
-          <div className="mb-4 flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
-            <input
-              placeholder="Nome"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-            />
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.hospitalId}
-              onChange={(event) => setForm({ ...form, hospitalId: event.target.value })}
-            >
-              <option value="">Hospital…</option>
-              {hospitals.map((hospital) => (
-                <option key={hospital.id} value={hospital.id}>
-                  {hospital.name} ({hospital.zone_code})
-                </option>
-              ))}
-            </select>
-            <input
-              placeholder="Modelo"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.model}
-              onChange={(event) => setForm({ ...form, model: event.target.value })}
-            />
-            <input
-              placeholder="Nº de Série"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.serialNumber}
-              onChange={(event) => setForm({ ...form, serialNumber: event.target.value })}
-            />
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.modality}
-              onChange={(event) => {
-                if (event.target.value === MODALITY_MANAGE_VALUE) {
-                  setShowModalityManager(true);
-                  return;
-                }
-                setForm({ ...form, modality: event.target.value });
-              }}
-            >
-              {modalityOptions.map((modality) => (
-                <option key={modality} value={modality}>
-                  {modality}
-                </option>
-              ))}
-              <option disabled>──────────</option>
-              <option value={MODALITY_MANAGE_VALUE}>✏️ Editar modalidades…</option>
-            </select>
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.pmPerYear}
-              onChange={(event) => setForm({ ...form, pmPerYear: event.target.value as `${PmPerYear}` })}
-            >
-              {[1, 2, 3, 4].map((n) => (
-                <option key={n} value={n}>
-                  {n}x PM/ano
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min={1}
-              placeholder="Duração (dias)"
-              className="w-28 rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.pmDurationDays}
-              onChange={(event) => setForm({ ...form, pmDurationDays: event.target.value })}
-            />
-            <label className="flex items-center gap-1 text-sm text-gray-600">
-              <input
-                type="checkbox"
-                checked={form.needsShutdown}
-                onChange={(event) => setForm({ ...form, needsShutdown: event.target.checked })}
-              />
-              Necessita paragem
-            </label>
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.weekendWork}
-              title="Trabalho ao fim-de-semana (contrato)"
-              onChange={(event) => setForm({ ...form, weekendWork: event.target.value as WeekendWork })}
-            >
-              <option value="none">Só dias úteis</option>
-              <option value="saturday">Inclui sábado</option>
-              <option value="both">Inclui sáb + dom</option>
-            </select>
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.engineerPrimaryId}
-              onChange={(event) => setForm({ ...form, engineerPrimaryId: event.target.value })}
-            >
-              <option value="">Engenheiro principal…</option>
-              {engineers.map((engineer) => (
-                <option key={engineer.id} value={engineer.id}>
-                  {engineer.name}
-                </option>
-              ))}
-            </select>
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.engineerSecondaryId}
-              onChange={(event) => setForm({ ...form, engineerSecondaryId: event.target.value })}
-            >
-              <option value="">Engenheiro secundário…</option>
-              {engineers.map((engineer) => (
-                <option key={engineer.id} value={engineer.id}>
-                  {engineer.name}
-                </option>
-              ))}
-            </select>
-            <input
-              type="color"
-              className="h-8 w-10 rounded-md border border-gray-300"
-              value={form.color}
-              onChange={(event) => setForm({ ...form, color: event.target.value })}
-            />
-            <label className="flex items-center gap-1 text-sm text-gray-600">
-              <input
-                type="checkbox"
-                checked={form.active}
-                onChange={(event) => setForm({ ...form, active: event.target.checked })}
-              />
-              Activo
-            </label>
-            <Button onClick={handleCreate} disabled={saving || !form.name || !form.hospitalId}>
-              Adicionar
-            </Button>
-          </div>
-        )}
+        <SearchInput
+          value={searchText}
+          onChange={setSearchText}
+          placeholder="Procurar equipamento por nome, hospital, modelo, nº de série ou modalidade…"
+        />
 
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -301,7 +360,7 @@ export function Equipment() {
             </tr>
           </thead>
           <tbody>
-            {equipment.map((item) => (
+            {filteredEquipment.map((item) => (
               <EquipmentRow
                 key={item.id}
                 item={item}
@@ -311,7 +370,25 @@ export function Equipment() {
             ))}
           </tbody>
         </table>
+
+        {filteredEquipment.length === 0 && (
+          <p className="mt-3 text-sm text-gray-400">
+            {equipment.length === 0 ? 'Sem equipamentos registados.' : 'Nenhum equipamento corresponde à pesquisa.'}
+          </p>
+        )}
       </div>
+
+      {creating && (
+        <EquipmentFormModal
+          hospitals={hospitals}
+          engineers={engineers}
+          modalityNames={modalityNames}
+          onManageModalities={() => setShowModalityManager(true)}
+          saving={saving}
+          onCancel={() => setCreating(false)}
+          onSubmit={handleCreate}
+        />
+      )}
 
       {importRows && (
         <ImportPreviewModal

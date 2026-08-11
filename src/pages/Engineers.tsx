@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Topbar } from '../app/Topbar';
 import { buildEngineerExportRows, parseEngineerImportRows } from '../lib/importers/engineerImportExport';
 import type { EngineerImportRow } from '../lib/importers/engineerImportExport';
@@ -7,10 +7,11 @@ import type { ParsedImportRow } from '../lib/spreadsheet';
 import { supabase } from '../lib/supabase';
 import { edgeFunctionErrorMessage } from '../lib/edgeError';
 import { useAuthStore, useEngineerStore, useUiStore, useZoneStore } from '../stores';
-import type { EngineerWithZones, UserProfile } from '../types';
+import type { EngineerWithZones, UserProfile, Zone } from '../types';
 import { ZoneMultiSelect } from '../components/engineers';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
-import { Badge, Button, ImportExportButtons } from '../components/ui';
+import { matchesSearch } from '../lib/searchText';
+import { Badge, Button, FormModal, ImportExportButtons, SearchInput } from '../components/ui';
 
 const EMPTY_FORM = {
   name: '',
@@ -50,6 +51,76 @@ function describeDeleteEngineerError(err: unknown): string {
   return e.message ?? 'Falha ao eliminar o engenheiro.';
 }
 
+type EngineerForm = typeof EMPTY_FORM;
+
+// Introdução de novo engenheiro — ver FormModal para o porquê de estar em modal.
+function EngineerFormModal({
+  zones,
+  saving,
+  onCancel,
+  onSubmit,
+}: {
+  zones: Zone[];
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: (values: EngineerForm) => void;
+}) {
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  return (
+    <FormModal
+      title="Novo engenheiro"
+      saving={saving}
+      canSubmit={Boolean(form.name.trim() && form.email.trim())}
+      onCancel={onCancel}
+      onSubmit={() => onSubmit(form)}
+    >
+      <input
+        autoFocus
+        placeholder="Nome"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.name}
+        onChange={(event) => setForm({ ...form, name: event.target.value })}
+      />
+      <input
+        placeholder="Email"
+        type="email"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.email}
+        onChange={(event) => setForm({ ...form, email: event.target.value })}
+      />
+      <input
+        placeholder="Telefone"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.phone}
+        onChange={(event) => setForm({ ...form, phone: event.target.value })}
+      />
+      <input
+        placeholder="Skills (separadas por vírgula)"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.skills}
+        onChange={(event) => setForm({ ...form, skills: event.target.value })}
+      />
+      <div className="col-span-2">
+        <ZoneMultiSelect
+          zones={zones}
+          selectedZoneIds={form.zoneIds}
+          primaryZoneId={form.primaryZoneId}
+          onChange={(zoneIds, primaryZoneId) => setForm({ ...form, zoneIds, primaryZoneId })}
+        />
+      </div>
+      <label className="col-span-2 flex items-center gap-1 text-sm text-gray-600">
+        <input
+          type="checkbox"
+          checked={form.active}
+          onChange={(event) => setForm({ ...form, active: event.target.checked })}
+        />
+        Activo
+      </label>
+    </FormModal>
+  );
+}
+
 // CRUD engenheiros (secção 3). Um engenheiro pode cobrir várias zonas em simultâneo
 // (ex: Norte + Galiza) — zoneIds vai todo para engineer_zones via RPC set_engineer_zones,
 // com primaryZoneId a marcar qual delas é a principal (secção 4, regra 2).
@@ -66,7 +137,8 @@ export function Engineers() {
   const fetchZones = useZoneStore((state) => state.fetchZones);
   const pushToast = useUiStore((state) => state.pushToast);
 
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [creating, setCreating] = useState(false);
+  const [searchText, setSearchText] = useState('');
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
@@ -81,6 +153,12 @@ export function Engineers() {
     fetchEngineers();
     fetchZones();
   }, [fetchEngineers, fetchZones]);
+
+  // Procura por nome ou email — é por aí que se identifica um engenheiro na lista.
+  const filteredEngineers = useMemo(
+    () => engineers.filter((engineer) => matchesSearch(searchText, [engineer.name, engineer.email])),
+    [engineers, searchText],
+  );
 
   // Só admin (canManageEngineers) consegue ler os perfis de outros (RLS) e criar contas.
   useEffect(() => {
@@ -145,7 +223,7 @@ export function Engineers() {
     }
   }
 
-  async function handleCreate() {
+  async function handleCreate(form: EngineerForm) {
     if (!form.name || !form.email) return;
     setSaving(true);
     try {
@@ -161,7 +239,9 @@ export function Engineers() {
       if (form.zoneIds.length > 0) {
         await setEngineerZones(created.id, form.zoneIds, form.primaryZoneId || form.zoneIds[0] || null);
       }
-      setForm(EMPTY_FORM);
+      setCreating(false);
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao criar engenheiro.' });
     } finally {
       setSaving(false);
     }
@@ -259,55 +339,15 @@ export function Engineers() {
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-lg font-semibold text-gray-900">Engenheiros</h1>
-          {canManageEngineers && <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />}
+          {canManageEngineers && (
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setCreating(true)}>Adicionar</Button>
+              <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
+            </div>
+          )}
         </div>
 
-        {canManageEngineers && (
-          <div className="mb-4 flex flex-wrap items-start gap-2 rounded-md border border-gray-200 p-3">
-            <input
-              placeholder="Nome"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-            />
-            <input
-              placeholder="Email"
-              type="email"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.email}
-              onChange={(event) => setForm({ ...form, email: event.target.value })}
-            />
-            <input
-              placeholder="Telefone"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.phone}
-              onChange={(event) => setForm({ ...form, phone: event.target.value })}
-            />
-            <ZoneMultiSelect
-              zones={zones}
-              selectedZoneIds={form.zoneIds}
-              primaryZoneId={form.primaryZoneId}
-              onChange={(zoneIds, primaryZoneId) => setForm({ ...form, zoneIds, primaryZoneId })}
-            />
-            <input
-              placeholder="Skills (separadas por vírgula)"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.skills}
-              onChange={(event) => setForm({ ...form, skills: event.target.value })}
-            />
-            <label className="flex items-center gap-1 text-sm text-gray-600">
-              <input
-                type="checkbox"
-                checked={form.active}
-                onChange={(event) => setForm({ ...form, active: event.target.checked })}
-              />
-              Activo
-            </label>
-            <Button onClick={handleCreate} disabled={saving || !form.name || !form.email}>
-              Adicionar
-            </Button>
-          </div>
-        )}
+        <SearchInput value={searchText} onChange={setSearchText} placeholder="Procurar engenheiro por nome ou email…" />
 
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -323,7 +363,7 @@ export function Engineers() {
             </tr>
           </thead>
           <tbody>
-            {engineers.map((engineer) => {
+            {filteredEngineers.map((engineer) => {
               const editing = editingId === engineer.id;
               // "Activa" = conta de login já ligada a este engenheiro. Uma conta órfã
               // (email igual mas sem engineer_id) não conta como activa — o botão fica
@@ -466,7 +506,22 @@ export function Engineers() {
             })}
           </tbody>
         </table>
+
+        {filteredEngineers.length === 0 && (
+          <p className="mt-3 text-sm text-gray-400">
+            {engineers.length === 0 ? 'Sem engenheiros registados.' : 'Nenhum engenheiro corresponde à pesquisa.'}
+          </p>
+        )}
       </div>
+
+      {creating && (
+        <EngineerFormModal
+          zones={zones}
+          saving={saving}
+          onCancel={() => setCreating(false)}
+          onSubmit={handleCreate}
+        />
+      )}
 
       {importRows && (
         <ImportPreviewModal

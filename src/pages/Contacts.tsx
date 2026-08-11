@@ -3,7 +3,8 @@ import { Topbar } from '../app/Topbar';
 import { exportRowsToSpreadsheet } from '../lib/spreadsheet';
 import { useAuthStore, useHospitalStore, useUiStore } from '../stores';
 import type { HospitalContact, HospitalWithZone } from '../types';
-import { Badge, Button } from '../components/ui';
+import { matchesSearch } from '../lib/searchText';
+import { Badge, Button, FormModal, SearchInput } from '../components/ui';
 
 interface ContactRow {
   hospitalId: string;
@@ -45,6 +46,73 @@ function buildContactRows(hospitals: HospitalWithZone[]): ContactRow[] {
   );
 }
 
+type NewContactForm = typeof EMPTY_FORM;
+
+// Introdução de novo contacto — ver FormModal para o porquê de estar em modal. O hospital
+// é obrigatório: um contacto vive sempre dentro de hospitals.contacts.
+function ContactFormModal({
+  hospitals,
+  saving,
+  onCancel,
+  onSubmit,
+}: {
+  hospitals: HospitalWithZone[];
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: (values: NewContactForm) => void;
+}) {
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  return (
+    <FormModal
+      title="Novo contacto"
+      saving={saving}
+      canSubmit={Boolean(form.hospitalId && form.name.trim())}
+      onCancel={onCancel}
+      onSubmit={() => onSubmit(form)}
+    >
+      <select
+        className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.hospitalId}
+        onChange={(event) => setForm({ ...form, hospitalId: event.target.value })}
+      >
+        <option value="">Hospital… (obrigatório)</option>
+        {hospitals.map((hospital) => (
+          <option key={hospital.id} value={hospital.id}>
+            {hospital.name}
+          </option>
+        ))}
+      </select>
+      <input
+        autoFocus
+        placeholder="Nome"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.name}
+        onChange={(event) => setForm({ ...form, name: event.target.value })}
+      />
+      <input
+        placeholder="Cargo (ex: Coordenador Técnico)"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.role}
+        onChange={(event) => setForm({ ...form, role: event.target.value })}
+      />
+      <input
+        type="email"
+        placeholder="Email"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.email}
+        onChange={(event) => setForm({ ...form, email: event.target.value })}
+      />
+      <input
+        placeholder="Telefone"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.phone}
+        onChange={(event) => setForm({ ...form, phone: event.target.value })}
+      />
+    </FormModal>
+  );
+}
+
 // Vista consolidada de todos os contactos registados em todos os hospitais (secção:
 // "mostra todos os contactos registados"). A gestão (criar/editar/apagar) fica reservada
 // a quem gere hospitais (canManageZones), já que os contactos vivem em hospitals.contacts.
@@ -55,7 +123,7 @@ export function Contacts() {
   const updateHospital = useHospitalStore((state) => state.updateHospital);
   const pushToast = useUiStore((state) => state.pushToast);
   const [searchText, setSearchText] = useState('');
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<{ hospitalId: string; contactIndex: number } | null>(null);
   const [editForm, setEditForm] = useState<ContactForm>({ name: '', role: '', email: '', phone: '' });
@@ -66,15 +134,13 @@ export function Contacts() {
 
   const allRows = useMemo(() => buildContactRows(hospitals), [hospitals]);
 
-  const filteredRows = useMemo(() => {
-    if (!searchText.trim()) return allRows;
-    const needle = searchText.toLowerCase();
-    return allRows.filter((row) =>
-      [row.name, row.role, row.email, row.phone, row.hospitalName, row.zoneName].some((field) =>
-        field.toLowerCase().includes(needle),
+  const filteredRows = useMemo(
+    () =>
+      allRows.filter((row) =>
+        matchesSearch(searchText, [row.name, row.role, row.email, row.phone, row.hospitalName, row.zoneName]),
       ),
-    );
-  }, [allRows, searchText]);
+    [allRows, searchText],
+  );
 
   function handleExport() {
     exportRowsToSpreadsheet(
@@ -102,14 +168,14 @@ export function Contacts() {
     };
   }
 
-  async function handleAdd() {
+  async function handleAdd(form: NewContactForm) {
     if (!form.hospitalId || !form.name.trim()) return;
     const hospital = hospitals.find((h) => h.id === form.hospitalId);
     if (!hospital) return;
     setSaving(true);
     try {
       await updateHospital(hospital.id, { contacts: [...hospital.contacts, toContact(form)] });
-      setForm({ ...EMPTY_FORM, hospitalId: form.hospitalId });
+      setCreating(false);
     } catch (err) {
       pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao adicionar contacto.' });
     } finally {
@@ -161,69 +227,25 @@ export function Contacts() {
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-lg font-semibold text-gray-900">Contactos</h1>
-          <Button variant="secondary" onClick={handleExport} disabled={filteredRows.length === 0}>
-            Exportar
-          </Button>
-        </div>
-
-        {canManage && (
-          <div className="mb-4 flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.hospitalId}
-              onChange={(event) => setForm({ ...form, hospitalId: event.target.value })}
-            >
-              <option value="">Hospital… (obrigatório)</option>
-              {hospitals.map((hospital) => (
-                <option key={hospital.id} value={hospital.id}>
-                  {hospital.name}
-                </option>
-              ))}
-            </select>
-            <input
-              placeholder="Nome"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-            />
-            <input
-              placeholder="Cargo (ex: Coordenador Técnico)"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.role}
-              onChange={(event) => setForm({ ...form, role: event.target.value })}
-            />
-            <input
-              type="email"
-              placeholder="Email"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.email}
-              onChange={(event) => setForm({ ...form, email: event.target.value })}
-            />
-            <input
-              placeholder="Telefone"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.phone}
-              onChange={(event) => setForm({ ...form, phone: event.target.value })}
-            />
-            <Button onClick={handleAdd} disabled={saving || !form.hospitalId || !form.name.trim()}>
-              Adicionar
+          <div className="flex items-center gap-2">
+            {canManage && <Button onClick={() => setCreating(true)}>Adicionar</Button>}
+            <Button variant="secondary" onClick={handleExport} disabled={filteredRows.length === 0}>
+              Exportar
             </Button>
           </div>
-        )}
+        </div>
 
-        <input
-          type="search"
-          placeholder="Procurar por nome, cargo, email, telefone, hospital ou zona…"
-          className="mb-4 w-full max-w-md rounded-md border border-gray-300 px-2 py-1 text-sm"
+        <SearchInput
           value={searchText}
-          onChange={(event) => setSearchText(event.target.value)}
+          onChange={setSearchText}
+          placeholder="Procurar por nome, cargo, email, telefone, hospital ou zona…"
         />
 
         {filteredRows.length === 0 ? (
           <p className="text-sm text-gray-400">
             {allRows.length === 0
               ? canManage
-                ? 'Sem contactos registados — adiciona o primeiro no formulário acima.'
+                ? 'Sem contactos registados — adiciona o primeiro em "Adicionar".'
                 : 'Sem contactos registados.'
               : 'Nenhum contacto corresponde à pesquisa.'}
           </p>
@@ -323,6 +345,15 @@ export function Contacts() {
           </table>
         )}
       </div>
+
+      {creating && (
+        <ContactFormModal
+          hospitals={hospitals}
+          saving={saving}
+          onCancel={() => setCreating(false)}
+          onSubmit={handleAdd}
+        />
+      )}
     </div>
   );
 }

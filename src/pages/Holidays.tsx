@@ -13,8 +13,9 @@ import {
   useUiStore,
   useZoneStore,
 } from '../stores';
-import type { Country, Holiday, HolidayRule, HolidayRuleType } from '../types';
-import { Button } from '../components/ui';
+import type { Country, Holiday, HolidayRule, HolidayRuleType, Zone } from '../types';
+import { matchesSearch } from '../lib/searchText';
+import { Button, FormModal, SearchInput } from '../components/ui';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_YEAR + 2];
@@ -36,6 +37,178 @@ function describeRule(rule: HolidayRule): string {
   }
   const offset = rule.easter_offset_days ?? 0;
   return `Páscoa ${offset >= 0 ? '+' : ''}${offset} dias`;
+}
+
+type HolidayForm = typeof EMPTY_FORM;
+type RuleForm = typeof EMPTY_RULE_FORM;
+
+// Introdução de feriado manual (um ano só) — ver FormModal para o porquê de estar em modal.
+function HolidayFormModal({
+  zones,
+  saving,
+  onCancel,
+  onSubmit,
+}: {
+  zones: Zone[];
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: (values: HolidayForm) => void;
+}) {
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  return (
+    <FormModal
+      title="Novo feriado"
+      submitLabel="Adicionar feriado"
+      saving={saving}
+      canSubmit={Boolean(form.name.trim() && form.date)}
+      onCancel={onCancel}
+      onSubmit={() => onSubmit(form)}
+    >
+      <input
+        autoFocus
+        placeholder="Nome do feriado"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.name}
+        onChange={(event) => setForm({ ...form, name: event.target.value })}
+      />
+      <input
+        type="date"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.date}
+        onChange={(event) => setForm({ ...form, date: event.target.value })}
+      />
+      <select
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.country}
+        onChange={(event) => setForm({ ...form, country: event.target.value as Country, locality: '' })}
+      >
+        <option value="PT">Portugal</option>
+        <option value="ES">Espanha</option>
+      </select>
+      {form.country === 'PT' ? (
+        <input
+          placeholder="Concelho (vazio = nacional)"
+          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+          value={form.locality}
+          onChange={(event) => setForm({ ...form, locality: event.target.value })}
+        />
+      ) : (
+        <select
+          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+          value={form.locality}
+          onChange={(event) => setForm({ ...form, locality: event.target.value })}
+        >
+          <option value="">Comunidade Autónoma… (vazio = nacional)</option>
+          {SPANISH_REGIONS.map((region) => (
+            <option key={region.code} value={region.code}>
+              {region.name}
+            </option>
+          ))}
+        </select>
+      )}
+      <select
+        className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.zoneId}
+        onChange={(event) => setForm({ ...form, zoneId: event.target.value })}
+      >
+        <option value="">Sem zona específica</option>
+        {zones.map((zone) => (
+          <option key={zone.id} value={zone.id}>
+            Fecho da zona: {zone.name}
+          </option>
+        ))}
+      </select>
+    </FormModal>
+  );
+}
+
+// Introdução de regra recorrente (projectada para qualquer ano) — ver FormModal.
+function HolidayRuleFormModal({
+  localities,
+  saving,
+  onCancel,
+  onSubmit,
+}: {
+  localities: string[];
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: (values: RuleForm) => void;
+}) {
+  const [form, setForm] = useState(EMPTY_RULE_FORM);
+
+  return (
+    <FormModal
+      title="Nova regra recorrente"
+      submitLabel="Adicionar regra"
+      saving={saving}
+      canSubmit={Boolean(form.name.trim() && form.locality.trim())}
+      onCancel={onCancel}
+      onSubmit={() => onSubmit(form)}
+    >
+      <input
+        autoFocus
+        list="pt-concelhos-regras"
+        placeholder="Concelho"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.locality}
+        onChange={(event) => setForm({ ...form, locality: event.target.value })}
+      />
+      <datalist id="pt-concelhos-regras">
+        {localities.map((locality) => (
+          <option key={locality} value={locality} />
+        ))}
+      </datalist>
+      <input
+        placeholder="Nome do feriado"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.name}
+        onChange={(event) => setForm({ ...form, name: event.target.value })}
+      />
+      <select
+        className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.ruleType}
+        onChange={(event) => setForm({ ...form, ruleType: event.target.value as HolidayRuleType })}
+      >
+        <option value="fixed_date">Data fixa</option>
+        <option value="easter_relative">Móvel (relativo à Páscoa)</option>
+      </select>
+      {form.ruleType === 'fixed_date' ? (
+        <>
+          <select
+            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+            value={form.fixedMonth}
+            onChange={(event) => setForm({ ...form, fixedMonth: event.target.value })}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+              <option key={month} value={month}>
+                Mês {month}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            Dia
+            <input
+              type="number"
+              min={1}
+              max={31}
+              className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={form.fixedDay}
+              onChange={(event) => setForm({ ...form, fixedDay: event.target.value })}
+            />
+          </label>
+        </>
+      ) : (
+        <input
+          type="number"
+          placeholder="Dias após a Páscoa"
+          className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+          value={form.easterOffsetDays}
+          onChange={(event) => setForm({ ...form, easterOffsetDays: event.target.value })}
+        />
+      )}
+    </FormModal>
+  );
 }
 
 interface HolidaySectionProps {
@@ -111,9 +284,10 @@ export function Holidays() {
 
   const [year, setYear] = useState(CURRENT_YEAR);
   const { holidays } = useHolidays(year);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [creatingHoliday, setCreatingHoliday] = useState(false);
+  const [creatingRule, setCreatingRule] = useState(false);
+  const [searchText, setSearchText] = useState('');
   const [saving, setSaving] = useState(false);
-  const [ruleForm, setRuleForm] = useState(EMPTY_RULE_FORM);
   const [savingRule, setSavingRule] = useState(false);
 
   useEffect(() => {
@@ -126,13 +300,17 @@ export function Holidays() {
   // um feriado de uma região sem nenhuma máquina lá não interessa ao planeamento.
   const activeLocalities = useMemo(() => computeActiveLocalities(equipment), [equipment]);
 
-  const sorted = [...holidays].sort((a, b) => a.date.localeCompare(b.date));
+  // A procura corta transversalmente as 4 categorias e as regras: filtra-se antes de
+  // separar por âmbito, para o mesmo texto valer em toda a página.
+  const sorted = [...holidays]
+    .filter((holiday) => matchesSearch(searchText, [holiday.name, holiday.locality]))
+    .sort((a, b) => a.date.localeCompare(b.date));
   const nationalPT = sorted.filter((h) => h.country === 'PT' && !h.locality);
   const nationalES = sorted.filter((h) => h.country === 'ES' && !h.locality);
   const localPT = sorted.filter((h) => h.country === 'PT' && h.locality && activeLocalities.pt.has(h.locality));
   const regionalES = sorted.filter((h) => h.country === 'ES' && h.locality && activeLocalities.es.has(h.locality));
 
-  async function handleCreate() {
+  async function handleCreate(form: HolidayForm) {
     if (!form.name || !form.date) return;
     setSaving(true);
     try {
@@ -146,7 +324,7 @@ export function Holidays() {
         year: new Date(form.date).getFullYear(),
         source: 'manual',
       });
-      setForm(EMPTY_FORM);
+      setCreatingHoliday(false);
     } catch (err) {
       pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao criar feriado.' });
     } finally {
@@ -166,9 +344,13 @@ export function Holidays() {
   // concelhos sem máquinas) ficam disponíveis na BD mas não poluem esta lista.
   const visibleRules = [...holidayRules]
     .filter((rule) => activeLocalities.pt.has(rule.locality) || activeLocalities.es.has(rule.locality))
+    .filter((rule) => matchesSearch(searchText, [rule.name, rule.locality]))
     .sort((a, b) => a.locality.localeCompare(b.locality));
 
-  async function handleCreateRule() {
+  // Concelhos já conhecidos, para sugerir no campo do modal de regras.
+  const ruleLocalities = [...new Set(holidayRules.map((rule) => rule.locality))].sort();
+
+  async function handleCreateRule(ruleForm: RuleForm) {
     if (!ruleForm.name || !ruleForm.locality) return;
     setSavingRule(true);
     try {
@@ -185,7 +367,7 @@ export function Holidays() {
       // Aplica já ao ano em vista — sem isto, só apareceria depois de um reload (a cache
       // de anos carregados em holidayStore não sabe que esta regra é nova).
       await createHoliday(expandHolidayRule(rule, year));
-      setRuleForm(EMPTY_RULE_FORM);
+      setCreatingRule(false);
     } catch (err) {
       pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao criar regra.' });
     } finally {
@@ -205,9 +387,19 @@ export function Holidays() {
     <div className="flex h-screen w-screen flex-col overflow-hidden">
       <Topbar />
       <div className="flex-1 overflow-y-auto p-4">
-        <h1 className="mb-4 text-lg font-semibold text-gray-900">Feriados</h1>
+        <div className="mb-4 flex items-center justify-between">
+          <h1 className="text-lg font-semibold text-gray-900">Feriados</h1>
+          {canManageHolidays && (
+            <div className="flex items-center gap-2">
+              <Button onClick={() => setCreatingHoliday(true)}>Adicionar feriado</Button>
+              <Button variant="secondary" onClick={() => setCreatingRule(true)}>
+                Adicionar regra
+              </Button>
+            </div>
+          )}
+        </div>
 
-        <label className="mb-4 flex w-fit flex-col gap-1 text-sm">
+        <label className="mb-3 flex w-fit items-center gap-2 text-sm">
           Ano
           <select
             className="rounded-md border border-gray-300 px-2 py-1"
@@ -222,66 +414,13 @@ export function Holidays() {
           </select>
         </label>
 
-        {canManageHolidays && (
-          <div className="mb-6 flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
-            <input
-              placeholder="Nome do feriado"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-            />
-            <input
-              type="date"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.date}
-              onChange={(event) => setForm({ ...form, date: event.target.value })}
-            />
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.country}
-              onChange={(event) => setForm({ ...form, country: event.target.value as Country, locality: '' })}
-            >
-              <option value="PT">Portugal</option>
-              <option value="ES">Espanha</option>
-            </select>
-            {form.country === 'PT' ? (
-              <input
-                placeholder="Concelho (vazio = nacional)"
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                value={form.locality}
-                onChange={(event) => setForm({ ...form, locality: event.target.value })}
-              />
-            ) : (
-              <select
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                value={form.locality}
-                onChange={(event) => setForm({ ...form, locality: event.target.value })}
-              >
-                <option value="">Comunidade Autónoma… (vazio = nacional)</option>
-                {SPANISH_REGIONS.map((region) => (
-                  <option key={region.code} value={region.code}>
-                    {region.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.zoneId}
-              onChange={(event) => setForm({ ...form, zoneId: event.target.value })}
-            >
-              <option value="">Sem zona específica</option>
-              {zones.map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  Fecho da zona: {zone.name}
-                </option>
-              ))}
-            </select>
-            <Button onClick={handleCreate} disabled={saving || !form.name || !form.date}>
-              Adicionar feriado
-            </Button>
-          </div>
-        )}
+        {/* A procura aplica-se às 4 categorias e às regras em simultâneo — daí ficar aqui
+            em cima e não dentro de cada secção. */}
+        <SearchInput
+          value={searchText}
+          onChange={setSearchText}
+          placeholder="Procurar feriado por nome ou concelho/região…"
+        />
 
         <HolidaySection
           title="Feriados Nacionais Portugueses"
@@ -320,71 +459,6 @@ export function Holidays() {
             automaticamente para qualquer ano de planeamento.
           </p>
 
-          {canManageHolidays && (
-            <div className="mb-3 flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
-              <input
-                list="pt-concelhos-regras"
-                placeholder="Concelho"
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                value={ruleForm.locality}
-                onChange={(event) => setRuleForm({ ...ruleForm, locality: event.target.value })}
-              />
-              <datalist id="pt-concelhos-regras">
-                {[...new Set(holidayRules.map((rule) => rule.locality))].sort().map((locality) => (
-                  <option key={locality} value={locality} />
-                ))}
-              </datalist>
-              <input
-                placeholder="Nome do feriado"
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                value={ruleForm.name}
-                onChange={(event) => setRuleForm({ ...ruleForm, name: event.target.value })}
-              />
-              <select
-                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                value={ruleForm.ruleType}
-                onChange={(event) => setRuleForm({ ...ruleForm, ruleType: event.target.value as HolidayRuleType })}
-              >
-                <option value="fixed_date">Data fixa</option>
-                <option value="easter_relative">Móvel (relativo à Páscoa)</option>
-              </select>
-              {ruleForm.ruleType === 'fixed_date' ? (
-                <>
-                  <select
-                    className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-                    value={ruleForm.fixedMonth}
-                    onChange={(event) => setRuleForm({ ...ruleForm, fixedMonth: event.target.value })}
-                  >
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
-                      <option key={month} value={month}>
-                        Mês {month}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    className="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm"
-                    value={ruleForm.fixedDay}
-                    onChange={(event) => setRuleForm({ ...ruleForm, fixedDay: event.target.value })}
-                  />
-                </>
-              ) : (
-                <input
-                  type="number"
-                  placeholder="Dias após a Páscoa"
-                  className="w-36 rounded-md border border-gray-300 px-2 py-1 text-sm"
-                  value={ruleForm.easterOffsetDays}
-                  onChange={(event) => setRuleForm({ ...ruleForm, easterOffsetDays: event.target.value })}
-                />
-              )}
-              <Button onClick={handleCreateRule} disabled={savingRule || !ruleForm.name || !ruleForm.locality}>
-                Adicionar regra
-              </Button>
-            </div>
-          )}
-
           {visibleRules.length === 0 ? (
             <p className="text-sm text-gray-400">Sem regras para concelhos com equipamentos instalados.</p>
           ) : (
@@ -417,6 +491,24 @@ export function Holidays() {
           )}
         </div>
       </div>
+
+      {creatingHoliday && (
+        <HolidayFormModal
+          zones={zones}
+          saving={saving}
+          onCancel={() => setCreatingHoliday(false)}
+          onSubmit={handleCreate}
+        />
+      )}
+
+      {creatingRule && (
+        <HolidayRuleFormModal
+          localities={ruleLocalities}
+          saving={savingRule}
+          onCancel={() => setCreatingRule(false)}
+          onSubmit={handleCreateRule}
+        />
+      )}
     </div>
   );
 }

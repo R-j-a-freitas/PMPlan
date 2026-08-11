@@ -17,7 +17,8 @@ import type { Country, HospitalInsert, Zone } from '../types';
 import { HospitalContactsModal } from '../components/modals/HospitalContactsModal';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
 import { HospitalSignedDocuments, UnmatchedSignedDocuments } from '../components/documents';
-import { Badge, Button, ImportExportButtons } from '../components/ui';
+import { matchesSearch } from '../lib/searchText';
+import { Badge, Button, FormModal, ImportExportButtons, SearchInput } from '../components/ui';
 
 const EMPTY_FORM = { name: '', shortName: '', country: 'PT' as Country, locality: '', city: '', zoneId: '' };
 
@@ -139,67 +140,57 @@ function HospitalFormModal({
   onSubmit: (values: HospitalForm) => void;
 }) {
   const [form, setForm] = useState(EMPTY_FORM);
-  const valid = Boolean(form.name.trim() && form.zoneId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
-        <h2 className="mb-3 text-base font-semibold text-gray-900">Novo hospital</h2>
-
-        <div className="mb-4 grid grid-cols-2 gap-2">
-          <input
-            autoFocus
-            placeholder="Nome"
-            className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-          />
-          <input
-            placeholder="Nome curto (ex: IPO Porto)"
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-            value={form.shortName}
-            onChange={(event) => setForm({ ...form, shortName: event.target.value })}
-          />
-          <select
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-            value={form.country}
-            onChange={(event) => setForm({ ...form, country: event.target.value as Country, locality: '', city: '' })}
-          >
-            <option value="PT">Portugal</option>
-            <option value="ES">Espanha</option>
-          </select>
-          <LocalityField
-            country={form.country}
-            value={form.locality}
-            onChange={(locality) => setForm({ ...form, locality })}
-          />
-          {form.country === 'ES' && (
-            <input
-              placeholder="Cidade (ex: Vigo)"
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.city}
-              onChange={(event) => setForm({ ...form, city: event.target.value })}
-            />
-          )}
-          <ZoneSelect
-            value={form.zoneId}
-            onChange={(zoneId) => setForm({ ...form, zoneId })}
-            leafZones={leafZones}
-            zones={zones}
-            placeholder="Zona… (obrigatório)"
-          />
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={saving}>
-            Cancelar
-          </Button>
-          <Button onClick={() => onSubmit(form)} disabled={saving || !valid}>
-            Adicionar
-          </Button>
-        </div>
-      </div>
-    </div>
+    <FormModal
+      title="Novo hospital"
+      saving={saving}
+      canSubmit={Boolean(form.name.trim() && form.zoneId)}
+      onCancel={onCancel}
+      onSubmit={() => onSubmit(form)}
+    >
+      <input
+        autoFocus
+        placeholder="Nome"
+        className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.name}
+        onChange={(event) => setForm({ ...form, name: event.target.value })}
+      />
+      <input
+        placeholder="Nome curto (ex: IPO Porto)"
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.shortName}
+        onChange={(event) => setForm({ ...form, shortName: event.target.value })}
+      />
+      <select
+        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        value={form.country}
+        onChange={(event) => setForm({ ...form, country: event.target.value as Country, locality: '', city: '' })}
+      >
+        <option value="PT">Portugal</option>
+        <option value="ES">Espanha</option>
+      </select>
+      <LocalityField
+        country={form.country}
+        value={form.locality}
+        onChange={(locality) => setForm({ ...form, locality })}
+      />
+      {form.country === 'ES' && (
+        <input
+          placeholder="Cidade (ex: Vigo)"
+          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+          value={form.city}
+          onChange={(event) => setForm({ ...form, city: event.target.value })}
+        />
+      )}
+      <ZoneSelect
+        value={form.zoneId}
+        onChange={(zoneId) => setForm({ ...form, zoneId })}
+        leafZones={leafZones}
+        zones={zones}
+        placeholder="Zona… (obrigatório)"
+      />
+    </FormModal>
   );
 }
 
@@ -245,13 +236,10 @@ export function Clients() {
 
   // Filtro de texto sobre a lista — nome e nome curto, que é por onde se procura um
   // hospital (o mesmo hospital tanto é "ULS Braga E.P.E." como "Braga").
-  const filteredHospitals = useMemo(() => {
-    if (!searchText.trim()) return hospitals;
-    const needle = searchText.toLowerCase();
-    return hospitals.filter((hospital) =>
-      [hospital.name, hospital.short_name ?? ''].some((field) => field.toLowerCase().includes(needle)),
-    );
-  }, [hospitals, searchText]);
+  const filteredHospitals = useMemo(
+    () => hospitals.filter((hospital) => matchesSearch(searchText, [hospital.name, hospital.short_name])),
+    [hospitals, searchText],
+  );
 
   useEffect(() => {
     fetchHospitals();
@@ -384,12 +372,10 @@ export function Clients() {
             falhar em silêncio. Só aparece quando existe algum. */}
         <UnmatchedSignedDocuments hospitals={hospitals} />
 
-        <input
-          type="search"
-          placeholder="Procurar hospital por nome ou nome curto…"
-          className="mb-4 w-full max-w-md rounded-md border border-gray-300 px-2 py-1 text-sm"
+        <SearchInput
           value={searchText}
-          onChange={(event) => setSearchText(event.target.value)}
+          onChange={setSearchText}
+          placeholder="Procurar hospital por nome ou nome curto…"
         />
 
         <table className="w-full border-collapse text-sm">
