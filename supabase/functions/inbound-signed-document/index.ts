@@ -160,8 +160,11 @@ function normalize(text: string): string {
 async function identifyHospital(email: ReceivedEmail): Promise<MatchResult> {
   const subject = email.subject ?? '';
 
-  // 1. Código de referência no assunto — o mecanismo desenhado para isto.
-  const codeMatch = subject.match(/\bPM-[0-9A-F]{8}\b/i);
+  // 1. Código de referência no assunto — o mecanismo desenhado para isto. O prefixo diz de
+  //    que via de aprovação é a carta ('PM-' geral, 'BT-' braquiterapia, migração 0017);
+  //    o que identifica a proposta são os 8 hex, únicos entre as duas. Com duas propostas
+  //    por hospital, é isto que arquiva o documento na proposta certa e não só no hospital.
+  const codeMatch = subject.match(/\b(?:PM|BT)-[0-9A-F]{8}\b/i);
   if (codeMatch) {
     const { data } = await admin
       .from('client_proposals')
@@ -220,15 +223,16 @@ async function identifyHospital(email: ReceivedEmail): Promise<MatchResult> {
 // Aceita-se por duas vias, e basta uma:
 //   a) o email foi dirigido à caixa de documentos (to/cc/received_for) — o caso normal,
 //      porque a carta leva-a em CC e em Reply-To;
-//   b) o assunto traz um código de proposta que fomos nós que emitimos — cobre o cliente
-//      que responde só ao noreply@ mas mantém o assunto.
+//   b) o assunto traz um código de proposta que fomos nós que emitimos ('PM-' na via geral,
+//      'BT-' na de braquiterapia) — cobre o cliente que responde só ao noreply@ mas mantém
+//      o assunto.
 // Um email que não tenha nem uma nem outra não tem nada que ver connosco.
 function isForDocumentsMailbox(email: ReceivedEmail): boolean {
   const recipients = [...(email.to ?? []), ...(email.cc ?? []), ...(email.received_for ?? [])]
     .map((value) => extractEmailAddress(value))
     .filter((value): value is string => !!value);
   if (recipients.includes(DOCUMENTS_MAILBOX)) return true;
-  return /\bPM-[0-9A-F]{8}\b/i.test(email.subject ?? '');
+  return /\b(?:PM|BT)-[0-9A-F]{8}\b/i.test(email.subject ?? '');
 }
 
 // Emails enviados por nós próprios nunca são arquivados. O documento assinado vem sempre

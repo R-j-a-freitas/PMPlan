@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { eachDayOfInterval } from 'date-fns';
-import type { Country, EquipmentFull, PMEvent } from '../../types';
+import type { ApprovalTrack, Country, EquipmentFull, PMEvent } from '../../types';
 
 export interface LetterEquipmentGroup {
   serialNumber: string;
@@ -17,6 +17,11 @@ export interface ProposalLetterData {
   hospitalName: string;
   country: Country;
   year: number;
+  /** Via de aprovação a que esta carta pertence. Só muda o assunto e o parágrafo de
+   *  abertura — o resto do texto legal e o bloco de assinatura são os mesmos. A carta da
+   *  braquiterapia tem de se identificar como tal: com duas cartas por hospital no mesmo
+   *  ano, o cliente tem de saber qual está a assinar. */
+  track: ApprovalTrack;
   equipmentGroups: LetterEquipmentGroup[];
 }
 
@@ -45,6 +50,7 @@ export function buildProposalLetterData(
   year: number,
   equipmentList: EquipmentFull[],
   pmEvents: PMEvent[],
+  track: ApprovalTrack = 'standard',
 ): ProposalLetterData {
   const equipmentGroups = equipmentList
     .map((equipment): LetterEquipmentGroup => {
@@ -62,7 +68,7 @@ export function buildProposalLetterData(
     })
     .filter((group) => group.dates.length > 0);
 
-  return { hospitalName, country, year, equipmentGroups };
+  return { hospitalName, country, year, track, equipmentGroups };
 }
 
 async function loadImageAsDataUrl(url: string): Promise<string> {
@@ -88,9 +94,12 @@ const COPY = {
     dateCity: 'Madrid',
     subjectLabel: 'Asunto',
     subject: (year: number) => `Plan de Mantenimiento Preventivo ${year}`,
+    subjectBrachy: (year: number) => `Plan de Mantenimiento Preventivo de Braquiterapia ${year}`,
     greeting: 'Muy Sres nuestros,',
     intro: (year: number) =>
       `De acuerdo con el programa de mantenimiento recomendado, a continuación, les informamos de las fechas propuestas para la realización de los Mantenimientos Preventivos durante el Año de ${year}:`,
+    introBrachy: (year: number) =>
+      `De acuerdo con el programa de mantenimiento recomendado, a continuación, les informamos de las fechas propuestas para la realización de los Mantenimientos Preventivos de los equipos de Braquiterapia durante el Año de ${year}:`,
     columns: { hospital: 'HOSPITAL', model: 'MODELO', serial: 'N/S', task: 'TAREA', dates: 'FECHAS' },
     closing: [
       'Rogamos que en las fechas indicadas dejen el sistema a disposición de nuestros ingenieros a fin de poder realizar las revisiones.',
@@ -112,9 +121,12 @@ const COPY = {
     dateCity: 'Madrid',
     subjectLabel: 'Assunto',
     subject: (year: number) => `Plano de Manutenções Preventivas ${year}`,
+    subjectBrachy: (year: number) => `Plano de Manutenções Preventivas de Braquiterapia ${year}`,
     greeting: 'Exmos Srs,',
     intro: (year: number) =>
       `De acordo com o programa de manutenção previsto para os vossos equipamentos, enviamos neste documento a proposta de datas para a realização das Manutenções Preventivas durante o ano de ${year}.`,
+    introBrachy: (year: number) =>
+      `De acordo com o programa de manutenção previsto para os vossos equipamentos de Braquiterapia, enviamos neste documento a proposta de datas para a realização das respectivas Manutenções Preventivas durante o ano de ${year}.`,
     columns: { hospital: 'HOSPITAL', model: 'MODELO', serial: 'N/S', task: 'TAREFA', dates: 'DATAS' },
     closing: [
       'No seguimento deste plano solicitamos que coloquem o equipamento à disposição dos nossos engenheiros por forma a viabilizar as referidas manutenções. As tarefas do Programa de Manutenções a realizar podem ser modificadas devido a obsolescências técnicas que apresentem os equipamentos. Caso as mesmas se verifiquem, serão atempadamente comunicadas.',
@@ -205,9 +217,15 @@ export async function generateProposalLetterPdf(data: ProposalLetterData): Promi
   doc.text(formatLetterDate(new Date(), data.country), PAGE_WIDTH - PAGE_MARGIN, y + 6, { align: 'right' });
   y += LOGO_HEIGHT + 12;
 
-  paragraph(`${copy.subjectLabel}: ${copy.subject(data.year)}`, { bold: true, gap: 6 });
+  // A via da braquiterapia troca só o assunto e a abertura — o cliente pode receber duas
+  // cartas no mesmo ano e tem de distinguir qual está a assinar logo pelo assunto.
+  const isBrachy = data.track === 'brachytherapy';
+  paragraph(`${copy.subjectLabel}: ${isBrachy ? copy.subjectBrachy(data.year) : copy.subject(data.year)}`, {
+    bold: true,
+    gap: 6,
+  });
   paragraph(copy.greeting, { gap: 6 });
-  paragraph(copy.intro(data.year), { gap: 6 });
+  paragraph(isBrachy ? copy.introBrachy(data.year) : copy.intro(data.year), { gap: 6 });
 
   // ─── Tabela ───
   const columns = [

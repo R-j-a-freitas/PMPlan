@@ -8,9 +8,15 @@ DNS. Para o detalhe do arquivo de documentos assinados, ver
 
 ## 1. Quem recebe o quê
 
-Três templates, com regras diferentes. Todos são enviados de
+Três etapas, com regras diferentes. Todas são enviadas de
 `PMPlan - Elekta <noreply@stockmate.pt>` e existem em versão **PT e ES**, escolhida pelo
 `country` do hospital — nunca uma versão única.
+
+Cada etapa tem ainda um template por **via de aprovação**: a via geral usa
+`engineer_approval` / `client_proposal` / `signature_letter`, e a da braquiterapia os
+`brachy_*` correspondentes (migração `0017`). São seis templates × dois idiomas, todos
+editáveis em *Aprovações → Templates das aprovações*. Ver
+**[APROVACOES_BRAQUITERAPIA.md](APROVACOES_BRAQUITERAPIA.md)**.
 
 | | `engineer_approval` | `client_proposal` | `signature_letter` |
 |---|---|---|---|
@@ -18,7 +24,7 @@ Três templates, com regras diferentes. Todos são enviados de
 | **CC** | quem envia + CC fixos activos | + Team Leader da zona | + Team Leader da zona |
 | **Reply-To** | `EMAIL_REPLY_TO_DEFAULT` | `EMAIL_REPLY_TO_DEFAULT` | quem envia + CC fixos activos + `documentos@stockmate.pt` |
 | **Anexos** | — | — | PDF da carta + `.ics` |
-| **Assunto** | normal | normal | acrescido de `[PM-XXXXXXXX]` |
+| **Assunto** | normal | normal | acrescido de `[PM-XXXXXXXX]`, ou `[BT-XXXXXXXX]` na via da braquiterapia |
 
 Notas que não se deduzem da tabela:
 
@@ -159,6 +165,7 @@ arquivadas **sem nenhum erro visível** — é a falha mais fácil de não dar p
 | `0014_zone_team_leaders` | `zones.team_leader_engineer_id` + seed do Gonçalo Martins em North & West |
 | `0015_signed_documents` | tabela `signed_documents`, bucket privado `signed-documents`, `client_proposals.reference_code` |
 | `0016_app_settings` | tabela `app_settings` chave/valor + `include_team_leaders_in_client_emails` |
+| `0017_brachytherapy_approvals` | `client_proposals.approval_track` + `modalities.approval_track`, prefixo `BT-` no código de referência, 6 templates `brachy_*` |
 
 ### Aplicação
 
@@ -171,7 +178,11 @@ arquivadas **sem nenhum erro visível** — é a falha mais fácil de não dar p
   apagando a assinatura registada — que era de um plano que deixou de estar em vigor.
 - **Arquivo de documentos assinados** na ficha do hospital, alimentado pelas respostas dos
   clientes. Ver [DOCUMENTOS_ASSINADOS.md](DOCUMENTOS_ASSINADOS.md).
-- **Código de referência** `[PM-XXXXXXXX]` no assunto da carta, gerado por proposta.
+- **Código de referência** `[PM-XXXXXXXX]` no assunto da carta, gerado por proposta
+  (`[BT-XXXXXXXX]` na via da braquiterapia).
+- **Via de aprovação independente para a Braquiterapia**: proposta, validação do engenheiro,
+  aprovação do cliente, carta e assinatura próprias, separadas das do resto do hospital. Ver
+  [APROVACOES_BRAQUITERAPIA.md](APROVACOES_BRAQUITERAPIA.md).
 - **`graph_message_id`** passou a ser gravado no `email_log` — é o id que a Resend devolve,
   e permite cruzar um envio com o que se vê no painel dela quando algo corre mal.
 

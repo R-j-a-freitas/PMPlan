@@ -11,6 +11,7 @@ Carta de assinatura ─────► cliente
    Reply-To: documentos@stockmate.pt (+ quem enviou)
    Assunto:  "... — Hosp. de Braga [PM-80DE6BE8]"
                                     └── código da proposta
+                                        (BT-... na via de braquiterapia)
 
 cliente carrega em "Responder" e anexa o PDF assinado
    │
@@ -46,7 +47,7 @@ e aparece como etiqueta na interface, porque a confiança não é a mesma:
 
 | Método | Como | Fiabilidade |
 |---|---|---|
-| `reference_code` | Código `[PM-XXXXXXXX]` no assunto → `client_proposals.reference_code` | Inequívoco |
+| `reference_code` | Código `[PM-XXXXXXXX]` (ou `[BT-XXXXXXXX]`) no assunto → `client_proposals.reference_code` | Inequívoco |
 | `subject_hospital` | Nome do hospital dentro do assunto (sem acentos, sem pontuação) | Alta |
 | `sender_email` | Email do remetente coincide com um contacto do hospital | Palpite — confirmar |
 | `unmatched` | Nada bateu certo | Fica na fila "por associar" |
@@ -125,7 +126,8 @@ fica um endpoint público a aceitar payloads forjados.
 ## Verificar que está a funcionar
 
 1. Enviar a carta de assinatura a um hospital de teste.
-2. Confirmar que o assunto recebido tem o código `[PM-XXXXXXXX]`.
+2. Confirmar que o assunto recebido tem o código `[PM-XXXXXXXX]` (ou `[BT-XXXXXXXX]`, se
+   for a carta da via de braquiterapia).
 3. Responder a esse email com um PDF qualquer em anexo.
 4. Hospitais → o hospital → **Documentos** — deve lá estar, com a etiqueta verde "Código".
 

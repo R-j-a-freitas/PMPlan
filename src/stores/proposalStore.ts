@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import type { ClientProposal, ClientProposalUpdate } from '../types';
+import type { ApprovalTrack, ClientProposal, ClientProposalUpdate } from '../types';
 
 interface LogEmailParams {
   proposalId: string | null;
@@ -18,8 +18,10 @@ interface ProposalState {
   error: string | null;
 
   fetchProposals: (year: number) => Promise<void>;
-  /** Devolve a proposta existente para hospital+ano, ou cria uma nova em 'draft'. */
-  getOrCreateProposal: (hospitalId: string, year: number) => Promise<ClientProposal>;
+  /** Devolve a proposta existente para hospital+ano+via, ou cria uma nova em 'draft'.
+   *  A via faz parte da identidade da proposta (migração 0017): um hospital com
+   *  braquiterapia tem duas propostas por ano, que avançam de forma independente. */
+  getOrCreateProposal: (hospitalId: string, year: number, track: ApprovalTrack) => Promise<ClientProposal>;
   updateProposal: (id: string, patch: ClientProposalUpdate) => Promise<void>;
   /** Substitui as PMs associadas à proposta — snapshot do que foi efectivamente incluído
    *  no último envio (a lista "ao vivo" continua a vir do calendário/equipamento). */
@@ -44,13 +46,16 @@ export const useProposalStore = create<ProposalState>()(
         set({ proposals: data, loading: false });
       },
 
-      getOrCreateProposal: async (hospitalId, year) => {
-        const existing = get().proposals.find((proposal) => proposal.hospital_id === hospitalId && proposal.year === year);
+      getOrCreateProposal: async (hospitalId, year, track) => {
+        const existing = get().proposals.find(
+          (proposal) =>
+            proposal.hospital_id === hospitalId && proposal.year === year && proposal.approval_track === track,
+        );
         if (existing) return existing;
 
         const { data, error } = await supabase
           .from('client_proposals')
-          .insert({ hospital_id: hospitalId, year, stage: 'draft' })
+          .insert({ hospital_id: hospitalId, year, approval_track: track, stage: 'draft' })
           .select()
           .single();
         if (error) {

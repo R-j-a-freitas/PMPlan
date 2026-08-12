@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import type { Modality } from '../types';
+import type { ApprovalTrack, Modality } from '../types';
 
 interface ModalityState {
   modalities: Modality[];
@@ -11,6 +11,11 @@ interface ModalityState {
   fetchModalities: () => Promise<void>;
   createModality: (name: string) => Promise<void>;
   renameModality: (oldName: string, newName: string) => Promise<void>;
+  /** Muda a via de aprovação da modalidade (migração 0017). Passar uma modalidade para
+   *  'brachytherapy' tira os seus equipamentos da proposta geral do hospital e põe-nos
+   *  numa proposta própria — as propostas já em curso não são tocadas, a mudança só se
+   *  reflecte no que ainda não foi enviado. */
+  setApprovalTrack: (id: string, track: ApprovalTrack) => Promise<void>;
   /** Bloqueia se houver equipamento a usar a modalidade (evita texto órfão no dropdown). */
   deleteModality: (id: string, name: string) => Promise<void>;
 }
@@ -59,6 +64,20 @@ export const useModalityStore = create<ModalityState>()(
           throw error;
         }
         await get().fetchModalities();
+      },
+
+      setApprovalTrack: async (id, track) => {
+        const { data, error } = await supabase
+          .from('modalities')
+          .update({ approval_track: track })
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) {
+          set({ error: error.message });
+          throw error;
+        }
+        set({ modalities: get().modalities.map((modality) => (modality.id === id ? data : modality)) });
       },
 
       // Mesmo princípio da eliminação de zona (zoneStore): não remover se estiver em uso.

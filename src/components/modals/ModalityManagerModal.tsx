@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { APPROVAL_TRACKS, APPROVAL_TRACK_LABELS } from '../../lib/approvalTrack';
 import { useEquipmentStore, useModalityStore, useUiStore } from '../../stores';
+import type { ApprovalTrack } from '../../types';
 import { Button } from '../ui';
 
 /** Valor-sentinela usado como opção "Editar modalidades…" dentro dos dropdowns de
@@ -17,6 +19,7 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
   const modalities = useModalityStore((state) => state.modalities);
   const createModality = useModalityStore((state) => state.createModality);
   const renameModality = useModalityStore((state) => state.renameModality);
+  const setApprovalTrack = useModalityStore((state) => state.setApprovalTrack);
   const deleteModality = useModalityStore((state) => state.deleteModality);
   const fetchEquipment = useEquipmentStore((state) => state.fetchEquipment);
   const pushToast = useUiStore((state) => state.pushToast);
@@ -60,6 +63,21 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
     }
   }
 
+  async function handleTrackChange(id: string, name: string, track: ApprovalTrack) {
+    setBusy(true);
+    try {
+      await setApprovalTrack(id, track);
+      pushToast({
+        variant: 'success',
+        message: `"${name}" passa a ser aprovada na via ${APPROVAL_TRACK_LABELS[track]}.`,
+      });
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao mudar a via.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleDelete(id: string, name: string) {
     setBusy(true);
     try {
@@ -77,9 +95,11 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
         <h2 className="mb-1 text-base font-semibold text-gray-900">Gerir modalidades</h2>
         <p className="mb-3 text-xs text-gray-500">
           Renomear propaga automaticamente aos equipamentos que a usam. Não é possível remover uma modalidade em uso.
+          A <strong>via</strong> decide em que processo de aprovação entram os equipamentos: a via “Braquiterapia”
+          gera uma proposta separada da geral, com validação do engenheiro, aprovação do cliente e carta próprias.
         </p>
 
-        <div className="mb-3 max-h-64 overflow-y-auto rounded-md border border-gray-200">
+        <div className="mb-3 max-h-72 overflow-y-auto rounded-md border border-gray-200">
           {modalities.length === 0 && <p className="p-2 text-sm text-gray-500">Sem modalidades registadas.</p>}
           {modalities.map((modality) => (
             <div key={modality.id} className="flex items-center gap-2 border-b border-gray-100 px-2 py-1.5 last:border-0">
@@ -105,6 +125,23 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
               ) : (
                 <>
                   <span className="flex-1 text-sm text-gray-800">{modality.name}</span>
+                  {/* Via de aprovação — ao lado do nome porque é uma propriedade da
+                      modalidade, não uma definição escondida noutra página. */}
+                  <select
+                    className="rounded-md border border-gray-300 px-1.5 py-1 text-xs"
+                    value={modality.approval_track}
+                    disabled={busy}
+                    title="Via de aprovação dos equipamentos desta modalidade."
+                    onChange={(event) =>
+                      handleTrackChange(modality.id, modality.name, event.target.value as ApprovalTrack)
+                    }
+                  >
+                    {APPROVAL_TRACKS.map((track) => (
+                      <option key={track} value={track}>
+                        {APPROVAL_TRACK_LABELS[track]}
+                      </option>
+                    ))}
+                  </select>
                   <Button
                     variant="secondary"
                     onClick={() => {
