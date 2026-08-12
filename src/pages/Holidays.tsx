@@ -389,14 +389,7 @@ export function Holidays() {
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-lg font-semibold text-gray-900">Feriados</h1>
-          {canManageHolidays && (
-            <div className="flex items-center gap-2">
-              <Button onClick={() => setCreatingHoliday(true)}>Adicionar feriado</Button>
-              <Button variant="secondary" onClick={() => setCreatingRule(true)}>
-                Adicionar regra
-              </Button>
-            </div>
-          )}
+          {canManageHolidays && <Button onClick={() => setCreatingHoliday(true)}>Adicionar feriado</Button>}
         </div>
 
         <label className="mb-3 flex w-fit items-center gap-2 text-sm">
@@ -452,7 +445,17 @@ export function Holidays() {
         />
 
         <div className="mb-6">
-          <h2 className="text-sm font-semibold uppercase text-gray-500">Regras Recorrentes (Feriados Locais PT)</h2>
+          {/* O botão fica nesta secção, e não no topo da página, porque uma regra
+              recorrente é outra coisa que não um feriado manual — separar evita
+              adicionar-se uma julgando estar a adicionar a outra. */}
+          <div className="flex items-start justify-between gap-4">
+            <h2 className="text-sm font-semibold uppercase text-gray-500">Regras Recorrentes (Feriados Locais PT)</h2>
+            {canManageHolidays && (
+              <Button variant="secondary" onClick={() => setCreatingRule(true)}>
+                Adicionar regra
+              </Button>
+            )}
+          </div>
           <p className="mb-2 text-xs text-gray-400">
             Em vez de adicionar o feriado ano a ano, define-se aqui uma vez — fixo (mesmo dia todos os anos) ou móvel
             (dias relativos à Páscoa, ex: Segunda-feira de Páscoa = +1, Corpo de Deus = +60). A app projecta-o
