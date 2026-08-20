@@ -284,6 +284,22 @@ commits há 60 dias. Ver a secção correspondente no [README](../README.md#cont
 
 ---
 
+## Verificação manual a partir da aplicação
+
+*Saúde do sistema* → **Verificar agora** (só admin) faz as mesmas três etapas desta
+página, mas de dentro do browser e com `source = 'manual'`: escreve o heartbeat, conta as
+PMs e purga. Passa pela função `run_system_check()` da migração
+`0018_manual_health_actions.sql` — a aplicação continua sem privilégio para escrever
+directamente em `system_heartbeat`, e o token do papel `pmplan_heartbeat` continua a viver
+só na VPS e no GitHub Actions.
+
+Serve para responder já a "a base de dados está viva?" e para adiar a contagem dos 7 dias
+enquanto se resolve uma avaria da VPS. **Não é um mecanismo**: depende de alguém se
+lembrar, e por isso o semáforo global do ecrã ignora a origem `manual` — se a contasse, um
+clique bastava para pintar de verde um ecrã com as duas origens automáticas paradas.
+
+---
+
 ## Operação
 
 ```bash

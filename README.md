@@ -88,6 +88,22 @@ O keep-alive evita a pausa; o backup protege do que a apaga. São problemas dife
 nenhum dos dois substitui o outro — um projecto sempre activo com um `DELETE` sem `WHERE`
 fica igualmente sem dados.
 
+### Acções manuais (ecrã *Saúde do sistema*, só admin)
+
+Os quatro mecanismos acima são automáticos e correm fora do browser. O ecrã de saúde
+acrescenta-lhes dois botões, para os momentos em que não se quer esperar pela madrugada
+seguinte — antes de férias, antes de uma migração arriscada, ou com a VPS em baixo:
+
+| Botão | O que faz | O que **não** faz |
+|---|---|---|
+| **Verificar agora** | Escreve em `system_heartbeat` com `source=manual`, conta PMs e purga — as mesmas etapas do keep-alive. Adia mesmo a contagem dos 7 dias. | Não põe verde o semáforo global: este só conta as origens automáticas, para um clique não mascarar uma VPS morta. |
+| **Descarregar cópia** | Exporta as linhas de todas as tabelas de `public` (mais a lista de contas) num JSON gravado no computador de quem carrega, e regista-o em `system_backups` com `source=manual`. | Não leva schema, políticas de RLS, funções nem palavras-passe. **Não substitui o `pg_dump` da VPS** — é a última linha de defesa, para o caso de o projecto Supabase se perder por inteiro. |
+
+Ambos passam por funções `security definer` que recusam quem não for admin (migração
+`0018_manual_health_actions.sql`); a aplicação continua sem privilégio de escrita directa
+nas duas tabelas de continuidade. O registo de uma cópia manual nunca se pode fazer passar
+por uma execução da VPS — a origem é fixada dentro da função, não recebida do browser.
+
 ### Limitação conhecida do GitHub Actions
 
 **O GitHub desactiva automaticamente os schedules em repositórios sem commits há 60

@@ -30,6 +30,11 @@ fica inacessível.
 - As chaves `anon` e `service_role`: um projecto novo tem chaves novas, o que obriga a
   actualizar o `.env` e a fazer novo build
 
+Além disto há a **[cópia manual em JSON](#cópia-manual-em-json-ecrã-saúde-do-sistema)**,
+que qualquer admin pode descarregar a partir da aplicação. Leva os dados e as contas, não
+leva o schema — serve para encurtar o RPO antes de uma operação arriscada, e como último
+recurso se a VPS falhar ao mesmo tempo que o Supabase.
+
 ---
 
 ## Cenário A — projecto pausado
@@ -426,3 +431,47 @@ Os backups estão na VPS. Se a VPS arder, ardem com ela — e o requisito era te
 Para o resolver, com 12 MB por dump, qualquer coisa serve: `rclone sync` para um bucket
 S3/Backblaze, ou `rsync` para outra máquina. **Não está implementado** — se quiser, é um
 acrescento pequeno ao script.
+
+O botão **Descarregar cópia** (secção seguinte) é a versão manual desta ideia: põe os
+dados num terceiro sítio — o computador de quem carregou — sem depender nem do Supabase
+nem da VPS. Não substitui o `rclone`, porque exige alguém a lembrar-se.
+
+---
+
+## Cópia manual em JSON (ecrã *Saúde do sistema*)
+
+*Saúde do sistema* → **Descarregar cópia**. Só admin. Exporta e grava
+`pmplan-dados-AAAA-MM-DD-HHMM.json` no computador, e regista a operação em
+`system_backups` com `source = 'manual'` (migração `0018_manual_health_actions.sql`).
+
+| Leva | Não leva |
+|---|---|
+| Todas as linhas de todas as tabelas de `public` | Schema, índices, constraints, triggers |
+| A lista de contas (`id`, `email`, data de criação) | Políticas de RLS e funções |
+| | Palavras-passe (são hashes geridos pela plataforma) |
+| | Edge Functions e os seus segredos |
+
+**Não é um substituto do backup da VPS**, e o ecrã diz isso a quem carrega. É útil em três
+situações concretas:
+
+1. **Antes de uma migração arriscada** — leva menos de um minuto e dá um ponto de retorno
+   com menos de uma hora, em vez das até 24 do backup nocturno.
+2. **Cenário C** (projecto ou conta Supabase perdidos), se a VPS também tiver falhado: os
+   dados existem em algum lado, o que é infinitamente melhor do que não existirem.
+3. **Auditoria** — abrir o ficheiro e ver o que lá está, sem `psql`.
+
+### Restaurar a partir de um destes ficheiros
+
+O caminho é mais trabalhoso do que o `pg_restore`, e é essa a razão de ele não substituir
+o backup da VPS: o JSON tem dados, não estrutura.
+
+1. Criar o projecto e aplicar **todas as migrações** de `supabase/migrations/` por ordem —
+   é isto que repõe o schema que o ficheiro não traz.
+2. Inserir as tabelas **pela ordem das dependências** (`zones` → `hospitals` →
+   `equipment` → `pm_events` → …; as chaves estrangeiras rejeitam a ordem errada). Cada
+   entrada de `data.tables` é um array de linhas com os nomes das colunas iguais aos do
+   schema, portanto `insert into <tabela> select * from jsonb_populate_recordset(null::<tabela>, :'linhas')`
+   resolve tabela a tabela.
+3. Recriar as contas a partir de `data.auth_users` (só emails — as palavras-passe não
+   estão lá, nem podiam estar) e enviar definição de palavra-passe a cada uma, como em
+   [C.4](#c4--repor-o-que-não-está-no-dump).

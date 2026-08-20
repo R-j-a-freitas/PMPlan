@@ -4,6 +4,7 @@
 // `Relationships: []` em cada tabela/view é exigido pela constraint GenericTable/GenericView
 // do postgrest-js (sem ele, o client cai silenciosamente em `never` em todos os inserts/selects).
 import type {
+  BackupExport,
   ClientProposal,
   ClientProposalEvent,
   ClientProposalInsert,
@@ -44,6 +45,7 @@ import type {
   SourceChangeInsert,
   SourceChangeUpdate,
   SystemBackup,
+  SystemCheckResult,
   SystemHeartbeat,
   UserProfile,
   Zone,
@@ -122,9 +124,11 @@ export type Database = {
         Relationships: [];
       };
       // Continuidade da BD (migrações 0010 e 0013). A aplicação SÓ LÊ destas duas: quem
-      // escreve é a VPS e o GitHub Actions, com credenciais próprias. Os tipos de Insert
-      // e Update são `never` para que uma tentativa de escrita a partir do frontend seja
-      // um erro de compilação, e não um 403 descoberto em produção.
+      // escreve é a VPS e o GitHub Actions, com credenciais próprias — ou, para as acções
+      // manuais do ecrã de saúde, as funções da migração 0018 (ver Functions abaixo), que
+      // correm como o dono da tabela. Os tipos de Insert e Update são `never` para que uma
+      // tentativa de escrita directa a partir do frontend seja um erro de compilação, e
+      // não um 403 descoberto em produção.
       system_heartbeat: {
         Row: SystemHeartbeat;
         Insert: never;
@@ -199,6 +203,23 @@ export type Database = {
       rename_modality: {
         Args: { p_old_name: string; p_new_name: string };
         Returns: undefined;
+      };
+      // Acções manuais do ecrã de saúde (migração 0018). As três são security definer e
+      // recusam quem não for admin — a permissão não vive só no frontend.
+      run_system_check: {
+        Args: Record<string, never>;
+        Returns: SystemCheckResult;
+      };
+      // Devolve os dados de `public` (mais as contas) num único jsonb. O formato é
+      // deliberadamente aberto: o conteúdo depende das tabelas que existirem no momento,
+      // e fixá-lo aqui obrigaria a mexer neste ficheiro sempre que nascesse uma tabela.
+      admin_backup_export: {
+        Args: Record<string, never>;
+        Returns: BackupExport;
+      };
+      record_manual_backup: {
+        Args: { p_size_bytes: number; p_object_count?: number | null; p_note?: string | null };
+        Returns: string;
       };
     };
   };

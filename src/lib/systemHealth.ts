@@ -1,7 +1,9 @@
 import type {
+  BackupSource,
   HealthLevel,
   HeartbeatSource,
   HeartbeatSourceStatus,
+  SystemBackup,
   SystemHeartbeat,
 } from '../types';
 
@@ -19,6 +21,11 @@ export const EXPECTED_SOURCES: HeartbeatSource[] = ['vps', 'github_actions'];
 export const SOURCE_LABELS: Record<HeartbeatSource, string> = {
   vps: 'VPS (systemd)',
   github_actions: 'GitHub Actions',
+  manual: 'Manual',
+};
+
+export const BACKUP_SOURCE_LABELS: Record<BackupSource, string> = {
+  vps: 'VPS',
   manual: 'Manual',
 };
 
@@ -58,17 +65,47 @@ export function summariseHeartbeats(
   return sources.map((source) => {
     const lastPing = latest.get(source) ?? null;
     const ageHours = lastPing === null ? null : hoursSince(lastPing, now);
-    return { source, lastPing, ageHours, level: levelForAge(ageHours) };
+    const expected = EXPECTED_SOURCES.includes(source);
+    // Uma origem não esperada nunca é 'critical': a idade de um ping manual mede quando
+    // alguém carregou no botão, não a saúde de coisa nenhuma.
+    return { source, lastPing, ageHours, level: expected ? levelForAge(ageHours) : 'ok', expected };
   });
 }
 
-/** O estado global é o da MELHOR origem, não o da pior: enquanto uma escrever, o projecto
- *  não é pausado. As origens paradas continuam sinalizadas linha a linha — perder a
- *  redundância é um aviso, não uma emergência. */
+/** O estado global é o da MELHOR origem AUTOMÁTICA, não o da pior: enquanto uma escrever,
+ *  o projecto não é pausado. As origens paradas continuam sinalizadas linha a linha —
+ *  perder a redundância é um aviso, não uma emergência.
+ *
+ *  As origens não automáticas ficam de fora do agregado, e isso é o que impede o botão
+ *  "Verificar agora" de mentir: um ping manual adia mesmo a pausa, mas se o semáforo
+ *  global o contasse, um clique pintava de verde um ecrã com as duas origens automáticas
+ *  mortas — e a próxima pausa apanhava toda a gente desprevenida. */
 export function overallHeartbeatLevel(statuses: HeartbeatSourceStatus[]): HealthLevel {
-  const ages = statuses.map((s) => s.ageHours).filter((a): a is number => a !== null);
+  const ages = statuses
+    .filter((s) => s.expected)
+    .map((s) => s.ageHours)
+    .filter((a): a is number => a !== null);
   if (ages.length === 0) return 'unknown';
   return levelForAge(Math.min(...ages));
+}
+
+/** A cópia automática mais recente — a que o semáforo do backup mede.
+ *
+ *  Só as execuções da VPS contam: são as únicas que levam schema e palavras-passe, as
+ *  únicas com retenção e rotação, e as únicas que ninguém tem de se lembrar de fazer. Uma
+ *  exportação manual de ontem é útil, mas não é motivo para o ecrã dizer que a protecção
+ *  automática está a funcionar. */
+export function latestAutomaticBackup(backups: SystemBackup[]): SystemBackup | null {
+  // Não assume que a lista vem ordenada: o store lê-a por `ran_at desc` hoje, mas esta
+  // função é chamada com o resultado de um `filter`/`concat` qualquer no futuro, e um
+  // "último backup" errado é o tipo de engano que este ecrã existe para não cometer.
+  return backups.reduce<SystemBackup | null>(
+    (latest, backup) =>
+      backup.source === 'vps' && (latest === null || backup.ran_at > latest.ran_at)
+        ? backup
+        : latest,
+    null,
+  );
 }
 
 export function formatAge(ageHours: number | null): string {

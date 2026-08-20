@@ -6,5 +6,6 @@ export { supabase } from './supabase';
 export * from './graphClient';
 export * from './exporters';
 export * from './systemHealth';
+export * from './backupExport';
 export * from './searchText';
 export * from './pmStatus';
