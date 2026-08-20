@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { PageShell } from '../app/PageShell';
 import { buildHospitalExportRows, parseHospitalImportRows } from '../lib/importers/hospitalImportExport';
+import type { ImportAliases } from '../lib/importers/importHelpers';
 import { SPANISH_REGIONS, spanishRegionName } from '../lib/spanishRegions';
 import { exportRowsToSpreadsheet, readSpreadsheetFile } from '../lib/spreadsheet';
 import type { ParsedImportRow } from '../lib/spreadsheet';
@@ -227,13 +228,21 @@ export function Clients() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
-  const [importRows, setImportRows] = useState<ParsedImportRow<HospitalInsert>[] | null>(null);
+  // Guarda-se o ficheiro em cru (e não as linhas já validadas): as correspondências
+  // escolhidas na pré-visualização obrigam a validar tudo outra vez.
+  const [importRaw, setImportRaw] = useState<Record<string, string>[] | null>(null);
+  const [importAliases, setImportAliases] = useState<ImportAliases>({});
   const [importing, setImporting] = useState(false);
   const [contactsHospitalId, setContactsHospitalId] = useState<string | null>(null);
   // Hospital com o arquivo de documentos assinados aberto (linha expandida por baixo).
   const [documentsHospitalId, setDocumentsHospitalId] = useState<string | null>(null);
 
-  const leafZones = getLeafZones(zones);
+  const leafZones = useMemo(() => getLeafZones(zones), [zones]);
+
+  const importRows = useMemo(
+    () => (importRaw ? parseHospitalImportRows(importRaw, leafZones, importAliases) : null),
+    [importRaw, leafZones, importAliases],
+  );
 
   const ptLocalities = useMemo(
     () =>
@@ -289,10 +298,16 @@ export function Clients() {
   async function handleFileSelected(file: File) {
     try {
       const raw = await readSpreadsheetFile(file);
-      setImportRows(parseHospitalImportRows(raw, leafZones));
+      setImportAliases({});
+      setImportRaw(raw);
     } catch (err) {
       pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao ler o ficheiro.' });
     }
+  }
+
+  function closeImport() {
+    setImportRaw(null);
+    setImportAliases({});
   }
 
   async function handleConfirmImport() {
@@ -311,7 +326,7 @@ export function Clients() {
             ? `${success} hospital(is) importado(s), ${errors.length} falharam: ${errors.map((e) => `linha ${e.rowNumber}`).join(', ')}.`
             : `${success} hospital(is) importado(s) com sucesso.`,
       });
-      setImportRows(null);
+      closeImport();
     } finally {
       setImporting(false);
     }
@@ -582,8 +597,11 @@ export function Clients() {
           rows={importRows}
           renderPreview={(data) => data.name}
           importing={importing}
+          refOptions={{ zone: leafZones }}
+          aliases={importAliases}
+          onAliasChange={(key, recordId) => setImportAliases((current) => ({ ...current, [key]: recordId }))}
           onConfirm={handleConfirmImport}
-          onClose={() => setImportRows(null)}
+          onClose={closeImport}
         />
       )}
 

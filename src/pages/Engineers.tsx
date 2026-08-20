@@ -10,6 +10,7 @@ import { useAuthStore, useEngineerStore, useUiStore, useZoneStore } from '../sto
 import type { EngineerWithZones, UserProfile, Zone } from '../types';
 import { ZoneMultiSelect } from '../components/engineers';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
+import type { ImportAliases } from '../lib/importers/importHelpers';
 import { matchesSearch } from '../lib/searchText';
 import {
   Badge,
@@ -151,7 +152,10 @@ export function Engineers() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
-  const [importRows, setImportRows] = useState<ParsedImportRow<EngineerImportRow>[] | null>(null);
+  // Guarda-se o ficheiro em cru (e não as linhas já validadas): as correspondências
+  // escolhidas na pré-visualização obrigam a validar tudo outra vez.
+  const [importRaw, setImportRaw] = useState<Record<string, string>[] | null>(null);
+  const [importAliases, setImportAliases] = useState<ImportAliases>({});
   const [importing, setImporting] = useState(false);
   // Contas de login existentes (user_profiles) — para saber que engenheiros já têm acesso.
   const [accounts, setAccounts] = useState<UserProfile[]>([]);
@@ -162,6 +166,11 @@ export function Engineers() {
     fetchEngineers();
     fetchZones();
   }, [fetchEngineers, fetchZones]);
+
+  const importRows = useMemo(
+    () => (importRaw ? parseEngineerImportRows(importRaw, zones, importAliases) : null),
+    [importRaw, zones, importAliases],
+  );
 
   // Procura por nome ou email — é por aí que se identifica um engenheiro na lista.
   const filteredEngineers = useMemo(
@@ -263,10 +272,16 @@ export function Engineers() {
   async function handleFileSelected(file: File) {
     try {
       const raw = await readSpreadsheetFile(file);
-      setImportRows(parseEngineerImportRows(raw, zones));
+      setImportAliases({});
+      setImportRaw(raw);
     } catch (err) {
       pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao ler o ficheiro.' });
     }
+  }
+
+  function closeImport() {
+    setImportRaw(null);
+    setImportAliases({});
   }
 
   async function handleConfirmImport() {
@@ -285,7 +300,7 @@ export function Engineers() {
             ? `${success} engenheiro(s) importado(s), ${errors.length} falharam: ${errors.map((e) => `linha ${e.rowNumber}`).join(', ')}.`
             : `${success} engenheiro(s) importado(s) com sucesso.`,
       });
-      setImportRows(null);
+      closeImport();
     } finally {
       setImporting(false);
     }
@@ -564,8 +579,11 @@ export function Engineers() {
           rows={importRows}
           renderPreview={(data) => data.engineer.name}
           importing={importing}
+          refOptions={{ zone: zones }}
+          aliases={importAliases}
+          onAliasChange={(key, recordId) => setImportAliases((current) => ({ ...current, [key]: recordId }))}
           onConfirm={handleConfirmImport}
-          onClose={() => setImportRows(null)}
+          onClose={closeImport}
         />
       )}
     </PageShell>

@@ -1,6 +1,7 @@
 import type { Country, HospitalContact, HospitalInsert, HospitalWithZone, Zone } from '../../types';
-import type { ParsedImportRow } from '../spreadsheet';
-import { boolToPt, findByName, parseBooleanPt } from './importHelpers';
+import type { ImportRef, ParsedImportRow } from '../spreadsheet';
+import type { ImportAliases } from './importHelpers';
+import { boolToPt, parseBooleanPt, resolveRef } from './importHelpers';
 
 const COUNTRY_LABELS: Record<Country, string> = { PT: 'Portugal', ES: 'Espanha' };
 
@@ -51,26 +52,38 @@ export function buildHospitalExportRows(hospitals: HospitalWithZone[]): Record<s
 export function parseHospitalImportRows(
   raw: Record<string, string>[],
   leafZones: Zone[],
+  aliases: ImportAliases = {},
 ): ParsedImportRow<HospitalInsert>[] {
   return raw.map((row, index) => {
     const rowNumber = index + 2;
     const name = row['Nome'];
     if (!name) {
-      return { rowNumber, raw: row, data: null, error: 'Falta o nome.' };
+      return { rowNumber, raw: row, data: null, error: 'Falta o nome.', refs: [] };
     }
+
+    const zone = resolveRef(leafZones, 'zone', row['Zona'], aliases);
+    const refs: ImportRef[] = [
+      { kind: 'zone', column: 'Zona', value: row['Zona'] ?? '', resolvedId: zone?.id ?? null },
+    ];
 
     const country = parseCountry(row['País']);
     if (!country) {
-      return { rowNumber, raw: row, data: null, error: `País "${row['País'] || ''}" inválido (use PT ou ES).` };
+      return {
+        rowNumber,
+        raw: row,
+        data: null,
+        error: `País "${row['País'] || ''}" inválido (use PT ou ES).`,
+        refs,
+      };
     }
 
-    const zone = findByName(leafZones, row['Zona']);
     if (!zone) {
       return {
         rowNumber,
         raw: row,
         data: null,
         error: `Zona "${row['Zona'] || ''}" não encontrada (tem de ser uma zona-folha, sem zonas-filhas).`,
+        refs,
       };
     }
 
@@ -85,6 +98,6 @@ export function parseHospitalImportRows(
       contacts: parseContacts(row['Contactos']),
       active: parseBooleanPt(row['Activo'], true),
     };
-    return { rowNumber, raw: row, data, error: null };
+    return { rowNumber, raw: row, data, error: null, refs };
   });
 }

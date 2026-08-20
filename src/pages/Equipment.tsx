@@ -17,6 +17,7 @@ import { KNOWN_MODALITIES } from '../types';
 import type { EngineerWithZones, EquipmentInsert, HospitalWithZone, PmPerYear, WeekendWork } from '../types';
 import { EquipmentRow } from '../components/equipment';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
+import type { ImportAliases } from '../lib/importers/importHelpers';
 import { ModalityManagerModal, MODALITY_MANAGE_VALUE } from '../components/modals';
 import {
   Button,
@@ -233,7 +234,10 @@ export function Equipment() {
   const [creating, setCreating] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [saving, setSaving] = useState(false);
-  const [importRows, setImportRows] = useState<ParsedImportRow<EquipmentInsert>[] | null>(null);
+  // Guarda-se o ficheiro em cru (e não as linhas já validadas): as correspondências
+  // escolhidas na pré-visualização obrigam a validar tudo outra vez.
+  const [importRaw, setImportRaw] = useState<Record<string, string>[] | null>(null);
+  const [importAliases, setImportAliases] = useState<ImportAliases>({});
   const [importing, setImporting] = useState(false);
   const [showModalityManager, setShowModalityManager] = useState(false);
 
@@ -244,6 +248,11 @@ export function Equipment() {
     fetchZones();
     fetchModalities();
   }, [fetchEquipment, fetchHospitals, fetchEngineers, fetchZones, fetchModalities]);
+
+  const importRows = useMemo(
+    () => (importRaw ? parseEquipmentImportRows(importRaw, { hospitals, engineers }, importAliases) : null),
+    [importRaw, hospitals, engineers, importAliases],
+  );
 
   // Nomes das modalidades para o dropdown (da BD; fallback à lista fixa antes do fetch).
   const modalityNames = modalities.length > 0 ? modalities.map((modality) => modality.name) : [...KNOWN_MODALITIES];
@@ -300,10 +309,16 @@ export function Equipment() {
   async function handleFileSelected(file: File) {
     try {
       const raw = await readSpreadsheetFile(file);
-      setImportRows(parseEquipmentImportRows(raw, { hospitals, engineers }));
+      setImportAliases({});
+      setImportRaw(raw);
     } catch (err) {
       pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao ler o ficheiro.' });
     }
+  }
+
+  function closeImport() {
+    setImportRaw(null);
+    setImportAliases({});
   }
 
   async function handleConfirmImport() {
@@ -322,7 +337,7 @@ export function Equipment() {
             ? `${success} equipamento(s) importado(s), ${errors.length} falharam: ${errors.map((e) => `linha ${e.rowNumber}`).join(', ')}.`
             : `${success} equipamento(s) importado(s) com sucesso.`,
       });
-      setImportRows(null);
+      closeImport();
     } finally {
       setImporting(false);
     }
@@ -421,8 +436,11 @@ export function Equipment() {
           rows={importRows}
           renderPreview={(data) => data.name}
           importing={importing}
+          refOptions={{ hospital: hospitals, engineer: engineers }}
+          aliases={importAliases}
+          onAliasChange={(key, recordId) => setImportAliases((current) => ({ ...current, [key]: recordId }))}
           onConfirm={handleConfirmImport}
-          onClose={() => setImportRows(null)}
+          onClose={closeImport}
         />
       )}
 

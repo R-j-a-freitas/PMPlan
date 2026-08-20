@@ -7,8 +7,9 @@ import type {
   WeekendWork,
 } from '../../types';
 import { KNOWN_MODALITIES } from '../../types';
-import type { ParsedImportRow } from '../spreadsheet';
-import { boolToPt, findByName, parseBooleanPt } from './importHelpers';
+import type { ImportRef, ParsedImportRow } from '../spreadsheet';
+import type { ImportAliases } from './importHelpers';
+import { boolToPt, parseBooleanPt, resolveRef } from './importHelpers';
 
 const VALID_PM_PER_YEAR = [1, 2, 3, 4];
 
@@ -57,40 +58,54 @@ interface EquipmentImportContext {
 export function parseEquipmentImportRows(
   raw: Record<string, string>[],
   { hospitals, engineers }: EquipmentImportContext,
+  aliases: ImportAliases = {},
 ): ParsedImportRow<EquipmentInsert>[] {
   return raw.map((row, index) => {
     const rowNumber = index + 2; // +1 cabeçalho, +1 índice 1-based
     const name = row['Nome'];
     if (!name) {
-      return { rowNumber, raw: row, data: null, error: 'Falta o nome.' };
+      return { rowNumber, raw: row, data: null, error: 'Falta o nome.', refs: [] };
     }
 
-    const hospital = findByName(hospitals, row['Hospital']);
+    // As três referências são recolhidas de uma vez (e não uma por passagem): assim a
+    // pré-visualização mostra logo tudo o que há para rever nesta linha.
+    const refs: ImportRef[] = [];
+    const errors: string[] = [];
+
+    const hospital = resolveRef(hospitals, 'hospital', row['Hospital'], aliases);
+    refs.push({ kind: 'hospital', column: 'Hospital', value: row['Hospital'] ?? '', resolvedId: hospital?.id ?? null });
     if (!hospital) {
-      return { rowNumber, raw: row, data: null, error: `Hospital "${row['Hospital'] || ''}" não encontrado.` };
+      errors.push(`Hospital "${row['Hospital'] || ''}" não encontrado.`);
+    }
+
+    // Os engenheiros são opcionais: uma célula vazia não é uma referência a rever.
+    const engineerPrimary = resolveRef(engineers, 'engineer', row['Engenheiro principal'], aliases);
+    if (row['Engenheiro principal']) {
+      refs.push({
+        kind: 'engineer',
+        column: 'Engenheiro principal',
+        value: row['Engenheiro principal'],
+        resolvedId: engineerPrimary?.id ?? null,
+      });
+      if (!engineerPrimary) errors.push(`Engenheiro principal "${row['Engenheiro principal']}" não encontrado.`);
+    }
+    const engineerSecondary = resolveRef(engineers, 'engineer', row['Engenheiro secundário'], aliases);
+    if (row['Engenheiro secundário']) {
+      refs.push({
+        kind: 'engineer',
+        column: 'Engenheiro secundário',
+        value: row['Engenheiro secundário'],
+        resolvedId: engineerSecondary?.id ?? null,
+      });
+      if (!engineerSecondary) errors.push(`Engenheiro secundário "${row['Engenheiro secundário']}" não encontrado.`);
+    }
+
+    if (!hospital || errors.length > 0) {
+      return { rowNumber, raw: row, data: null, error: errors.join(' '), refs };
     }
 
     const pmPerYearRaw = Number(row['PM/ano']);
     const pmPerYear = VALID_PM_PER_YEAR.includes(pmPerYearRaw) ? (pmPerYearRaw as PmPerYear) : (1 as PmPerYear);
-
-    const engineerPrimary = findByName(engineers, row['Engenheiro principal']);
-    if (row['Engenheiro principal'] && !engineerPrimary) {
-      return {
-        rowNumber,
-        raw: row,
-        data: null,
-        error: `Engenheiro principal "${row['Engenheiro principal']}" não encontrado.`,
-      };
-    }
-    const engineerSecondary = findByName(engineers, row['Engenheiro secundário']);
-    if (row['Engenheiro secundário'] && !engineerSecondary) {
-      return {
-        rowNumber,
-        raw: row,
-        data: null,
-        error: `Engenheiro secundário "${row['Engenheiro secundário']}" não encontrado.`,
-      };
-    }
 
     const data: EquipmentInsert = {
       name,
@@ -111,6 +126,6 @@ export function parseEquipmentImportRows(
       color: row['Cor'] || '#3B82F6',
       active: parseBooleanPt(row['Activo'], true),
     };
-    return { rowNumber, raw: row, data, error: null };
+    return { rowNumber, raw: row, data, error: null, refs };
   });
 }
