@@ -6,7 +6,7 @@ import {
   useEmailRecipientStore,
   useUiStore,
 } from '../../stores';
-import { Button } from '../ui';
+import { Button, Card, EmptyState } from '../ui';
 
 // Gestão dos destinatários que vão SEMPRE em CC nos envios de propostas/cartas aos
 // clientes (substitui o antigo TERESA_EMAIL hardcoded). O toggle "Ativo" liga/desliga
@@ -94,8 +94,7 @@ export function EmailRecipientsEditor() {
   }
 
   return (
-    <div className="max-w-2xl">
-      <h2 className="mb-1 text-base font-semibold text-gray-900">Destinatários em CC</h2>
+    <Card className="max-w-2xl" title="Destinatários em CC">
       <p className="mb-4 text-sm text-gray-500">
         Estas pessoas entram em CC em todos os envios de propostas e cartas aos clientes. Desliga o interruptor{' '}
         <span className="font-medium">Ativo</span> para tirar alguém do loop (ex.: durante testes) sem apagar o registo —
@@ -112,7 +111,7 @@ export function EmailRecipientsEditor() {
       {/* Os Team Leaders não estão na lista abaixo — vêm das zonas (Configurações →
           Zonas). Precisavam de um interruptor próprio para se poderem tirar do loop
           durante os testes, que é exactamente o que o "Ativo" faz a cada pessoa. */}
-      <div className="mb-4 rounded-md border border-gray-200 p-3">
+      <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
         <label className="flex cursor-pointer items-start gap-2">
           <input
             type="checkbox"
@@ -133,8 +132,8 @@ export function EmailRecipientsEditor() {
         </label>
       </div>
 
-      <div className="mb-4 overflow-hidden rounded-md border border-gray-200">
-        {recipients.length === 0 && <p className="p-3 text-sm text-gray-500">Sem destinatários configurados.</p>}
+      <div className="mb-4 overflow-hidden rounded-lg border border-gray-200">
+        {recipients.length === 0 && <EmptyState size="compact">Sem destinatários configurados.</EmptyState>}
         {recipients.map((recipient) => (
           <div
             key={recipient.id}
@@ -157,7 +156,7 @@ export function EmailRecipientsEditor() {
               </div>
               {recipient.name && <div className="text-xs text-gray-400">{recipient.email}</div>}
             </div>
-            <Button variant="danger" onClick={() => handleDelete(recipient.id)} disabled={busy}>
+            <Button variant="dangerGhost" size="sm" onClick={() => handleDelete(recipient.id)} disabled={busy}>
               Remover
             </Button>
           </div>
@@ -169,7 +168,7 @@ export function EmailRecipientsEditor() {
           <label className="mb-1 text-xs text-gray-500">Email</label>
           <input
             placeholder="pessoa@empresa.com"
-            className="w-64 rounded-md border border-gray-300 px-2 py-1 text-sm"
+            className="w-64 pm-field"
             value={newEmail}
             onChange={(event) => setNewEmail(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
@@ -179,16 +178,16 @@ export function EmailRecipientsEditor() {
           <label className="mb-1 text-xs text-gray-500">Nome (opcional)</label>
           <input
             placeholder="Nome"
-            className="w-48 rounded-md border border-gray-300 px-2 py-1 text-sm"
+            className="w-48 pm-field"
             value={newName}
             onChange={(event) => setNewName(event.target.value)}
             onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
           />
         </div>
-        <Button variant="secondary" onClick={handleAdd} disabled={busy || !newEmail.trim()}>
+        <Button onClick={handleAdd} disabled={busy || !newEmail.trim()}>
           Adicionar
         </Button>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -86,21 +86,23 @@ export function EquipmentList() {
   }
 
   return (
-    <div className="border-b border-gray-200 p-2">
+    <div className="border-b border-gray-200 px-2 py-1.5">
+      {/* `text-xs py-1` vencem o `text-sm py-1.5` do .pm-field: as utilitárias saem
+          depois da camada de componentes no CSS gerado. */}
       <input
         type="search"
         placeholder="Procurar equipamento…"
-        className="mb-2 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field mb-1.5 w-full py-1 text-xs"
         value={filters.searchText}
         onChange={(event) => setSearchText(event.target.value)}
       />
       {filtered.length > 0 && (
-        <label className="mb-1 flex items-center gap-2 px-1 text-xs text-gray-500">
+        <label className="pm-sidebar-row mb-0.5 text-[11px] text-gray-500">
           <input type="checkbox" checked={allSelected} onChange={toggleAll} />
           Mostrar todos no calendário
         </label>
       )}
-      <div ref={containerRef} className="flex flex-col gap-1">
+      <div ref={containerRef} className="flex flex-col gap-0.5">
         {filtered.map((item) => {
           const armed = item.id === selectedEquipmentId;
           return (
@@ -109,7 +111,7 @@ export function EquipmentList() {
               role="button"
               tabIndex={canCreatePM ? 0 : -1}
               onClick={() => canCreatePM && setSelectedEquipmentId(armed ? null : item.id)}
-              className={`pmplan-equipment-item flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm hover:bg-gray-50 ${canCreatePM ? 'cursor-grab' : 'cursor-default'} ${armed ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500' : 'border-gray-200'}`}
+              className={`pmplan-equipment-item flex items-center gap-1.5 rounded-md border px-1.5 py-1 transition-colors hover:bg-gray-50 ${canCreatePM ? 'cursor-grab' : 'cursor-default'} ${armed ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500' : 'border-gray-200'}`}
               data-equipment-id={item.id}
               data-name={item.name}
               data-color={item.color}
@@ -122,14 +124,14 @@ export function EquipmentList() {
                 onClick={(event) => event.stopPropagation()}
                 onChange={() => toggleEquipmentSelection(item.id)}
               />
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
               {/* Nome do equipamento nunca trunca — é o hospital que encolhe (min-w-0
                   obrigatório num flex item para o truncate funcionar em vez de transbordar). */}
               <span className="shrink-0 whitespace-nowrap">{item.name}</span>
               {item.hospital_name && (
-                <span className="min-w-0 flex-1 truncate text-xs text-gray-400">{item.hospital_name}</span>
+                <span className="min-w-0 flex-1 truncate text-[10px] text-gray-400">{item.hospital_name}</span>
               )}
-              <Badge color={item.zone_color} className="ml-auto shrink-0">
+              <Badge variant="neutral" size="sm" className="ml-auto shrink-0">
                 {item.zone_code}
               </Badge>
             </div>

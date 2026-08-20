@@ -53,18 +53,20 @@ export function Dashboard() {
   const showGenerateButton = canCreatePM && planningYear >= currentYear;
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
+    // O calendário é o único ecrã sem PageShell: ocupa o viewport todo, a branco e sem
+    // moldura de cartão, porque é ele o "documento" desta página (secção 10).
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-white">
       <Topbar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden bg-white">
           <CalendarToolbar
             calendarRef={calendarRef}
             rightSlot={
               showGenerateButton ? (
-                <Button variant="secondary" onClick={() => setShowAutoScheduler(true)}>
-                  ⚡ Gerar Plano Anual
-                </Button>
+                // A única acção que cria trabalho neste ecrã — primária, e agora a única
+                // coisa azul da barra (as vistas passaram a controlo segmentado).
+                <Button onClick={() => setShowAutoScheduler(true)}>⚡ Gerar Plano Anual</Button>
               ) : undefined
             }
           />

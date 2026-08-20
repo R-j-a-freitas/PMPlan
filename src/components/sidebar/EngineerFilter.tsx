@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useEngineerStore, useZoneStore } from '../../stores';
 import { expandZoneSelection } from '../../lib/zoneTree';
 import type { EngineerWithZones, Zone } from '../../types';
-import { SidebarSection } from './SidebarSection';
+import { SIDEBAR_INDENT_PX, SidebarSection } from './SidebarSection';
 
 interface EngineerZoneNodeProps {
   zone: Zone;
@@ -35,25 +35,27 @@ function EngineerZoneNode({
 
   return (
     <>
-      <div className="flex items-center gap-1 rounded-md px-1 py-1 hover:bg-gray-50" style={{ marginLeft: depth * 16 }}>
+      <div
+        className="pm-sidebar-row hover:bg-gray-50"
+        style={{ marginLeft: depth * SIDEBAR_INDENT_PX }}
+      >
         <button
           type="button"
           onClick={() => onToggleCollapse(zone.id)}
           aria-label={collapsed ? `Expandir ${zone.name}` : `Colapsar ${zone.name}`}
-          className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 hover:text-gray-600"
+          className="pm-sidebar-caret"
         >
           {collapsed ? '▸' : '▾'}
         </button>
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: zone.color }} />
-        <span className="truncate text-xs font-medium text-gray-600">{zone.name}</span>
+        <span className="pm-sidebar-group">{zone.name}</span>
       </div>
       {!collapsed && (
         <>
           {directEngineers.map((engineer) => (
             <label
               key={engineer.id}
-              className="flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-gray-50"
-              style={{ marginLeft: (depth + 1) * 16 }}
+              className="pm-sidebar-row hover:bg-gray-50"
+              style={{ marginLeft: (depth + 1) * SIDEBAR_INDENT_PX }}
             >
               <input
                 type="checkbox"
@@ -115,8 +117,8 @@ export function EngineerFilter() {
     return engineers.filter((engineer) => engineer.zones.some((zone) => expanded.has(zone.zone_id)));
   }, [engineers, zones, selectedZoneIds]);
 
-  // Agrupa por zona primária (mesma zona usada antes para o "pontinho" de cor) — cada
-  // engenheiro aparece uma única vez, sob essa zona na árvore.
+  // Agrupa por zona primária — cada engenheiro aparece uma única vez, sob essa zona na
+  // árvore.
   const engineersByZone = useMemo(() => {
     const map = new Map<string, EngineerWithZones[]>();
     for (const engineer of visibleEngineers) {
@@ -168,8 +170,8 @@ export function EngineerFilter() {
 
   return (
     <SidebarSection title="Engenheiros">
-      <div className="flex flex-col gap-0.5">
-        <label className="flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-gray-50">
+      <div className="flex flex-col">
+        <label className="pm-sidebar-row hover:bg-gray-50">
           <input type="checkbox" checked={allSelected} onChange={toggleAll} />
           <span>Todos</span>
         </label>
@@ -189,15 +191,15 @@ export function EngineerFilter() {
         ))}
         {unassignedEngineers.length > 0 && (
           <>
-            <div className="flex items-center gap-1 rounded-md px-1 py-1">
-              <span className="w-5 shrink-0" />
-              <span className="truncate text-xs font-medium text-gray-600">Sem zona</span>
+            <div className="pm-sidebar-row">
+              <span className="w-3.5 shrink-0" />
+              <span className="pm-sidebar-group">Sem zona</span>
             </div>
             {unassignedEngineers.map((engineer) => (
               <label
                 key={engineer.id}
-                className="flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-gray-50"
-                style={{ marginLeft: 16 }}
+                className="pm-sidebar-row hover:bg-gray-50"
+                style={{ marginLeft: SIDEBAR_INDENT_PX }}
               >
                 <input
                   type="checkbox"

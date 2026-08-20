@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Topbar } from '../app/Topbar';
+import { PageShell } from '../app/PageShell';
 import { EmailRecipientsEditor, TemplateEditor } from '../components/approvals';
-import { Badge, Button } from '../components/ui';
+import { Badge, Button, Card, EmptyState, FilterChip, Modal, PageHeader, Tabs } from '../components/ui';
 import { buildProposalLetterData, generateProposalLetterPdf } from '../lib/exporters/letterPdf';
 import type { ProposalLetterData } from '../lib/exporters/letterPdf';
 import { buildProposalIcs, downloadIcs } from '../lib/exporters/proposalIcs';
@@ -641,72 +641,67 @@ export function Approvals() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <Topbar />
-      <div className="flex-1 overflow-y-auto p-4">
-        <h1 className="mb-1 text-lg font-semibold text-gray-900">Aprovações — Envio de Propostas a Clientes</h1>
-        <p className="mb-4 text-sm text-gray-500">
-          Ano de planeamento {planningYear}. Cada linha é um processo independente — confirma com o engenheiro,
-          envia a proposta ao cliente e, depois de aprovada, envia a carta de assinatura. Os equipamentos de{' '}
-          <strong>Braquiterapia</strong> têm a sua própria linha: são validados, aprovados e assinados à parte do
-          resto do hospital. A via de cada modalidade define-se em Equipamentos → Editar modalidades.
-        </p>
+    <PageShell wide>
+      <PageHeader
+        title="Aprovações — Envio de Propostas a Clientes"
+        description={
+          <>
+            Ano de planeamento {planningYear}. Cada linha é um processo independente — confirma com o engenheiro,
+            envia a proposta ao cliente e, depois de aprovada, envia a carta de assinatura. Os equipamentos de{' '}
+            <strong>Braquiterapia</strong> têm a sua própria linha: são validados, aprovados e assinados à parte do
+            resto do hospital. A via de cada modalidade define-se em Equipamentos → Editar modalidades.
+          </>
+        }
+      />
 
+      <div>
         {/* Separadores: o workflow de aprovações e a edição dos templates de email vivem
             em tabs distintos — os templates são configuração, não fazem parte do dia-a-dia
             do envio. */}
-        <div className="mb-4 flex gap-1 border-b border-gray-200">
-          {([
+        <Tabs
+          active={activeTab}
+          onChange={setActiveTab}
+          tabs={[
             { key: 'approvals', label: 'Aprovações' },
             { key: 'templates', label: 'Templates das aprovações' },
             { key: 'recipients', label: 'Destinatários em CC' },
-          ] as const).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-                activeTab === tab.key
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+          ]}
+        />
 
         {activeTab === 'templates' && canAct && <TemplateEditor />}
         {activeTab === 'templates' && !canAct && (
-          <p className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
-            Sem permissões para editar templates.
-          </p>
+          <Card>
+            <EmptyState>Sem permissões para editar templates.</EmptyState>
+          </Card>
         )}
 
         {activeTab === 'recipients' && canAct && <EmailRecipientsEditor />}
         {activeTab === 'recipients' && !canAct && (
-          <p className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
-            Sem permissões para gerir destinatários.
-          </p>
+          <Card>
+            <EmptyState>Sem permissões para gerir destinatários.</EmptyState>
+          </Card>
         )}
 
         {activeTab === 'approvals' && bundles.length === 0 && (
-          <p className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
-            Sem PMs agendadas para {planningYear}.
-          </p>
+          <Card>
+            <EmptyState>Sem PMs agendadas para {planningYear}.</EmptyState>
+          </Card>
         )}
 
         {activeTab === 'approvals' && bundles.length > 0 && (
           <>
-            {/* Filtro de via: com a braquiterapia à parte, a mesma lista passa a ter duas
-                linhas por hospital — quem está a tratar de uma delas isola-a aqui. */}
-            <div className="mb-2 flex flex-wrap items-center gap-2">
+            {/* Filtro de via + acção em lote numa barra só: são os dois controlos que
+                actuam sobre a lista inteira, e pertencem juntos por cima dela. */}
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="text-sm text-gray-600">Via:</span>
               {trackFilterOptions.map((option) => {
                 const count =
                   option.key === 'all' ? bundles.length : bundles.filter((bundle) => bundle.track === option.key).length;
                 return (
-                  <button
+                  <FilterChip
                     key={option.key}
+                    active={trackFilter === option.key}
+                    count={count}
                     onClick={() => {
                       setTrackFilter(option.key);
                       // A selecção é por linha; ao mudar de filtro deixaria seleccionadas
@@ -714,37 +709,34 @@ export function Approvals() {
                       // silêncio. Limpa-se, que é o que o utilizador espera.
                       setSelectedIds(new Set());
                     }}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                      trackFilter === option.key
-                        ? 'border-blue-600 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 text-gray-500 hover:text-gray-700'
-                    }`}
                   >
-                    {option.label} ({count})
-                  </button>
+                    {option.label}
+                  </FilterChip>
                 );
               })}
+
+              {canAct && (
+                <div className="ml-auto flex items-center gap-2">
+                  <span className="text-sm text-gray-500">{selectedIds.size} seleccionado(s)</span>
+                  <Button onClick={runBulkAction} disabled={selectedIds.size === 0 || busyKey !== null}>
+                    Avançar seleccionados
+                  </Button>
+                </div>
+              )}
             </div>
 
-            {canAct && (
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-sm text-gray-600">{selectedIds.size} seleccionado(s)</span>
-                <Button variant="secondary" onClick={runBulkAction} disabled={selectedIds.size === 0 || busyKey !== null}>
-                  Avançar seleccionados
-                </Button>
-              </div>
-            )}
-
             {visibleBundles.length === 0 && (
-              <p className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
-                Sem PMs agendadas nesta via para {planningYear}.
-              </p>
+              <Card>
+                <EmptyState>Sem PMs agendadas nesta via para {planningYear}.</EmptyState>
+              </Card>
             )}
 
             {visibleBundles.length > 0 && (
-              <table className="w-full border-collapse text-sm">
+              <Card padded={false}>
+              <div className="overflow-x-auto">
+              <table className="pm-table">
                 <thead>
-                  <tr className="border-b border-gray-200 text-left text-gray-500">
+                  <tr>
                     {canAct && (
                       <th className="py-1.5 pr-2">
                         <input
@@ -783,22 +775,19 @@ export function Approvals() {
                   ))}
                 </tbody>
               </table>
+              </div>
+              </Card>
             )}
           </>
         )}
       </div>
 
       {resendLetterTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-            <h2 className="mb-2 text-base font-semibold text-gray-900">Reenviar carta para assinatura</h2>
-            <p className="mb-4 text-sm text-gray-600">
-              Vai ser enviada a <strong>{bundleLabel(resendLetterTarget)}</strong> uma nova carta, gerada com as
-              datas de PM que estão neste momento no calendário. Como a proposta já estava assinada, o estado volta
-              a “Carta enviada” e <strong>a assinatura registada é apagada</strong> — a que existia refere-se ao
-              plano anterior, e passa a ser preciso obter a assinatura da versão nova.
-            </p>
-            <div className="flex justify-end gap-2">
+        <Modal
+          title="Reenviar carta para assinatura"
+          onClose={() => setResendLetterTarget(null)}
+          footer={
+            <>
               <Button
                 variant="secondary"
                 onClick={() => setResendLetterTarget(null)}
@@ -816,40 +805,41 @@ export function Approvals() {
               >
                 Reenviar carta
               </Button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        >
+          <p className="text-sm text-gray-600">
+            Vai ser enviada a <strong>{bundleLabel(resendLetterTarget)}</strong> uma nova carta, gerada com as datas
+            de PM que estão neste momento no calendário. Como a proposta já estava assinada, o estado volta a
+            “Carta enviada” e <strong>a assinatura registada é apagada</strong> — a que existia refere-se ao plano
+            anterior, e passa a ser preciso obter a assinatura da versão nova.
+          </p>
+        </Modal>
       )}
 
       {resetTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-            <h2 className="mb-2 text-base font-semibold text-gray-900">Reiniciar workflow de aprovações</h2>
-            <p className="mb-4 text-sm text-gray-600">
-              Quer mesmo reiniciar o processo de <strong>{bundleLabel(resetTarget)}</strong>? O estado volta a
-              “Por enviar” e todas as confirmações já registadas (engenheiro, cliente, carta e assinatura) são
-              apagadas — implica <strong>revalidar de novo com o engenheiro e com o cliente</strong>.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => setResetTarget(null)}
-                disabled={busyKey === resetTarget.key}
-              >
+        <Modal
+          title="Reiniciar workflow de aprovações"
+          onClose={() => setResetTarget(null)}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setResetTarget(null)} disabled={busyKey === resetTarget.key}>
                 Cancelar
               </Button>
-              <Button
-                variant="danger"
-                onClick={() => runReset(resetTarget)}
-                disabled={busyKey === resetTarget.key}
-              >
+              <Button variant="danger" onClick={() => runReset(resetTarget)} disabled={busyKey === resetTarget.key}>
                 Sim, reiniciar
               </Button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        >
+          <p className="text-sm text-gray-600">
+            Quer mesmo reiniciar o processo de <strong>{bundleLabel(resetTarget)}</strong>? O estado volta a “Por
+            enviar” e todas as confirmações já registadas (engenheiro, cliente, carta e assinatura) são apagadas —
+            implica <strong>revalidar de novo com o engenheiro e com o cliente</strong>.
+          </p>
+        </Modal>
       )}
-    </div>
+    </PageShell>
   );
 }
 
@@ -890,7 +880,7 @@ function ApprovalRow({
   const resend = resendAction(stage);
 
   return (
-    <tr className="border-b border-gray-100">
+    <tr>
       {canAct && (
         <td className="py-1.5 pr-2">
           <input type="checkbox" checked={selected} onChange={onToggleSelected} />
@@ -937,12 +927,16 @@ function ApprovalRow({
         <Badge color={STAGE_COLORS[stage]}>{STAGE_LABELS[stage]}</Badge>
       </td>
       <td className="py-1.5 pr-2 text-right">
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onPreviewPdf}>
-            Pré-visualizar PDF
+        {/* Cinco acções na mesma linha: as consultivas em ghost (não são o trabalho, são
+            a verificação antes dele), a que faz avançar o processo em primary, e o
+            recomeço em vermelho discreto no fim. É a política de botões aplicada ao caso
+            mais denso da app. */}
+        <div className="flex justify-end gap-1">
+          <Button variant="ghost" size="sm" onClick={onPreviewPdf} title="Ver a carta como o cliente a vai receber">
+            PDF
           </Button>
-          <Button variant="secondary" onClick={onDownloadCalendar}>
-            Descarregar .ics
+          <Button variant="ghost" size="sm" onClick={onDownloadCalendar} title="Descarregar as PMs em .ics">
+            .ics
           </Button>
           {/* Reenviar a carta a um hospital já assinado passa primeiro pela confirmação —
               invalida a assinatura registada. Nos restantes reenvios não há nada a perder,
@@ -950,6 +944,7 @@ function ApprovalRow({
           {canAct && resend && (
             <Button
               variant="secondary"
+              size="sm"
               onClick={() => (stage === 'signed' ? onConfirmResendLetter() : onRunAction(resend.key))}
               disabled={busy}
             >
@@ -957,14 +952,14 @@ function ApprovalRow({
             </Button>
           )}
           {canAct && action && (
-            <Button onClick={() => onRunAction(action.key)} disabled={busy}>
-              {action.label}
+            <Button size="sm" onClick={() => onRunAction(action.key)} disabled={busy}>
+              {busy ? 'A processar…' : action.label}
             </Button>
           )}
           {/* Reiniciar só faz sentido depois de o workflow ter arrancado (stage !== draft)
               — antes disso não há nada para revalidar. */}
           {canAct && stage !== 'draft' && (
-            <Button variant="danger" onClick={onReset} disabled={busy}>
+            <Button variant="dangerGhost" size="sm" onClick={onReset} disabled={busy}>
               Recomeçar
             </Button>
           )}

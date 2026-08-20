@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import type { ConflictResult } from '../../types';
-import { Button } from '../ui';
+import { Button, Modal } from '../ui';
 
 interface ConflictModalProps {
   conflicts: ConflictResult[];
@@ -13,38 +13,36 @@ export function ConflictModal({ conflicts, onAcceptSuggestion, onClose }: Confli
   const suggestedDate = conflicts.find((conflict) => conflict.suggestedDate)?.suggestedDate;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-        <h2 className="mb-3 text-base font-semibold text-red-700">Conflito ao agendar PM</h2>
-
-        <ul className="mb-4 flex flex-col gap-2">
-          {conflicts.map((conflict) => (
-            <li
-              key={`${conflict.type}-${conflict.message}`}
-              className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
-            >
-              {conflict.message}
-            </li>
-          ))}
-        </ul>
-
-        {suggestedDate && (
-          <p className="mb-4 text-sm text-gray-700">
-            Data alternativa sugerida: <strong>{format(suggestedDate, 'dd/MM/yyyy')}</strong>
-          </p>
-        )}
-
-        <div className="flex justify-end gap-2">
+    <Modal
+      title="Conflito ao agendar PM"
+      onClose={onClose}
+      footer={
+        <>
           <Button variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
           {suggestedDate && (
-            <Button variant="primary" onClick={() => onAcceptSuggestion(suggestedDate)}>
-              Usar data sugerida
-            </Button>
+            <Button onClick={() => onAcceptSuggestion(suggestedDate)}>Usar data sugerida</Button>
           )}
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <ul className="flex flex-col gap-2">
+        {conflicts.map((conflict) => (
+          <li
+            key={`${conflict.type}-${conflict.message}`}
+            className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+          >
+            {conflict.message}
+          </li>
+        ))}
+      </ul>
+
+      {suggestedDate && (
+        <p className="mt-4 text-sm text-gray-700">
+          Data alternativa sugerida: <strong>{format(suggestedDate, 'dd/MM/yyyy')}</strong>
+        </p>
+      )}
+    </Modal>
   );
 }

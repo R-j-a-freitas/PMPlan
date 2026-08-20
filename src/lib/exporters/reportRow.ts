@@ -1,6 +1,7 @@
 /** Linha plana usada pelos exporters — já com os joins (equipamento/hospital/engenheiro) resolvidos. */
 export interface PMReportRow {
   equipmentName: string;
+  modality: string;
   hospitalName: string;
   zoneName: string;
   engineerName: string;

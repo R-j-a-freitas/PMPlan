@@ -89,14 +89,14 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
     const engineerPrimary = engineers.find((engineer) => engineer.id === item.engineer_primary_id);
     const engineerSecondary = engineers.find((engineer) => engineer.id === item.engineer_secondary_id);
     return (
-      <tr className="border-b border-gray-100">
+      <tr>
         <td className="flex items-center gap-2 py-1.5 pr-2">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
           {item.name}
         </td>
         <td className="py-1.5 pr-2">{item.hospital_name}</td>
         <td className="py-1.5 pr-2">
-          <Badge color={item.zone_color}>{item.zone_code}</Badge>
+          <Badge variant="neutral">{item.zone_code}</Badge>
         </td>
         <td className="py-1.5 pr-2">{item.model ?? '—'}</td>
         <td className="py-1.5 pr-2">{item.serial_number ?? '—'}</td>
@@ -107,14 +107,16 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
         <td className="py-1.5 pr-2">{WEEKEND_WORK_LABELS[item.weekend_work] ?? '—'}</td>
         <td className="py-1.5 pr-2">{engineerPrimary?.name ?? '—'}</td>
         <td className="py-1.5 pr-2">{engineerSecondary?.name ?? '—'}</td>
-        <td className="py-1.5 pr-2">{item.active ? 'Sim' : 'Não'}</td>
+        <td className="py-1.5 pr-2">
+          <Badge tone={item.active ? 'success' : 'neutral'}>{item.active ? 'Activo' : 'Inactivo'}</Badge>
+        </td>
         <td className="py-1.5 pr-2 text-right">
           {canManageEquipment && (
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={startEdit}>
+            <div className="flex justify-end gap-1">
+              <Button variant="secondary" size="sm" onClick={startEdit}>
                 Editar
               </Button>
-              <Button variant="danger" onClick={() => deleteEquipment(item.id)}>
+              <Button variant="dangerGhost" size="sm" onClick={() => deleteEquipment(item.id)}>
                 Eliminar
               </Button>
             </div>
@@ -132,17 +134,17 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
     : modalityNames;
 
   return (
-    <tr className="border-b border-gray-100">
+    <tr>
       <td className="py-1.5 pr-2">
         <div className="flex items-center gap-1">
           <input
             type="color"
-            className="h-7 w-8 shrink-0 rounded-md border border-gray-300"
+            className="h-7 w-8 shrink-0 cursor-pointer rounded-md border border-gray-300 bg-white p-0.5"
             value={form.color}
             onChange={(event) => setForm({ ...form, color: event.target.value })}
           />
           <input
-            className="w-full rounded-md border border-gray-300 px-2 py-1"
+            className="pm-field w-full"
             value={form.name}
             onChange={(event) => setForm({ ...form, name: event.target.value })}
           />
@@ -150,7 +152,7 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
       </td>
       <td className="py-1.5 pr-2">
         <select
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="pm-field"
           value={form.hospitalId}
           onChange={(event) => setForm({ ...form, hospitalId: event.target.value })}
         >
@@ -162,25 +164,25 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
         </select>
       </td>
       <td className="py-1.5 pr-2">
-        <Badge color={item.zone_color}>{item.zone_code}</Badge>
+        <Badge variant="neutral">{item.zone_code}</Badge>
       </td>
       <td className="py-1.5 pr-2">
         <input
-          className="w-full rounded-md border border-gray-300 px-2 py-1"
+          className="pm-field w-full"
           value={form.model}
           onChange={(event) => setForm({ ...form, model: event.target.value })}
         />
       </td>
       <td className="py-1.5 pr-2">
         <input
-          className="w-full rounded-md border border-gray-300 px-2 py-1"
+          className="pm-field w-full"
           value={form.serialNumber}
           onChange={(event) => setForm({ ...form, serialNumber: event.target.value })}
         />
       </td>
       <td className="py-1.5 pr-2">
         <select
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="pm-field"
           value={form.modality}
           onChange={(event) => {
             if (event.target.value === MODALITY_MANAGE_VALUE) {
@@ -201,7 +203,7 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
       </td>
       <td className="py-1.5 pr-2">
         <select
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="pm-field"
           value={form.pmPerYear}
           onChange={(event) => setForm({ ...form, pmPerYear: event.target.value as `${PmPerYear}` })}
         >
@@ -216,7 +218,7 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
         <input
           type="number"
           min={1}
-          className="w-16 rounded-md border border-gray-300 px-2 py-1"
+          className="w-16 pm-field"
           value={form.pmDurationDays}
           onChange={(event) => setForm({ ...form, pmDurationDays: event.target.value })}
         />
@@ -230,7 +232,7 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
       </td>
       <td className="py-1.5 pr-2">
         <select
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="pm-field"
           value={form.weekendWork}
           onChange={(event) => setForm({ ...form, weekendWork: event.target.value as WeekendWork })}
         >
@@ -241,7 +243,7 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
       </td>
       <td className="py-1.5 pr-2">
         <select
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="pm-field"
           value={form.engineerPrimaryId}
           onChange={(event) => setForm({ ...form, engineerPrimaryId: event.target.value })}
         >
@@ -255,7 +257,7 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
       </td>
       <td className="py-1.5 pr-2">
         <select
-          className="rounded-md border border-gray-300 px-2 py-1"
+          className="pm-field"
           value={form.engineerSecondaryId}
           onChange={(event) => setForm({ ...form, engineerSecondaryId: event.target.value })}
         >
@@ -275,11 +277,11 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
         />
       </td>
       <td className="py-1.5 pr-2 text-right">
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setEditing(false)} disabled={saving}>
+        <div className="flex justify-end gap-1.5">
+          <Button variant="secondary" size="sm" onClick={() => setEditing(false)} disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
             Guardar
           </Button>
         </div>

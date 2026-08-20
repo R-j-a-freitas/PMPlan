@@ -12,6 +12,9 @@ interface ZoneNodeProps {
   canManageZones: boolean;
 }
 
+// `color` continua no formulário só para ser reenviada intacta no update — a coluna
+// mantém-se na BD e nas views, mas deixou de ser editável e de pintar seja o que for
+// na UI (a única cor com significado é a do equipamento).
 function buildForm(zone: Zone) {
   return {
     name: zone.name,
@@ -113,23 +116,17 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
         {editing ? (
           <>
             <input
-              type="color"
-              className="h-8 w-10 rounded-md border border-gray-300"
-              value={form.color}
-              onChange={(event) => setForm({ ...form, color: event.target.value })}
-            />
-            <input
-              className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="w-24 pm-field"
               value={form.code}
               onChange={(event) => setForm({ ...form, code: event.target.value })}
             />
             <input
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="pm-field"
               value={form.name}
               onChange={(event) => setForm({ ...form, name: event.target.value })}
             />
             <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="pm-field"
               value={form.parentZoneId}
               onChange={(event) => setForm({ ...form, parentZoneId: event.target.value })}
             >
@@ -143,7 +140,7 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
             {/* Team Leader: entra sempre em CC nos emails aos clientes desta zona. Vazio
                 numa zona-filha não é "sem TL" — herda o da zona-mãe (ver placeholder). */}
             <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="pm-field"
               title="Team Leader — entra em CC nos emails aos clientes desta zona"
               value={form.teamLeaderId}
               onChange={(event) => setForm({ ...form, teamLeaderId: event.target.value })}
@@ -160,7 +157,7 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
           </>
         ) : (
           <>
-            <Badge color={zone.color}>{zone.code}</Badge>
+            <Badge variant="neutral">{zone.code}</Badge>
             <span className="text-sm font-medium">{zone.name}</span>
             <span className="text-xs text-gray-400">{zoneHospitals.length} hospital(is)</span>
             {/* O TL é a informação que decide o CC dos emails ao cliente — fica visível
@@ -179,27 +176,27 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
             )}
           </>
         )}
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex gap-1">
           {editing ? (
             <>
-              <Button variant="secondary" onClick={() => setEditing(false)} disabled={saving}>
+              <Button variant="secondary" size="sm" onClick={() => setEditing(false)} disabled={saving}>
                 Cancelar
               </Button>
-              <Button onClick={handleSave} disabled={saving}>
+              <Button size="sm" onClick={handleSave} disabled={saving}>
                 Guardar
               </Button>
             </>
           ) : (
             <>
-              <Button variant="secondary" onClick={() => setExpanded(!expanded)}>
+              <Button variant="ghost" size="sm" onClick={() => setExpanded(!expanded)}>
                 {expanded ? 'Fechar' : 'Gerir'}
               </Button>
               {canManageZones && (
                 <>
-                  <Button variant="secondary" onClick={startEdit}>
+                  <Button variant="secondary" size="sm" onClick={startEdit}>
                     Editar
                   </Button>
-                  <Button variant="danger" onClick={handleDelete}>
+                  <Button variant="dangerGhost" size="sm" onClick={handleDelete}>
                     Eliminar
                   </Button>
                 </>

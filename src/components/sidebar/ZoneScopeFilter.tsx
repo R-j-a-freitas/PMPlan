@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useEquipmentStore, useZoneStore } from '../../stores';
 import { expandZoneSelection } from '../../lib/zoneTree';
 import type { Zone } from '../../types';
-import { SidebarSection } from './SidebarSection';
+import { SIDEBAR_INDENT_PX, SidebarSection } from './SidebarSection';
 
 interface ZoneRowProps {
   zone: Zone;
@@ -29,22 +29,25 @@ function ZoneRow({
 
   return (
     <>
-      <div className="flex items-center gap-1 rounded-md hover:bg-gray-50" style={{ marginLeft: depth * 16 }}>
+      <div
+        className="pm-sidebar-row hover:bg-gray-50"
+        style={{ marginLeft: depth * SIDEBAR_INDENT_PX }}
+      >
         {hasChildren ? (
           <button
             type="button"
             onClick={() => onToggleCollapse(zone.id)}
             aria-label={collapsed ? `Expandir ${zone.name}` : `Colapsar ${zone.name}`}
-            className="flex h-5 w-5 shrink-0 items-center justify-center text-gray-400 hover:text-gray-600"
+            className="pm-sidebar-caret"
           >
             {collapsed ? '▸' : '▾'}
           </button>
         ) : (
-          <span className="w-5 shrink-0" />
+          // Espaço da seta em falta, para as zonas-folha alinharem com as zonas-mãe.
+          <span className="w-3.5 shrink-0" />
         )}
-        <label className="flex flex-1 items-center gap-2 px-1 py-1 text-sm">
+        <label className="flex min-w-0 flex-1 items-center gap-1.5">
           <input type="checkbox" checked={selectedZoneIds.includes(zone.id)} onChange={() => onToggle(zone.id)} />
-          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: zone.color }} />
           <span className="truncate">{zone.name}</span>
         </label>
       </div>
@@ -106,7 +109,7 @@ export function ZoneScopeFilter() {
 
   return (
     <SidebarSection title="Zonas">
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col">
         {topLevelZones.map((zone) => (
           <ZoneRow
             key={zone.id}

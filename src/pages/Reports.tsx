@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Topbar } from '../app/Topbar';
+import { PageShell } from '../app/PageShell';
 import { exportPMEventsToExcel, exportPMEventsToPdf } from '../lib/exporters';
 import type { PMReportRow } from '../lib/exporters';
 import { useCalendarStore, useEngineerStore, useEquipmentStore } from '../stores';
-import { Button } from '../components/ui';
+import { Badge, Button, Card, EmptyState, PageHeader } from '../components/ui';
 import { toDisplayDate } from '../lib/dateFormat';
+import { PM_STATUS_META } from '../lib/pmStatus';
+import type { PMStatus } from '../types';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1];
@@ -15,13 +17,24 @@ const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1];
 interface ReportRow extends PMReportRow {
   startDateIso: string;
   endDateIso: string;
+  /** Estreitado face a PMReportRow (que o tem como string, para os exporters) — é o que
+   *  permite ir buscar o rótulo e a cor do estado a lib/pmStatus. */
+  status: PMStatus;
 }
 
-type SortKey = 'equipmentName' | 'hospitalName' | 'engineerName' | 'startDate' | 'endDate' | 'status';
+type SortKey =
+  | 'equipmentName'
+  | 'modality'
+  | 'hospitalName'
+  | 'engineerName'
+  | 'startDate'
+  | 'endDate'
+  | 'status';
 type SortDir = 'asc' | 'desc';
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'equipmentName', label: 'Equipamento' },
+  { key: 'modality', label: 'Modalidade' },
   { key: 'hospitalName', label: 'Hospital' },
   { key: 'engineerName', label: 'Engenheiro' },
   { key: 'startDate', label: 'Início' },
@@ -45,6 +58,7 @@ export function Reports() {
   const engineers = useEngineerStore((state) => state.engineers);
   const fetchEngineers = useEngineerStore((state) => state.fetchEngineers);
 
+  const [modalityFilter, setModalityFilter] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('');
   const [engineerFilter, setEngineerFilter] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('startDate');
@@ -66,6 +80,8 @@ export function Reports() {
         const engineer = engineers.find((item) => item.id === event.engineer_id);
         return {
           equipmentName: eq?.name ?? '—',
+          // equipment.modality é texto livre e pode vir por preencher (ver ModalityFilter).
+          modality: eq?.modality || '—',
           hospitalName: eq?.hospital_name ?? '—',
           zoneName: eq?.zone_name ?? '—',
           engineerName: engineer?.name ?? '—',
@@ -80,6 +96,10 @@ export function Reports() {
     [events, equipment, engineers],
   );
 
+  const modalityOptions = useMemo(
+    () => [...new Set(allRows.map((row) => row.modality))].sort((a, b) => a.localeCompare(b)),
+    [allRows],
+  );
   const hospitalOptions = useMemo(
     () => [...new Set(allRows.map((row) => row.hospitalName))].sort((a, b) => a.localeCompare(b)),
     [allRows],
@@ -92,12 +112,13 @@ export function Reports() {
   const rows = useMemo(() => {
     const filtered = allRows.filter(
       (row) =>
+        (!modalityFilter || row.modality === modalityFilter) &&
         (!hospitalFilter || row.hospitalName === hospitalFilter) &&
         (!engineerFilter || row.engineerName === engineerFilter),
     );
     const sorted = [...filtered].sort((a, b) => compareRows(a, b, sortKey));
     return sortDir === 'asc' ? sorted : sorted.reverse();
-  }, [allRows, hospitalFilter, engineerFilter, sortKey, sortDir]);
+  }, [allRows, modalityFilter, hospitalFilter, engineerFilter, sortKey, sortDir]);
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
@@ -109,16 +130,32 @@ export function Reports() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <Topbar />
-      <div className="flex-1 overflow-y-auto p-4">
-        <h1 className="mb-4 text-lg font-semibold text-gray-900">Relatórios</h1>
+    <PageShell>
+      <PageHeader
+        title="Relatórios"
+        description="As PMs do ano, filtradas e ordenadas à medida — prontas a exportar para Excel ou PDF."
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => exportPMEventsToPdf(rows, `pmplan-${year}.pdf`)}
+              disabled={rows.length === 0}
+            >
+              Exportar PDF
+            </Button>
+            <Button onClick={() => exportPMEventsToExcel(rows, `pmplan-${year}.xlsx`)} disabled={rows.length === 0}>
+              Exportar Excel
+            </Button>
+          </>
+        }
+      />
 
-        <div className="mb-4 flex items-end gap-2 rounded-md border border-gray-200 p-3">
-          <label className="flex flex-col gap-1 text-sm">
+      <Card className="mb-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-sm text-gray-600">
             Ano
             <select
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="pm-field"
               value={year}
               onChange={(event) => setYear(Number(event.target.value))}
             >
@@ -130,10 +167,26 @@ export function Reports() {
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1 text-sm text-gray-600">
+            Modalidade
+            <select
+              className="pm-field"
+              value={modalityFilter}
+              onChange={(event) => setModalityFilter(event.target.value)}
+            >
+              <option value="">Todas</option>
+              {modalityOptions.map((modality) => (
+                <option key={modality} value={modality}>
+                  {modality}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm text-gray-600">
             Hospital
             <select
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="pm-field"
               value={hospitalFilter}
               onChange={(event) => setHospitalFilter(event.target.value)}
             >
@@ -146,10 +199,10 @@ export function Reports() {
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1 text-sm text-gray-600">
             Engenheiro
             <select
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="pm-field"
               value={engineerFilter}
               onChange={(event) => setEngineerFilter(event.target.value)}
             >
@@ -161,49 +214,56 @@ export function Reports() {
               ))}
             </select>
           </label>
-          <Button onClick={() => exportPMEventsToExcel(rows, `pmplan-${year}.xlsx`)} disabled={rows.length === 0}>
-            Exportar Excel
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => exportPMEventsToPdf(rows, `pmplan-${year}.pdf`)}
-            disabled={rows.length === 0}
-          >
-            Exportar PDF
-          </Button>
         </div>
+      </Card>
 
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-gray-500">
-              {COLUMNS.map((column) => (
-                <th key={column.key} className="py-1.5 pr-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSort(column.key)}
-                    className="flex items-center gap-1 font-medium hover:text-gray-700"
-                  >
-                    {column.label}
-                    {sortKey === column.key && <span>{sortDir === 'asc' ? '▲' : '▼'}</span>}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={index} className="border-b border-gray-100">
-                <td className="py-1.5 pr-2">{row.equipmentName}</td>
-                <td className="py-1.5 pr-2">{row.hospitalName}</td>
-                <td className="py-1.5 pr-2">{row.engineerName}</td>
-                <td className="py-1.5 pr-2">{row.startDate}</td>
-                <td className="py-1.5 pr-2">{row.endDate}</td>
-                <td className="py-1.5 pr-2">{row.status}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <Card padded={false} title={`${rows.length} PM(s) em ${year}`}>
+        {rows.length === 0 ? (
+          <EmptyState>Sem PMs para os filtros escolhidos.</EmptyState>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="pm-table">
+              <thead>
+                <tr>
+                  {COLUMNS.map((column) => (
+                    <th key={column.key} className="py-1.5 pr-2">
+                      {/* Coluna ordenável: a seta só aparece na coluna activa, e o
+                          cabeçalho inteiro é a área de clique. */}
+                      <button
+                        type="button"
+                        onClick={() => handleSort(column.key)}
+                        className={`flex items-center gap-1 text-xs font-semibold uppercase tracking-wide transition-colors ${
+                          sortKey === column.key ? 'text-brand-700' : 'text-gray-500 hover:text-gray-800'
+                        }`}
+                      >
+                        {column.label}
+                        <span aria-hidden="true" className={sortKey === column.key ? '' : 'invisible'}>
+                          {sortDir === 'asc' ? '▲' : '▼'}
+                        </span>
+                      </button>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr key={index}>
+                    <td className="py-1.5 pr-2 font-medium text-gray-800">{row.equipmentName}</td>
+                    <td className="py-1.5 pr-2">{row.modality}</td>
+                    <td className="py-1.5 pr-2">{row.hospitalName}</td>
+                    <td className="py-1.5 pr-2">{row.engineerName}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{row.startDate}</td>
+                    <td className="py-1.5 pr-2 tabular-nums">{row.endDate}</td>
+                    <td className="py-1.5 pr-2">
+                      <Badge color={PM_STATUS_META[row.status].color}>{PM_STATUS_META[row.status].label}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </PageShell>
   );
 }

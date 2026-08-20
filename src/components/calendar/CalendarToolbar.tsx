@@ -2,7 +2,7 @@ import type { ReactNode, RefObject } from 'react';
 import type FullCalendar from '@fullcalendar/react';
 import { useCalendarStore, useUiStore } from '../../stores';
 import type { CalendarViewName, EventLineDensity } from '../../stores';
-import { Button } from '../ui';
+import { SegmentedGroup, SegmentedOption } from '../ui';
 
 interface CalendarToolbarProps {
   calendarRef: RefObject<FullCalendar>;
@@ -32,49 +32,61 @@ export function CalendarToolbar({ calendarRef, rightSlot }: CalendarToolbarProps
   const setEventLineDensity = useUiStore((state) => state.setEventLineDensity);
 
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-gray-200 px-4 py-2">
+    <div className="flex items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 py-2">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" onClick={() => calendarRef.current?.getApi().prev()}>
+        {/* Navegação temporal agrupada num único controlo segmentado — antes eram três
+            botões soltos que não se liam como um conjunto. */}
+        <div className="flex items-center rounded-md border border-gray-300 bg-white shadow-sm">
+          <button
+            type="button"
+            onClick={() => calendarRef.current?.getApi().prev()}
+            aria-label="Período anterior"
+            className="h-8 rounded-l-md px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
+          >
             ‹
-          </Button>
-          <Button variant="ghost" onClick={() => calendarRef.current?.getApi().today()}>
+          </button>
+          <button
+            type="button"
+            onClick={() => calendarRef.current?.getApi().today()}
+            className="h-8 border-x border-gray-200 px-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+          >
             Hoje
-          </Button>
-          <Button variant="ghost" onClick={() => calendarRef.current?.getApi().next()}>
+          </button>
+          <button
+            type="button"
+            onClick={() => calendarRef.current?.getApi().next()}
+            aria-label="Período seguinte"
+            className="h-8 rounded-r-md px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
+          >
             ›
-          </Button>
+          </button>
         </div>
-        <span className="text-sm font-semibold text-gray-700">{visibleTitle}</span>
+        <span className="text-base font-semibold tracking-tight text-gray-900">{visibleTitle}</span>
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1">
+        <SegmentedGroup>
           {VIEW_LABELS.map(({ view, label }) => (
-            <Button
-              key={view}
-              variant={activeView === view ? 'primary' : 'secondary'}
-              onClick={() => setActiveView(view)}
-            >
+            <SegmentedOption key={view} active={activeView === view} onClick={() => setActiveView(view)}>
               {label}
-            </Button>
+            </SegmentedOption>
           ))}
-        </div>
+        </SegmentedGroup>
         {/* Densidade das barras de PM (1 ou 2 linhas) — preferência de UI persistida
            (uiStore), não muda por vista: útil sobretudo em Ano/Trimestre, onde o
            FullCalendar não deixa desligar o limite "mais +N" por outra via. */}
-        <div className="flex items-center gap-1 border-l border-gray-200 pl-2">
+        <SegmentedGroup>
           {DENSITY_OPTIONS.map(({ density, label, title }) => (
-            <Button
+            <SegmentedOption
               key={density}
-              variant={eventLineDensity === density ? 'primary' : 'secondary'}
+              active={eventLineDensity === density}
               onClick={() => setEventLineDensity(density)}
               title={title}
             >
               {label}
-            </Button>
+            </SegmentedOption>
           ))}
-        </div>
+        </SegmentedGroup>
         {rightSlot}
       </div>
     </div>

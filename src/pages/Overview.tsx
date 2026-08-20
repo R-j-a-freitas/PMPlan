@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Topbar } from '../app/Topbar';
+import { PageShell } from '../app/PageShell';
 import { fetchYearEventsSnapshot, useCalendarStore } from '../stores/calendarStore';
 import { useEngineerStore, useEquipmentStore, useHospitalStore, useZoneStore } from '../stores';
 import {
@@ -7,22 +7,17 @@ import {
   computeZoneLoadRatio,
   countPmEventsForEquipmentInYear,
 } from '../lib/conflictRules';
+import { PM_STATUS_META, PM_STATUS_ORDER } from '../lib/pmStatus';
+import { Card, EmptyState, PageHeader } from '../components/ui';
 import type { PMEvent, PMStatus } from '../types';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
-// Rótulos e cores por estado da PM. As cores vêm da paleta de estado validada (dataviz):
-// verde=bom, azul/aqua/amarelo=categóricas, laranja=alerta, cinza=neutro. Usadas em
-// preenchimentos com rótulo directo ao lado, por isso o contraste do texto nunca depende delas.
-const STATUS_META: Record<PMStatus, { label: string; color: string }> = {
-  planned: { label: 'Planeada', color: '#2a78d6' },
-  confirmed: { label: 'Confirmada', color: '#1baf7a' },
-  in_progress: { label: 'Em curso', color: '#eda100' },
-  completed: { label: 'Concluída', color: '#0ca30c' },
-  delayed: { label: 'Atrasada', color: '#ec835a' },
-  cancelled: { label: 'Cancelada', color: '#898781' },
-};
-const STATUS_ORDER: PMStatus[] = ['planned', 'confirmed', 'in_progress', 'completed', 'delayed', 'cancelled'];
+// Rótulos e cores por estado da PM — partilhados com o formulário de PM e os relatórios
+// (ver lib/pmStatus). Usadas em preenchimentos com rótulo directo ao lado, por isso o
+// contraste do texto nunca depende delas.
+const STATUS_META = PM_STATUS_META;
+const STATUS_ORDER = PM_STATUS_ORDER;
 
 const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -64,9 +59,9 @@ interface StatCardProps {
 
 function StatCard({ label, value, hint, accent }: StatCardProps) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <div className="pm-card p-4">
       <div className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold" style={{ color: accent ?? '#0b0b0b' }}>
+      <div className="mt-1 text-2xl font-semibold tabular-nums" style={{ color: accent ?? '#0b0b0b' }}>
         {value}
       </div>
       {hint && <div className="mt-0.5 text-xs text-gray-400">{hint}</div>}
@@ -74,17 +69,9 @@ function StatCard({ label, value, hint, accent }: StatCardProps) {
   );
 }
 
-function SectionCard({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col rounded-lg border border-gray-200 bg-white p-4">
-      <div className="mb-3">
-        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-        {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
-      </div>
-      {children}
-    </div>
-  );
-}
+// Os painéis deste ecrã usam o cartão partilhado (components/ui/Card) — o que aqui era
+// um SectionCard próprio passou a ser só o nome local para ele.
+const SectionCard = Card;
 
 // Barra horizontal com rótulo à esquerda, valor directo à direita — o preenchimento
 // escala face ao maior valor da série (max).
@@ -107,7 +94,7 @@ function BarRow({ label, value, max, color, suffix }: { label: string; value: nu
 }
 
 function EmptyHint({ children }: { children: ReactNode }) {
-  return <div className="py-6 text-center text-sm text-gray-400">{children}</div>;
+  return <EmptyState size="compact">{children}</EmptyState>;
 }
 
 // ─── Página ──────────────────────────────────────────────────────────────────
@@ -291,18 +278,14 @@ export function Overview() {
   yearOptions.sort((a, b) => a - b);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <Topbar />
-      <div className="flex-1 overflow-y-auto bg-gray-50 p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-gray-900">Painel de Indicadores</h1>
+    <PageShell>
+      <PageHeader
+        title="Painel de Indicadores"
+        description="Leitura agregada do plano de PMs do ano: volume, cumprimento de quota e carga por engenheiro e por zona."
+        actions={
           <label className="flex items-center gap-2 text-sm text-gray-600">
             Ano
-            <select
-              className="rounded-md border border-gray-300 bg-white px-2 py-1"
-              value={year}
-              onChange={(event) => setYear(Number(event.target.value))}
-            >
+            <select className="pm-field" value={year} onChange={(event) => setYear(Number(event.target.value))}>
               {yearOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -310,10 +293,12 @@ export function Overview() {
               ))}
             </select>
           </label>
-        </div>
+        }
+      />
 
+      <div>
         {loading ? (
-          <div className="py-20 text-center text-sm text-gray-400">A carregar indicadores…</div>
+          <EmptyState>A carregar indicadores…</EmptyState>
         ) : (
           <div className="flex flex-col gap-4">
             {/* KPIs */}
@@ -510,19 +495,20 @@ export function Overview() {
 
             {/* Quota gaps */}
             <SectionCard
+              padded={quotaGaps.length === 0}
               title="Equipamentos abaixo da quota"
               subtitle="PMs ainda por agendar para cumprir o contrato (PM/ano)"
             >
               {quotaGaps.length === 0 ? (
-                <div className="flex items-center gap-2 py-4 text-sm text-gray-600">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0ca30c' }} />
                   Todos os equipamentos activos têm as PMs do ano agendadas.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="pm-table">
                     <thead>
-                      <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
+                      <tr>
                         <th className="py-1.5 pr-2 font-medium">Equipamento</th>
                         <th className="py-1.5 pr-2 font-medium">Hospital</th>
                         <th className="py-1.5 pr-2 font-medium">Modalidade</th>
@@ -532,7 +518,7 @@ export function Overview() {
                     </thead>
                     <tbody>
                       {quotaGaps.map(({ eq, scheduled, gap }) => (
-                        <tr key={eq.id} className="border-b border-gray-100">
+                        <tr key={eq.id}>
                           <td className="py-1.5 pr-2 text-gray-800">{eq.name}</td>
                           <td className="py-1.5 pr-2 text-gray-600">{eq.hospital_short_name ?? eq.hospital_name}</td>
                           <td className="py-1.5 pr-2 text-gray-600">{eq.modality}</td>
@@ -557,6 +543,6 @@ export function Overview() {
           </div>
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

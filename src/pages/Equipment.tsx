@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Topbar } from '../app/Topbar';
+import { PageShell } from '../app/PageShell';
 import { buildEquipmentExportRows, parseEquipmentImportRows } from '../lib/importers/equipmentImportExport';
 import { matchesSearch } from '../lib/searchText';
 import { exportRowsToSpreadsheet, readSpreadsheetFile } from '../lib/spreadsheet';
@@ -18,7 +18,15 @@ import type { EngineerWithZones, EquipmentInsert, HospitalWithZone, PmPerYear, W
 import { EquipmentRow } from '../components/equipment';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
 import { ModalityManagerModal, MODALITY_MANAGE_VALUE } from '../components/modals';
-import { Button, FormModal, ImportExportButtons, SearchInput } from '../components/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  FormModal,
+  ImportExportButtons,
+  PageHeader,
+  SearchInput,
+} from '../components/ui';
 
 const EMPTY_FORM = {
   name: '',
@@ -75,12 +83,12 @@ function EquipmentFormModal({
       <input
         autoFocus
         placeholder="Nome"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.name}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
       />
       <select
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.hospitalId}
         onChange={(event) => setForm({ ...form, hospitalId: event.target.value })}
       >
@@ -93,18 +101,18 @@ function EquipmentFormModal({
       </select>
       <input
         placeholder="Modelo"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.model}
         onChange={(event) => setForm({ ...form, model: event.target.value })}
       />
       <input
         placeholder="Nº de Série"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.serialNumber}
         onChange={(event) => setForm({ ...form, serialNumber: event.target.value })}
       />
       <select
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.modality}
         onChange={(event) => {
           if (event.target.value === MODALITY_MANAGE_VALUE) {
@@ -123,7 +131,7 @@ function EquipmentFormModal({
         <option value={MODALITY_MANAGE_VALUE}>✏️ Editar modalidades…</option>
       </select>
       <select
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.pmPerYear}
         onChange={(event) => setForm({ ...form, pmPerYear: event.target.value as `${PmPerYear}` })}
       >
@@ -138,13 +146,13 @@ function EquipmentFormModal({
         <input
           type="number"
           min={1}
-          className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm"
+          className="w-20 pm-field"
           value={form.pmDurationDays}
           onChange={(event) => setForm({ ...form, pmDurationDays: event.target.value })}
         />
       </label>
       <select
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.weekendWork}
         title="Trabalho ao fim-de-semana (contrato)"
         onChange={(event) => setForm({ ...form, weekendWork: event.target.value as WeekendWork })}
@@ -154,7 +162,7 @@ function EquipmentFormModal({
         <option value="both">Inclui sáb + dom</option>
       </select>
       <select
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.engineerPrimaryId}
         onChange={(event) => setForm({ ...form, engineerPrimaryId: event.target.value })}
       >
@@ -166,7 +174,7 @@ function EquipmentFormModal({
         ))}
       </select>
       <select
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.engineerSecondaryId}
         onChange={(event) => setForm({ ...form, engineerSecondaryId: event.target.value })}
       >
@@ -321,28 +329,36 @@ export function Equipment() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <Topbar />
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-gray-900">Equipamentos</h1>
-          {canManageEquipment && (
-            <div className="flex items-center gap-2">
-              <Button onClick={() => setCreating(true)}>Adicionar</Button>
+    <PageShell wide>
+      <PageHeader
+        title="Equipamentos"
+        description="A zona de cada equipamento vem sempre do hospital onde está instalado. A cor é a que o identifica no calendário."
+        actions={
+          canManageEquipment && (
+            <>
               <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
-            </div>
-          )}
-        </div>
+              <Button onClick={() => setCreating(true)}>Adicionar equipamento</Button>
+            </>
+          )
+        }
+      />
 
-        <SearchInput
-          value={searchText}
-          onChange={setSearchText}
-          placeholder="Procurar equipamento por nome, hospital, modelo, nº de série ou modalidade…"
-        />
-
-        <table className="w-full border-collapse text-sm">
+      <Card
+        padded={false}
+        title={`${filteredEquipment.length} equipamento(s)`}
+        actions={
+          <SearchInput
+            value={searchText}
+            onChange={setSearchText}
+            placeholder="Procurar por nome, hospital, modelo, nº de série…"
+            className="w-72"
+          />
+        }
+      >
+        <div className="overflow-x-auto">
+        <table className="pm-table">
           <thead>
-            <tr className="border-b border-gray-200 text-left text-gray-500">
+            <tr>
               <th className="py-1.5 pr-2">Nome</th>
               <th className="py-1.5 pr-2">Hospital</th>
               <th className="py-1.5 pr-2">Zona</th>
@@ -370,13 +386,22 @@ export function Equipment() {
             ))}
           </tbody>
         </table>
+        </div>
 
         {filteredEquipment.length === 0 && (
-          <p className="mt-3 text-sm text-gray-400">
-            {equipment.length === 0 ? 'Sem equipamentos registados.' : 'Nenhum equipamento corresponde à pesquisa.'}
-          </p>
+          <EmptyState
+            action={
+              equipment.length === 0 && canManageEquipment ? (
+                <Button onClick={() => setCreating(true)}>Adicionar equipamento</Button>
+              ) : undefined
+            }
+          >
+            {equipment.length === 0
+              ? 'Ainda não há equipamentos registados.'
+              : 'Nenhum equipamento corresponde à pesquisa.'}
+          </EmptyState>
         )}
-      </div>
+      </Card>
 
       {creating && (
         <EquipmentFormModal
@@ -402,6 +427,6 @@ export function Equipment() {
       )}
 
       {showModalityManager && <ModalityManagerModal onClose={() => setShowModalityManager(false)} />}
-    </div>
+    </PageShell>
   );
 }

@@ -354,6 +354,35 @@ function workDaysInRange(start: Date, end: Date): number {
   return eachDayOfInterval({ start, end }).filter((day) => !isWeekend(day)).length;
 }
 
+// Dias de fim-de-semana efectivamente ocupados por PMs — para efeitos de carga contam
+// como dias úteis: se há marcações ao sábado/domingo, esses dias são dias de trabalho.
+// Sem isto o rácio saía inflacionado, porque a procura já contava os dias de fds do
+// intervalo da PM (dias corridos) mas a capacidade só contava segunda-a-sexta.
+//
+// Um mesmo sábado coberto por várias PMs conta uma única vez — é um dia de calendário a
+// entrar no calendário de trabalho, não uma unidade de esforço (o esforço das várias PMs
+// já está na procura). Só entram os dias dentro do ano: a capacidade é uma propriedade
+// do calendário do ano, e uma PM que atravesse 31/Dez não estica o ano seguinte.
+function weekendWorkDaysFromEvents(
+  events: PMEvent[],
+  matches: (event: PMEvent) => boolean,
+  rangeStart: Date,
+  rangeEnd: Date,
+): number {
+  const days = new Set<string>();
+  for (const event of events) {
+    if (!eventIsActive(event) || !matches(event)) continue;
+    const start = new Date(event.start_date);
+    // Mesmo critério de inclusão da procura (ver sumActiveEventDays): conta a PM se
+    // COMEÇA dentro do período, para os dois lados do rácio olharem para o mesmo conjunto.
+    if (start < rangeStart || start > rangeEnd) continue;
+    for (const day of eachDayOfInterval({ start, end: new Date(event.end_date) })) {
+      if (isWeekend(day) && day >= rangeStart && day <= rangeEnd) days.add(format(day, 'yyyy-MM-dd'));
+    }
+  }
+  return days.size;
+}
+
 // Soma os dias-PM (início e fim inclusive) dos eventos activos que cumprem `matches` e
 // começam dentro de [rangeStart, rangeEnd] — partilhado entre a carga por zona e a carga
 // por engenheiro, para as duas leituras ficarem sempre coerentes entre si.
@@ -387,6 +416,8 @@ function sumActiveEventDays(
 // 0% só por não ter nada atribuído directamente a ela.
 // `events`/`equipment` vêm completos (não pré-filtrados) — a filtragem por zona
 // (incluindo descendentes) é feita aqui dentro.
+// Fins-de-semana com PMs marcadas contam como dias úteis dos dois lados do rácio — ver
+// weekendWorkDaysFromEvents.
 export function computeZoneLoadRatio(
   zoneId: string,
   year: number,
@@ -408,32 +439,37 @@ export function computeZoneLoadRatio(
       (!!engineer.primary_zone_id && zoneScope.has(engineer.primary_zone_id)) ||
       engineer.zones.some((zone) => zoneScope.has(zone.zone_id)),
   );
-  const capacityDays =
-    engineersInZone.length * workDaysInRange(yearStart, yearEnd) * ASSUMED_PM_DAYS_PER_ENGINEER_PER_WORKDAY;
+  const equipmentIsInZone = (event: PMEvent) => {
+    const eq = equipment.find((item) => item.id === event.equipment_id);
+    return !!eq && zoneScope.has(eq.zone_id);
+  };
 
-  const demandDays = sumActiveEventDays(
-    events,
-    (event) => {
-      const eq = equipment.find((item) => item.id === event.equipment_id);
-      return !!eq && zoneScope.has(eq.zone_id);
-    },
-    yearStart,
-    yearEnd,
-  );
+  // Dias úteis + os fins-de-semana em que esta zona tem mesmo PMs marcadas.
+  const workDays =
+    workDaysInRange(yearStart, yearEnd) +
+    weekendWorkDaysFromEvents(events, equipmentIsInZone, yearStart, yearEnd);
+  const capacityDays = engineersInZone.length * workDays * ASSUMED_PM_DAYS_PER_ENGINEER_PER_WORKDAY;
+
+  const demandDays = sumActiveEventDays(events, equipmentIsInZone, yearStart, yearEnd);
 
   return { capacityDays, demandDays, ratio: capacityDays === 0 ? 0 : demandDays / capacityDays };
 }
 
 // Carga por engenheiro — mesma filosofia da carga por zona (cálculo anual), mas sem
 // agregação hierárquica (um engenheiro não tem "filhos"): capacidade = dias úteis do ano
-// × 1 dia-PM/dia útil; procura = dias-PM das PMs activas atribuídas a este engenheiro,
-// a começar nesse ano.
+// (mais os fins-de-semana em que ele tem PMs marcadas) × 1 dia-PM/dia útil; procura =
+// dias-PM das PMs activas atribuídas a este engenheiro, a começar nesse ano.
 export function computeEngineerLoadRatio(engineerId: string, year: number, events: PMEvent[]): LoadRatio {
   const yearStart = startOfYear(new Date(year, 0, 1));
   const yearEnd = endOfYear(yearStart);
 
-  const capacityDays = workDaysInRange(yearStart, yearEnd) * ASSUMED_PM_DAYS_PER_ENGINEER_PER_WORKDAY;
-  const demandDays = sumActiveEventDays(events, (event) => event.engineer_id === engineerId, yearStart, yearEnd);
+  const assignedToEngineer = (event: PMEvent) => event.engineer_id === engineerId;
+
+  const workDays =
+    workDaysInRange(yearStart, yearEnd) +
+    weekendWorkDaysFromEvents(events, assignedToEngineer, yearStart, yearEnd);
+  const capacityDays = workDays * ASSUMED_PM_DAYS_PER_ENGINEER_PER_WORKDAY;
+  const demandDays = sumActiveEventDays(events, assignedToEngineer, yearStart, yearEnd);
 
   return { capacityDays, demandDays, ratio: capacityDays === 0 ? 0 : demandDays / capacityDays };
 }

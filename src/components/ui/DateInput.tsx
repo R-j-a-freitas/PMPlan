@@ -45,7 +45,7 @@ export function DateInput({ value, onChange, className = '', disabled, ...props 
       placeholder="DD/MM/AAAA"
       maxLength={10}
       disabled={disabled}
-      className={`rounded-md border border-gray-300 px-2 py-1 disabled:bg-gray-100 ${className}`}
+      className={`pm-field disabled:bg-gray-100 ${className}`}
       value={text}
       onChange={(event) => {
         const masked = maskDisplay(event.target.value);

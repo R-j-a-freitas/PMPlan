@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Topbar } from '../app/Topbar';
+import { PageShell } from '../app/PageShell';
 import { exportRowsToSpreadsheet } from '../lib/spreadsheet';
 import { useAuthStore, useHospitalStore, useUiStore } from '../stores';
 import type { HospitalContact, HospitalWithZone } from '../types';
 import { matchesSearch } from '../lib/searchText';
-import { Badge, Button, FormModal, SearchInput } from '../components/ui';
+import { Badge, Button, Card, EmptyState, FormModal, PageHeader, SearchInput } from '../components/ui';
 
 interface ContactRow {
   hospitalId: string;
   hospitalName: string;
   zoneName: string;
-  zoneColor: string;
   /** Índice do contacto dentro de hospital.contacts — necessário para editar/apagar a
    *  posição certa (os contactos vivem num array JSON no próprio hospital, não têm id). */
   contactIndex: number;
@@ -36,7 +35,6 @@ function buildContactRows(hospitals: HospitalWithZone[]): ContactRow[] {
       hospitalId: hospital.id,
       hospitalName: hospital.name,
       zoneName: hospital.zone_name,
-      zoneColor: hospital.zone_color,
       contactIndex,
       name: contact.name,
       role: contact.role ?? '',
@@ -72,7 +70,7 @@ function ContactFormModal({
       onSubmit={() => onSubmit(form)}
     >
       <select
-        className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="col-span-2 pm-field"
         value={form.hospitalId}
         onChange={(event) => setForm({ ...form, hospitalId: event.target.value })}
       >
@@ -86,26 +84,26 @@ function ContactFormModal({
       <input
         autoFocus
         placeholder="Nome"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.name}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
       />
       <input
         placeholder="Cargo (ex: Coordenador Técnico)"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.role}
         onChange={(event) => setForm({ ...form, role: event.target.value })}
       />
       <input
         type="email"
         placeholder="Email"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.email}
         onChange={(event) => setForm({ ...form, email: event.target.value })}
       />
       <input
         placeholder="Telefone"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.phone}
         onChange={(event) => setForm({ ...form, phone: event.target.value })}
       />
@@ -222,37 +220,47 @@ export function Contacts() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <Topbar />
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-gray-900">Contactos</h1>
-          <div className="flex items-center gap-2">
-            {canManage && <Button onClick={() => setCreating(true)}>Adicionar</Button>}
+    <PageShell>
+      <PageHeader
+        title="Contactos"
+        description="Todos os contactos registados nos hospitais, numa lista só. Cada contacto vive no hospital a que pertence."
+        actions={
+          <>
             <Button variant="secondary" onClick={handleExport} disabled={filteredRows.length === 0}>
               Exportar
             </Button>
-          </div>
-        </div>
+            {canManage && <Button onClick={() => setCreating(true)}>Adicionar contacto</Button>}
+          </>
+        }
+      />
 
-        <SearchInput
-          value={searchText}
-          onChange={setSearchText}
-          placeholder="Procurar por nome, cargo, email, telefone, hospital ou zona…"
-        />
-
+      <Card
+        padded={false}
+        title={`${filteredRows.length} contacto(s)`}
+        actions={
+          <SearchInput
+            value={searchText}
+            onChange={setSearchText}
+            placeholder="Procurar por nome, cargo, email, hospital…"
+            className="w-72"
+          />
+        }
+      >
         {filteredRows.length === 0 ? (
-          <p className="text-sm text-gray-400">
-            {allRows.length === 0
-              ? canManage
-                ? 'Sem contactos registados — adiciona o primeiro em "Adicionar".'
-                : 'Sem contactos registados.'
-              : 'Nenhum contacto corresponde à pesquisa.'}
-          </p>
+          <EmptyState
+            action={
+              allRows.length === 0 && canManage ? (
+                <Button onClick={() => setCreating(true)}>Adicionar contacto</Button>
+              ) : undefined
+            }
+          >
+            {allRows.length === 0 ? 'Ainda não há contactos registados.' : 'Nenhum contacto corresponde à pesquisa.'}
+          </EmptyState>
         ) : (
-          <table className="w-full border-collapse text-sm">
+          <div className="overflow-x-auto">
+          <table className="pm-table">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-gray-500">
+              <tr>
                 <th className="py-1.5 pr-2">Nome</th>
                 <th className="py-1.5 pr-2">Cargo</th>
                 <th className="py-1.5 pr-2">Email</th>
@@ -267,19 +275,19 @@ export function Contacts() {
                 const isEditing =
                   editing?.hospitalId === row.hospitalId && editing?.contactIndex === row.contactIndex;
                 return (
-                  <tr key={`${row.hospitalId}-${row.contactIndex}`} className="border-b border-gray-100">
+                  <tr key={`${row.hospitalId}-${row.contactIndex}`}>
                     {isEditing ? (
                       <>
                         <td className="py-1.5 pr-2">
                           <input
-                            className="w-full rounded-md border border-gray-300 px-2 py-1"
+                            className="pm-field w-full"
                             value={editForm.name}
                             onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
                           />
                         </td>
                         <td className="py-1.5 pr-2">
                           <input
-                            className="w-full rounded-md border border-gray-300 px-2 py-1"
+                            className="pm-field w-full"
                             value={editForm.role}
                             onChange={(event) => setEditForm({ ...editForm, role: event.target.value })}
                           />
@@ -287,28 +295,28 @@ export function Contacts() {
                         <td className="py-1.5 pr-2">
                           <input
                             type="email"
-                            className="w-full rounded-md border border-gray-300 px-2 py-1"
+                            className="pm-field w-full"
                             value={editForm.email}
                             onChange={(event) => setEditForm({ ...editForm, email: event.target.value })}
                           />
                         </td>
                         <td className="py-1.5 pr-2">
                           <input
-                            className="w-full rounded-md border border-gray-300 px-2 py-1"
+                            className="pm-field w-full"
                             value={editForm.phone}
                             onChange={(event) => setEditForm({ ...editForm, phone: event.target.value })}
                           />
                         </td>
                         <td className="py-1.5 pr-2">{row.hospitalName}</td>
                         <td className="py-1.5 pr-2">
-                          <Badge color={row.zoneColor}>{row.zoneName}</Badge>
+                          <Badge variant="neutral">{row.zoneName}</Badge>
                         </td>
                         <td className="py-1.5 pr-2 text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button variant="secondary" onClick={() => setEditing(null)} disabled={saving}>
+                          <div className="flex justify-end gap-1.5">
+                            <Button variant="secondary" size="sm" onClick={() => setEditing(null)} disabled={saving}>
                               Cancelar
                             </Button>
-                            <Button onClick={handleSaveEdit} disabled={saving || !editForm.name.trim()}>
+                            <Button size="sm" onClick={handleSaveEdit} disabled={saving || !editForm.name.trim()}>
                               Guardar
                             </Button>
                           </div>
@@ -322,15 +330,20 @@ export function Contacts() {
                         <td className="py-1.5 pr-2">{row.phone || '—'}</td>
                         <td className="py-1.5 pr-2">{row.hospitalName}</td>
                         <td className="py-1.5 pr-2">
-                          <Badge color={row.zoneColor}>{row.zoneName}</Badge>
+                          <Badge variant="neutral">{row.zoneName}</Badge>
                         </td>
                         {canManage && (
                           <td className="py-1.5 pr-2 text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="secondary" onClick={() => startEdit(row)} disabled={saving}>
+                            <div className="flex justify-end gap-1">
+                              <Button variant="secondary" size="sm" onClick={() => startEdit(row)} disabled={saving}>
                                 Editar
                               </Button>
-                              <Button variant="danger" onClick={() => handleDelete(row)} disabled={saving}>
+                              <Button
+                                variant="dangerGhost"
+                                size="sm"
+                                onClick={() => handleDelete(row)}
+                                disabled={saving}
+                              >
                                 Eliminar
                               </Button>
                             </div>
@@ -343,8 +356,9 @@ export function Contacts() {
               })}
             </tbody>
           </table>
+          </div>
         )}
-      </div>
+      </Card>
 
       {creating && (
         <ContactFormModal
@@ -354,6 +368,6 @@ export function Contacts() {
           onSubmit={handleAdd}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

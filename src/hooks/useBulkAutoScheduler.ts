@@ -11,7 +11,6 @@ export interface BulkSchedulerResult {
   equipmentName: string;
   hospitalName: string;
   zoneCode: string;
-  zoneColor: string;
   proposals: ProposedPMEvent[];
   comparison: ScheduleComparison | null;
   error?: string;
@@ -96,7 +95,6 @@ export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
             equipmentName: '—',
             hospitalName: '—',
             zoneCode: '—',
-            zoneColor: '#ccc',
             proposals: [],
             comparison: null,
             error: 'Equipamento não encontrado no store.',
@@ -185,7 +183,6 @@ export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
             equipmentName: targetEquipment.name,
             hospitalName: targetEquipment.hospital_name,
             zoneCode: targetEquipment.zone_code,
-            zoneColor: targetEquipment.zone_color,
             proposals,
             comparison: compareSchedules(previousYearHistory, proposals),
           });
@@ -195,7 +192,6 @@ export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
             equipmentName: targetEquipment.name,
             hospitalName: targetEquipment.hospital_name,
             zoneCode: targetEquipment.zone_code,
-            zoneColor: targetEquipment.zone_color,
             proposals: [],
             comparison: null,
             error: err instanceof Error ? err.message : 'Erro desconhecido.',

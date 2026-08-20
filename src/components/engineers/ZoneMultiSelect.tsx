@@ -18,9 +18,12 @@ export function ZoneMultiSelect({ zones, selectedZoneIds, primaryZoneId, onChang
 
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex max-h-28 w-44 flex-col gap-0.5 overflow-y-auto rounded-md border border-gray-300 p-1.5">
+      <div className="flex max-h-28 w-44 flex-col gap-0.5 overflow-y-auto rounded-md border border-gray-300 bg-white p-1.5 shadow-sm">
         {zones.map((zone) => (
-          <label key={zone.id} className="flex items-center gap-1.5 text-xs">
+          <label
+            key={zone.id}
+            className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 text-xs transition-colors hover:bg-gray-50"
+          >
             <input
               type="checkbox"
               checked={selectedZoneIds.includes(zone.id)}
@@ -33,7 +36,7 @@ export function ZoneMultiSelect({ zones, selectedZoneIds, primaryZoneId, onChang
       </div>
       {selectedZoneIds.length > 1 && (
         <select
-          className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+          className="pm-field text-xs"
           value={primaryZoneId}
           onChange={(event) => onChange(selectedZoneIds, event.target.value)}
         >

@@ -95,7 +95,7 @@ function DocumentRow({ document, showMatchBadge = true }: DocumentRowProps) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border border-gray-200 px-2 py-1.5 text-sm">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
       <span className="min-w-0 flex-1 truncate font-medium" title={document.filename}>
         {document.filename}
       </span>
@@ -113,28 +113,29 @@ function DocumentRow({ document, showMatchBadge = true }: DocumentRowProps) {
           <Badge color={match.color}>{match.label}</Badge>
         </span>
       )}
-      <div className="ml-auto flex shrink-0 gap-2">
-        <Button variant="secondary" onClick={() => open(document, false)} disabled={busy}>
+      <div className="ml-auto flex shrink-0 gap-1">
+        <Button variant="ghost" size="sm" onClick={() => open(document, false)} disabled={busy}>
           Ver
         </Button>
-        <Button variant="secondary" onClick={() => open(document, true)} disabled={busy}>
+        <Button variant="secondary" size="sm" onClick={() => open(document, true)} disabled={busy}>
           Descarregar
         </Button>
         {/* Confirmação em dois cliques em vez de modal: apagar um documento assinado é
             irreversível (sai da BD e do Storage), mas é uma acção de arrumação frequente
-            o suficiente para não justificar interromper o ecrã. */}
+            o suficiente para não justificar interromper o ecrã. O vermelho só fica sólido
+            no segundo clique — o que confirma é que destrói. */}
         {role === 'admin' &&
           (confirmingDelete ? (
             <>
-              <Button variant="danger" onClick={handleDelete} disabled={busy}>
-                Confirmar
-              </Button>
-              <Button variant="secondary" onClick={() => setConfirmingDelete(false)} disabled={busy}>
+              <Button variant="secondary" size="sm" onClick={() => setConfirmingDelete(false)} disabled={busy}>
                 Cancelar
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleDelete} disabled={busy}>
+                Confirmar
               </Button>
             </>
           ) : (
-            <Button variant="danger" onClick={() => setConfirmingDelete(true)} disabled={busy}>
+            <Button variant="dangerGhost" size="sm" onClick={() => setConfirmingDelete(true)} disabled={busy}>
               Apagar
             </Button>
           ))}
@@ -213,7 +214,7 @@ export function UnmatchedSignedDocuments({ hospitals }: { hospitals: HospitalWit
               </span>
               {canManage && (
                 <select
-                  className="ml-auto rounded-md border border-gray-300 px-2 py-1 text-sm"
+                  className="ml-auto pm-field"
                   defaultValue=""
                   disabled={assigning === document.id}
                   onChange={(event) => handleAssign(document.id, event.target.value)}

@@ -6,6 +6,7 @@ const ROW_HEIGHT = 7;
 
 const COLUMNS: { header: string; key: keyof PMReportRow; width: number }[] = [
   { header: 'Equipamento', key: 'equipmentName', width: 45 },
+  { header: 'Modalidade', key: 'modality', width: 30 },
   { header: 'Hospital', key: 'hospitalName', width: 40 },
   { header: 'Engenheiro', key: 'engineerName', width: 40 },
   { header: 'Início', key: 'startDate', width: 24 },

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSourceChanges } from '../../hooks';
 import { useEquipmentStore, useUiStore } from '../../stores';
-import { Button, DateInput } from '../ui';
+import { Button, DateInput, EmptyState, Modal } from '../ui';
 import { toDisplayDate } from '../../lib/dateFormat';
 
 interface SourceChangeModalProps {
@@ -54,30 +54,38 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
-        <h2 className="mb-3 text-base font-semibold text-gray-900">
-          Trocas de fonte — {equipment?.name ?? 'Equipamento'}
-        </h2>
+    <Modal
+      title={`Trocas de fonte — ${equipment?.name ?? 'Equipamento'}`}
+      size="md"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Fechar
+          </Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? 'A guardar…' : 'Adicionar'}
+          </Button>
+        </>
+      }
+    >
+      <div className="mb-4 max-h-40 overflow-y-auto rounded-lg border border-gray-200">
+        {loading && <EmptyState size="compact">A carregar…</EmptyState>}
+        {!loading && sourceChanges.length === 0 && <EmptyState size="compact">Sem trocas registadas.</EmptyState>}
+        {sourceChanges.map((change) => (
+          <div key={change.id} className="border-b border-gray-100 px-3 py-2 text-sm last:border-0">
+            <span className="font-medium text-gray-800">{toDisplayDate(change.planned_date)}</span> —{' '}
+            {change.source_type}
+            {change.initial_activity_gbq != null && ` (${change.initial_activity_gbq} GBq)`}
+          </div>
+        ))}
+      </div>
 
-        <div className="mb-3 max-h-40 overflow-y-auto rounded-md border border-gray-200">
-          {loading && <p className="p-2 text-sm text-gray-500">A carregar…</p>}
-          {!loading && sourceChanges.length === 0 && (
-            <p className="p-2 text-sm text-gray-500">Sem trocas registadas.</p>
-          )}
-          {sourceChanges.map((change) => (
-            <div key={change.id} className="border-b border-gray-100 px-2 py-1.5 text-sm last:border-0">
-              <span className="font-medium">{toDisplayDate(change.planned_date)}</span> — {change.source_type}
-              {change.initial_activity_gbq != null && ` (${change.initial_activity_gbq} GBq)`}
-            </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
             Tipo de fonte
             <input
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="pm-field"
               value={sourceType}
               onChange={(event) => setSourceType(event.target.value)}
             />
@@ -86,7 +94,7 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
             Actividade inicial (GBq)
             <input
               type="number"
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="pm-field"
               value={initialActivity}
               onChange={(event) => setInitialActivity(event.target.value)}
             />
@@ -98,7 +106,7 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
           <label className="flex flex-col gap-1 text-sm">
             Nº de série
             <input
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="pm-field"
               value={serialNumber}
               onChange={(event) => setSerialNumber(event.target.value)}
             />
@@ -106,7 +114,7 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
           <label className="col-span-2 flex flex-col gap-1 text-sm">
             Fabricante
             <input
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="pm-field"
               value={manufacturer}
               onChange={(event) => setManufacturer(event.target.value)}
             />
@@ -114,23 +122,13 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
           <label className="col-span-2 flex flex-col gap-1 text-sm">
             Notas
             <textarea
-              className="rounded-md border border-gray-300 px-2 py-1"
+              className="pm-field"
               rows={2}
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
             />
-          </label>
-        </div>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            Fechar
-          </Button>
-          <Button variant="primary" onClick={handleSave} disabled={saving}>
-            Adicionar
-          </Button>
-        </div>
+        </label>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Topbar } from '../app/Topbar';
+import { PageShell } from '../app/PageShell';
 import { supabase } from '../lib/supabase';
 import { useAuthStore, useEngineerStore, useUiStore } from '../stores';
 import type { UserProfile, UserRole } from '../types';
-import { Badge, Button } from '../components/ui';
+import type { EngineerWithZones } from '../types';
+import { Badge, Button, Card, EmptyState, FormModal, PageHeader } from '../components/ui';
 
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'admin', label: 'Administrador' },
@@ -22,6 +23,79 @@ interface CreateUserResponse {
   existed?: boolean;
 }
 
+type UserForm = typeof EMPTY_FORM;
+
+// Introdução de novo utilizador — ver FormModal para o porquê de estar em modal (o mesmo
+// de Hospitais/Equipamentos/Engenheiros: quem vem consultar a lista vê a lista, e só quem
+// vai criar é que abre o formulário). Estado próprio, montado só enquanto está aberto,
+// para cada abertura começar com os campos limpos.
+function UserFormModal({
+  engineers,
+  saving,
+  onCancel,
+  onSubmit,
+}: {
+  engineers: EngineerWithZones[];
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: (values: UserForm) => void;
+}) {
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  return (
+    <FormModal
+      title="Novo utilizador"
+      submitLabel="Criar utilizador"
+      saving={saving}
+      canSubmit={Boolean(form.email.trim())}
+      onCancel={onCancel}
+      onSubmit={() => onSubmit(form)}
+    >
+      <input
+        autoFocus
+        placeholder="Nome"
+        className="pm-field"
+        value={form.name}
+        onChange={(event) => setForm({ ...form, name: event.target.value })}
+      />
+      <input
+        placeholder="Email (obrigatório)"
+        type="email"
+        className="pm-field"
+        value={form.email}
+        onChange={(event) => setForm({ ...form, email: event.target.value })}
+      />
+      <select
+        className="pm-field"
+        value={form.role}
+        onChange={(event) => setForm({ ...form, role: event.target.value as UserRole, engineerId: '' })}
+      >
+        {ROLE_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {/* Associar a um engenheiro só faz sentido no perfil "Engenheiro" — é o que liga a
+          conta às PMs dessa pessoa. */}
+      {form.role === 'engineer' && (
+        <select
+          className="pm-field"
+          value={form.engineerId}
+          onChange={(event) => setForm({ ...form, engineerId: event.target.value })}
+        >
+          <option value="">Associar a engenheiro…</option>
+          {engineers.map((engineer) => (
+            <option key={engineer.id} value={engineer.id}>
+              {engineer.name}
+            </option>
+          ))}
+        </select>
+      )}
+    </FormModal>
+  );
+}
+
 // Gestão de utilizadores (secção: "todos os outros serão criados e aprovados pelos
 // administradores"). Criar uma conta exige a service_role key, que nunca pode estar
 // no browser — por isso chama a Edge Function admin-create-user em vez de Supabase
@@ -34,7 +108,7 @@ export function Users() {
 
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [lastCreated, setLastCreated] = useState<CreateUserResponse | null>(null);
 
@@ -55,7 +129,7 @@ export function Users() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchEngineers]);
 
-  async function handleCreate() {
+  async function handleCreate(form: UserForm) {
     if (!form.email) return;
     setSaving(true);
     setLastCreated(null);
@@ -70,7 +144,7 @@ export function Users() {
       });
       if (error) throw error;
       if (data) setLastCreated(data);
-      setForm(EMPTY_FORM);
+      setCreating(false);
       await fetchUsers();
     } catch (err) {
       pushToast({
@@ -118,21 +192,26 @@ export function Users() {
 
   if (!canManageUsers) {
     return (
-      <div className="flex h-screen w-screen flex-col overflow-hidden">
-        <Topbar />
-        <p className="p-4 text-sm text-gray-500">Acesso restrito a administradores.</p>
-      </div>
+      <PageShell>
+        <PageHeader title="Utilizadores" />
+        <Card>
+          <EmptyState>Acesso restrito a administradores.</EmptyState>
+        </Card>
+      </PageShell>
     );
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <Topbar />
-      <div className="flex-1 overflow-y-auto p-4">
-        <h1 className="mb-4 text-lg font-semibold text-gray-900">Utilizadores</h1>
+    <PageShell>
+      <PageHeader
+        title="Utilizadores"
+        description="Contas de acesso à app. A palavra-passe definitiva é sempre definida pelo próprio, no primeiro login."
+        actions={<Button onClick={() => setCreating(true)}>Adicionar utilizador</Button>}
+      />
 
+      <div>
         {lastCreated && (
-          <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             {lastCreated.tempPassword ? (
               <>
                 Conta criada para <strong>{lastCreated.email}</strong>. Palavra-passe temporária (comunique-a
@@ -148,53 +227,11 @@ export function Users() {
           </div>
         )}
 
-        <div className="mb-4 flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
-          <input
-            placeholder="Nome"
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-          />
-          <input
-            placeholder="Email"
-            type="email"
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-            value={form.email}
-            onChange={(event) => setForm({ ...form, email: event.target.value })}
-          />
-          <select
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-            value={form.role}
-            onChange={(event) => setForm({ ...form, role: event.target.value as UserRole })}
-          >
-            {ROLE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          {form.role === 'engineer' && (
-            <select
-              className="rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={form.engineerId}
-              onChange={(event) => setForm({ ...form, engineerId: event.target.value })}
-            >
-              <option value="">Associar a engenheiro…</option>
-              {engineers.map((engineer) => (
-                <option key={engineer.id} value={engineer.id}>
-                  {engineer.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <Button onClick={handleCreate} disabled={saving || !form.email}>
-            Criar utilizador
-          </Button>
-        </div>
-
-        <table className="w-full border-collapse text-sm">
+        <Card padded={false} title={`${users.length} utilizador(es)`}>
+        <div className="overflow-x-auto">
+        <table className="pm-table">
           <thead>
-            <tr className="border-b border-gray-200 text-left text-gray-500">
+            <tr>
               <th className="py-1.5 pr-2">Nome</th>
               <th className="py-1.5 pr-2">Email</th>
               <th className="py-1.5 pr-2">Role</th>
@@ -204,13 +241,13 @@ export function Users() {
           </thead>
           <tbody>
             {users.map((user) => (
-              <tr key={user.id} className="border-b border-gray-100">
+              <tr key={user.id}>
                 <td className="py-1.5 pr-2">
                   <input
                     key={user.id}
                     defaultValue={user.name ?? ''}
                     placeholder="(sem nome)"
-                    className="rounded-md border border-transparent px-2 py-1 text-sm hover:border-gray-300 focus:border-gray-300"
+                    className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-sm transition-colors hover:border-gray-300 hover:bg-white focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/30"
                     onBlur={(event) => {
                       if (event.target.value.trim() !== (user.name ?? '')) {
                         handleNameChange(user.id, event.target.value);
@@ -221,7 +258,7 @@ export function Users() {
                 <td className="py-1.5 pr-2">{user.email}</td>
                 <td className="py-1.5 pr-2">
                   <select
-                    className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                    className="pm-field"
                     value={user.role}
                     onChange={(event) => handleRoleChange(user.id, event.target.value as UserRole)}
                   >
@@ -235,7 +272,7 @@ export function Users() {
                 <td className="py-1.5 pr-2">
                   {user.role === 'engineer' ? (
                     <select
-                      className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+                      className="pm-field"
                       value={user.engineer_id ?? ''}
                       onChange={(event) => handleEngineerChange(user.id, event.target.value)}
                     >
@@ -251,14 +288,34 @@ export function Users() {
                   )}
                 </td>
                 <td className="py-1.5 pr-2">
-                  {user.must_change_password && <Badge color="#D97706">Aguarda 1º login</Badge>}
+                  {user.must_change_password ? (
+                    <Badge tone="warning">Aguarda 1º login</Badge>
+                  ) : (
+                    <Badge tone="success">Activa</Badge>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {loading && <p className="mt-2 text-sm text-gray-400">A carregar…</p>}
+        </div>
+        {loading && <EmptyState size="compact">A carregar…</EmptyState>}
+        {!loading && users.length === 0 && (
+          <EmptyState action={<Button onClick={() => setCreating(true)}>Adicionar utilizador</Button>}>
+            Ainda não há utilizadores registados.
+          </EmptyState>
+        )}
+        </Card>
       </div>
-    </div>
+
+      {creating && (
+        <UserFormModal
+          engineers={engineers}
+          saving={saving}
+          onCancel={() => setCreating(false)}
+          onSubmit={handleCreate}
+        />
+      )}
+    </PageShell>
   );
 }

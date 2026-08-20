@@ -14,7 +14,7 @@ import {
   useZoneStore,
 } from '../../stores';
 import type { PMEvent, PMEventInsert } from '../../types';
-import { Badge, Button } from '../ui';
+import { Badge, Button, Modal } from '../ui';
 
 interface AutoSchedulerModalProps {
   defaultYear: number;
@@ -61,31 +61,15 @@ function ProposalRow({
           <span className="font-medium text-gray-800">
             {formatDate(proposal.proposedStartDate)} → {formatDate(proposal.proposedEndDate)}
           </span>
+          {/* De onde saiu a data proposta, e o que precisa de atenção — tudo em Badge,
+              com os mesmos tons do resto da app (antes eram cinco pastilhas à mão). */}
           {proposal.anchorSource === 'existing_current_year' && (
-            <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs text-purple-700">
-              ancorado em PM já marcada
-            </span>
+            <Badge tone="accent">ancorado em PM já marcada</Badge>
           )}
-          {proposal.anchorSource === 'historical' && (
-            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-700">
-              ancorado no histórico
-            </span>
-          )}
-          {proposal.anchorSource === 'base_distribution' && (
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
-              distribuição base
-            </span>
-          )}
-          {missingEngineer && (
-            <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
-              sem engenheiro
-            </span>
-          )}
-          {needsReview && (
-            <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
-              revisão manual necessária
-            </span>
-          )}
+          {proposal.anchorSource === 'historical' && <Badge tone="brand">ancorado no histórico</Badge>}
+          {proposal.anchorSource === 'base_distribution' && <Badge tone="neutral">distribuição base</Badge>}
+          {missingEngineer && <Badge tone="neutral">sem engenheiro</Badge>}
+          {needsReview && <Badge tone="danger">revisão manual necessária</Badge>}
         </div>
         {proposal.previousActualDate && (
           <div className="mt-0.5 text-xs text-gray-500">
@@ -122,7 +106,7 @@ function EquipmentResultCard({
 
   return (
     <div
-      className={`rounded-lg border ${selected ? 'border-blue-300 bg-white' : 'border-gray-200 bg-gray-50 opacity-60'}`}
+      className={`rounded-lg border ${selected ? 'border-brand-300 bg-white' : 'border-gray-200 bg-gray-50 opacity-60'}`}
     >
       <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
         <input
@@ -135,7 +119,7 @@ function EquipmentResultCard({
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-gray-900 truncate">{result.equipmentName}</span>
-            <Badge color={result.zoneColor}>{result.zoneCode}</Badge>
+            <Badge variant="neutral">{result.zoneCode}</Badge>
             <span className="text-sm text-gray-500">{result.hospitalName}</span>
           </div>
           {result.comparison && (
@@ -147,15 +131,13 @@ function EquipmentResultCard({
         </div>
         <div className="shrink-0">
           {result.error ? (
-            <span className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">Erro</span>
+            <Badge tone="danger">Erro</Badge>
           ) : allOk ? (
-            <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-700">
-              {result.proposals.length} PMs · sem conflitos
-            </span>
+            <Badge tone="success">{result.proposals.length} PMs · sem conflitos</Badge>
           ) : (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+            <Badge tone="warning">
               {result.proposals.filter((p) => p.requiresManualReview || p.conflicts.length > 0).length} com alertas
-            </span>
+            </Badge>
           )}
         </div>
       </div>
@@ -234,12 +216,12 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
 
   // Equipamentos agrupados por zona
   const byZone = useMemo(() => {
-    const map = new Map<string, { zoneName: string; zoneColor: string; items: typeof activeEquipment }>();
+    const map = new Map<string, { zoneName: string; items: typeof activeEquipment }>();
     for (const eq of activeEquipment) {
       const zoneId = eq.zone_id;
       if (!map.has(zoneId)) {
         const zone = zones.find((z) => z.id === zoneId);
-        map.set(zoneId, { zoneName: zone?.name ?? eq.zone_name, zoneColor: eq.zone_color, items: [] });
+        map.set(zoneId, { zoneName: zone?.name ?? eq.zone_name, items: [] });
       }
       map.get(zoneId)!.items.push(eq);
     }
@@ -465,7 +447,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
   if (previewing) {
     return (
       <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-4">
-        <div className="flex w-full max-w-3xl items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3 shadow-2xl">
+        <div className="flex w-full max-w-3xl items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3 shadow-modal">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900">
               Pré-visualização · Plano {targetYear}
@@ -489,55 +471,78 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="flex h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-2xl">
-        {/* Cabeçalho */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+    <Modal
+      tall
+      size="xl"
+      onClose={onClose}
+      title={`Geração Automática · Plano ${targetYear}`}
+      description={
+        phase === 'setup'
+          ? 'Selecciona os equipamentos e o ano para gerar propostas de PM com base no histórico real.'
+          : phase === 'review'
+            ? `${totalProposals} propostas para ${targetYear} · ${
+                totalConflicts > 0 ? `${totalConflicts} com alertas · ` : ''
+              }${savedCount} seleccionadas para guardar`
+            : undefined
+      }
+      footer={
+        <div className="flex w-full items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">
-              Geração Automática · Plano {targetYear}
-            </h2>
-            {phase === 'setup' && (
-              <p className="mt-0.5 text-sm text-gray-500">
-                Selecciona os equipamentos e o ano para gerar propostas de PM com base no histórico real.
-              </p>
-            )}
             {phase === 'review' && (
-              <p className="mt-0.5 text-sm text-gray-500">
-                {totalProposals} propostas para {targetYear} ·{' '}
-                {totalConflicts > 0 ? `${totalConflicts} com alertas · ` : ''}
-                {savedCount} seleccionadas para guardar
-              </p>
+              <Button variant="ghost" onClick={handleBack} disabled={saving}>
+                ← Voltar a seleccionar
+              </Button>
             )}
           </div>
-          <button
-            className="text-gray-400 hover:text-gray-600"
-            onClick={onClose}
-            disabled={generating || saving}
-            aria-label="Fechar"
-          >
-            ✕
-          </button>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onClose} disabled={generating || saving}>
+              Cancelar
+            </Button>
+            {phase === 'setup' && (
+              <Button onClick={handleGenerate} disabled={selectedEquipmentIds.size === 0}>
+                Gerar propostas ({selectedEquipmentIds.size})
+              </Button>
+            )}
+            {phase === 'review' && (
+              <>
+                <Button variant="secondary" onClick={enterPreview} disabled={saving || savedCount === 0}>
+                  Pré-visualizar no calendário
+                </Button>
+                <Button onClick={handleSave} disabled={saving || savedCount === 0 || !canCreatePM}>
+                  {saving ? 'A guardar…' : `Confirmar e guardar (${savedCount} PM${savedCount !== 1 ? 's' : ''})`}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
-
-        {/* Corpo */}
-        <div className="flex-1 overflow-y-auto">
+      }
+    >
+      {/* O corpo do modal trata do seu próprio espaçamento por fase — o Modal já dá o
+          scroll e as margens exteriores. */}
+      <div className="-mx-1">
           {/* FASE 1: Setup */}
           {phase === 'setup' && (
-            <div className="p-6 space-y-5">
+            <div className="space-y-5">
               {/* Ano alvo */}
               <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-gray-700 w-32">Ano do plano</label>
-                <div className="flex items-center gap-2">
+                <label className="w-32 text-sm font-medium text-gray-700">Ano do plano</label>
+                {/* Mesmo selector segmentado do ano de planeamento na Topbar. */}
+                <div className="flex items-center rounded-md border border-gray-300 bg-white shadow-sm">
                   <button
-                    className="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50"
+                    type="button"
+                    aria-label="Ano anterior"
+                    className="h-8 rounded-l-md px-2.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
                     onClick={() => setTargetYear((y) => y - 1)}
                   >
                     ‹
                   </button>
-                  <span className="min-w-[4rem] text-center text-sm font-semibold text-gray-800">{targetYear}</span>
+                  <span className="min-w-[4rem] border-x border-gray-200 px-2 text-center text-sm font-semibold tabular-nums text-gray-800">
+                    {targetYear}
+                  </span>
                   <button
-                    className="rounded-md border border-gray-300 px-2 py-1 text-sm hover:bg-gray-50"
+                    type="button"
+                    aria-label="Ano seguinte"
+                    className="h-8 rounded-r-md px-2.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
                     onClick={() => setTargetYear((y) => y + 1)}
                   >
                     ›
@@ -549,24 +554,21 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-700">Equipamentos</span>
-                  <div className="flex gap-2">
-                    <button
-                      className="text-xs text-blue-600 hover:underline"
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => setSelectedEquipmentIds(new Set(activeEquipment.map((e) => e.id)))}
                     >
                       Todos
-                    </button>
-                    <span className="text-xs text-gray-300">|</span>
-                    <button
-                      className="text-xs text-blue-600 hover:underline"
-                      onClick={() => setSelectedEquipmentIds(new Set())}
-                    >
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedEquipmentIds(new Set())}>
                       Nenhum
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <div className="space-y-3 rounded-lg border border-gray-200 p-3">
-                  {byZone.map(([zoneId, { zoneName, zoneColor, items }]) => {
+                  {byZone.map(([zoneId, { zoneName, items }]) => {
                     const allZoneSelected = items.every((e) => selectedEquipmentIds.has(e.id));
                     const someZoneSelected = items.some((e) => selectedEquipmentIds.has(e.id));
                     return (
@@ -580,10 +582,6 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
                             }}
                             onChange={() => toggleZone(items)}
                             className="h-4 w-4 rounded border-gray-300"
-                          />
-                          <span
-                            className="inline-block h-2.5 w-2.5 rounded-full"
-                            style={{ backgroundColor: zoneColor }}
                           />
                           {zoneName}
                         </label>
@@ -622,7 +620,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
               </div>
 
               {/* Nota informativa */}
-              <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800">
+              <div className="rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-xs text-brand-800">
                 <strong>Como funciona:</strong> Se o hospital já tiver alguma PM marcada em {targetYear}, o
                 plano ancora-se nessa data e as PMs seguintes mantêm o mesmo dia da semana, espaçadas ~3
                 meses (13 semanas para 4 PMs/ano). Caso
@@ -636,13 +634,13 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
           {/* FASE 2: A gerar */}
           {phase === 'generating' && (
             <div className="flex flex-col items-center justify-center gap-4 py-16">
-              <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-600 border-t-transparent" />
               <p className="text-sm font-medium text-gray-700">
                 A processar {progress.current} de {progress.total} equipamento(s)…
               </p>
               <div className="w-64 rounded-full bg-gray-200">
                 <div
-                  className="h-2 rounded-full bg-blue-600 transition-all"
+                  className="h-2 rounded-full bg-brand-600 transition-all"
                   style={{ width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }}
                 />
               </div>
@@ -651,9 +649,9 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
 
           {/* FASE 3: Revisão */}
           {phase === 'review' && (
-            <div className="space-y-3 p-6">
+            <div className="space-y-3">
               {lockedEquipment.length > 0 && (
-                <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                <div className="rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-800">
                   <strong>
                     {lockedEquipment.length} equipamento(s) já têm manutenção confirmada pelo cliente para{' '}
                     {targetYear}
@@ -685,45 +683,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
               ))}
             </div>
           )}
-        </div>
-
-        {/* Rodapé com acções */}
-        <div className="flex items-center justify-between border-t border-gray-200 px-6 py-4">
-          <div>
-            {phase === 'review' && (
-              <Button variant="secondary" onClick={handleBack} disabled={saving}>
-                ← Voltar a seleccionar
-              </Button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={onClose} disabled={generating || saving}>
-              Cancelar
-            </Button>
-            {phase === 'setup' && (
-              <Button
-                onClick={handleGenerate}
-                disabled={selectedEquipmentIds.size === 0}
-              >
-                Gerar propostas ({selectedEquipmentIds.size})
-              </Button>
-            )}
-            {phase === 'review' && (
-              <>
-                <Button variant="secondary" onClick={enterPreview} disabled={saving || savedCount === 0}>
-                  Pré-visualizar no calendário
-                </Button>
-                <Button
-                  onClick={handleSave}
-                  disabled={saving || savedCount === 0 || !canCreatePM}
-                >
-                  {saving ? 'A guardar…' : `Confirmar e guardar (${savedCount} PM${savedCount !== 1 ? 's' : ''})`}
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
       </div>
-    </div>
+    </Modal>
   );
 }

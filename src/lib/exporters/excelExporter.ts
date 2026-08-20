@@ -5,6 +5,7 @@ export function exportPMEventsToExcel(rows: PMReportRow[], fileName = 'pmplan-re
   const worksheet = XLSX.utils.json_to_sheet(
     rows.map((row) => ({
       Equipamento: row.equipmentName,
+      Modalidade: row.modality,
       Hospital: row.hospitalName,
       Zona: row.zoneName,
       Engenheiro: row.engineerName,
@@ -16,6 +17,7 @@ export function exportPMEventsToExcel(rows: PMReportRow[], fileName = 'pmplan-re
   );
   worksheet['!cols'] = [
     { wch: 28 },
+    { wch: 16 },
     { wch: 24 },
     { wch: 14 },
     { wch: 22 },

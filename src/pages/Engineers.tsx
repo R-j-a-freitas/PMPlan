@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Topbar } from '../app/Topbar';
+import { PageShell } from '../app/PageShell';
 import { buildEngineerExportRows, parseEngineerImportRows } from '../lib/importers/engineerImportExport';
 import type { EngineerImportRow } from '../lib/importers/engineerImportExport';
 import { exportRowsToSpreadsheet, readSpreadsheetFile } from '../lib/spreadsheet';
@@ -11,7 +11,16 @@ import type { EngineerWithZones, UserProfile, Zone } from '../types';
 import { ZoneMultiSelect } from '../components/engineers';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
 import { matchesSearch } from '../lib/searchText';
-import { Badge, Button, FormModal, ImportExportButtons, SearchInput } from '../components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  FormModal,
+  ImportExportButtons,
+  PageHeader,
+  SearchInput,
+} from '../components/ui';
 
 const EMPTY_FORM = {
   name: '',
@@ -78,26 +87,26 @@ function EngineerFormModal({
       <input
         autoFocus
         placeholder="Nome"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.name}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
       />
       <input
         placeholder="Email"
         type="email"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.email}
         onChange={(event) => setForm({ ...form, email: event.target.value })}
       />
       <input
         placeholder="Telefone"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.phone}
         onChange={(event) => setForm({ ...form, phone: event.target.value })}
       />
       <input
         placeholder="Skills (separadas por vírgula)"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.skills}
         onChange={(event) => setForm({ ...form, skills: event.target.value })}
       />
@@ -334,24 +343,36 @@ export function Engineers() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <Topbar />
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-gray-900">Engenheiros</h1>
-          {canManageEngineers && (
-            <div className="flex items-center gap-2">
-              <Button onClick={() => setCreating(true)}>Adicionar</Button>
+    <PageShell wide>
+      <PageHeader
+        title="Engenheiros"
+        description="Um engenheiro pode cobrir várias zonas em simultâneo; a marcada com ★ é a principal."
+        actions={
+          canManageEngineers && (
+            <>
               <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
-            </div>
-          )}
-        </div>
+              <Button onClick={() => setCreating(true)}>Adicionar engenheiro</Button>
+            </>
+          )
+        }
+      />
 
-        <SearchInput value={searchText} onChange={setSearchText} placeholder="Procurar engenheiro por nome ou email…" />
-
-        <table className="w-full border-collapse text-sm">
+      <Card
+        padded={false}
+        title={`${filteredEngineers.length} engenheiro(s)`}
+        actions={
+          <SearchInput
+            value={searchText}
+            onChange={setSearchText}
+            placeholder="Procurar por nome ou email…"
+            className="w-72"
+          />
+        }
+      >
+        <div className="overflow-x-auto">
+        <table className="pm-table">
           <thead>
-            <tr className="border-b border-gray-200 text-left text-gray-500">
+            <tr>
               <th className="py-1.5 pr-2">Nome</th>
               <th className="py-1.5 pr-2">Email</th>
               <th className="py-1.5 pr-2">Telefone</th>
@@ -370,12 +391,12 @@ export function Engineers() {
               // disponível e a Edge Function idempotente completa a ligação ao clicar.
               const account = accounts.find((a) => a.engineer_id === engineer.id);
               return (
-                <tr key={engineer.id} className="border-b border-gray-100">
+                <tr key={engineer.id}>
                   {editing ? (
                     <>
                       <td className="py-1.5 pr-2 align-top">
                         <input
-                          className="w-full rounded-md border border-gray-300 px-2 py-1"
+                          className="pm-field w-full"
                           value={editForm.name}
                           onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
                         />
@@ -383,14 +404,14 @@ export function Engineers() {
                       <td className="py-1.5 pr-2 align-top">
                         <input
                           type="email"
-                          className="w-full rounded-md border border-gray-300 px-2 py-1"
+                          className="pm-field w-full"
                           value={editForm.email}
                           onChange={(event) => setEditForm({ ...editForm, email: event.target.value })}
                         />
                       </td>
                       <td className="py-1.5 pr-2 align-top">
                         <input
-                          className="w-full rounded-md border border-gray-300 px-2 py-1"
+                          className="pm-field w-full"
                           value={editForm.phone}
                           onChange={(event) => setEditForm({ ...editForm, phone: event.target.value })}
                         />
@@ -406,7 +427,7 @@ export function Engineers() {
                       <td className="py-1.5 pr-2 align-top">
                         <input
                           placeholder="Skills (vírgulas)"
-                          className="w-full rounded-md border border-gray-300 px-2 py-1"
+                          className="pm-field w-full"
                           value={editForm.skills}
                           onChange={(event) => setEditForm({ ...editForm, skills: event.target.value })}
                         />
@@ -422,23 +443,24 @@ export function Engineers() {
                         <td className="py-1.5 pr-2 align-top">
                           {account ? (
                             <Button
-                              variant="danger"
+                              variant="dangerGhost"
+                              size="sm"
                               onClick={() => handleRemoveLogin(engineer, account.id)}
                               disabled={removingId === engineer.id}
                             >
                               {removingId === engineer.id ? 'A remover…' : 'Remover acesso'}
                             </Button>
                           ) : (
-                            <span className="text-gray-300">Sem acesso</span>
+                            <span className="text-sm text-gray-400">Sem acesso</span>
                           )}
                         </td>
                       )}
                       <td className="py-1.5 pr-2 text-right align-top">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="secondary" onClick={() => setEditingId(null)} disabled={saving}>
+                        <div className="flex justify-end gap-1.5">
+                          <Button variant="secondary" size="sm" onClick={() => setEditingId(null)} disabled={saving}>
                             Cancelar
                           </Button>
-                          <Button onClick={() => handleSaveEdit(engineer)} disabled={saving}>
+                          <Button size="sm" onClick={() => handleSaveEdit(engineer)} disabled={saving}>
                             Guardar
                           </Button>
                         </div>
@@ -455,7 +477,7 @@ export function Engineers() {
                             const zone = zones.find((z) => z.id === engineerZone.zone_id);
                             if (!zone) return null;
                             return (
-                              <Badge key={zone.id} color={zone.color}>
+                              <Badge key={zone.id} variant="neutral">
                                 {zone.code}
                                 {engineerZone.is_primary ? ' ★' : ''}
                               </Badge>
@@ -464,7 +486,11 @@ export function Engineers() {
                         </div>
                       </td>
                       <td className="py-1.5 pr-2">{engineer.skills.length > 0 ? engineer.skills.join(', ') : '—'}</td>
-                      <td className="py-1.5 pr-2">{engineer.active ? 'Sim' : 'Não'}</td>
+                      <td className="py-1.5 pr-2">
+                        <Badge tone={engineer.active ? 'success' : 'neutral'}>
+                          {engineer.active ? 'Activo' : 'Inactivo'}
+                        </Badge>
+                      </td>
                       {canManageEngineers && (
                         <td className="py-1.5 pr-2">
                           <label
@@ -489,11 +515,11 @@ export function Engineers() {
                       )}
                       <td className="py-1.5 pr-2 text-right">
                         {canManageEngineers && (
-                          <div className="flex justify-end gap-2">
-                            <Button variant="secondary" onClick={() => startEdit(engineer)}>
+                          <div className="flex justify-end gap-1">
+                            <Button variant="secondary" size="sm" onClick={() => startEdit(engineer)}>
                               Editar
                             </Button>
-                            <Button variant="danger" onClick={() => handleDeleteEngineer(engineer)}>
+                            <Button variant="dangerGhost" size="sm" onClick={() => handleDeleteEngineer(engineer)}>
                               Eliminar
                             </Button>
                           </div>
@@ -506,13 +532,22 @@ export function Engineers() {
             })}
           </tbody>
         </table>
+        </div>
 
         {filteredEngineers.length === 0 && (
-          <p className="mt-3 text-sm text-gray-400">
-            {engineers.length === 0 ? 'Sem engenheiros registados.' : 'Nenhum engenheiro corresponde à pesquisa.'}
-          </p>
+          <EmptyState
+            action={
+              engineers.length === 0 && canManageEngineers ? (
+                <Button onClick={() => setCreating(true)}>Adicionar engenheiro</Button>
+              ) : undefined
+            }
+          >
+            {engineers.length === 0
+              ? 'Ainda não há engenheiros registados.'
+              : 'Nenhum engenheiro corresponde à pesquisa.'}
+          </EmptyState>
         )}
-      </div>
+      </Card>
 
       {creating && (
         <EngineerFormModal
@@ -533,6 +568,6 @@ export function Engineers() {
           onClose={() => setImportRows(null)}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

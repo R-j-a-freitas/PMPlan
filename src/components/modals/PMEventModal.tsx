@@ -4,7 +4,7 @@ import { useConflictEngine } from '../../hooks';
 import { useAuthStore, useCalendarStore, useEquipmentStore, useUiStore } from '../../stores';
 import { listPmEventsForEquipmentInYear } from '../../lib/conflictRules';
 import type { PMStatus } from '../../types';
-import { Button } from '../ui';
+import { Button, Modal } from '../ui';
 import { PMEventForm } from './PMEventForm';
 
 export interface PMEventModalInitial {
@@ -148,11 +148,34 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-        <h2 className="mb-3 text-base font-semibold text-gray-900">{eventId ? 'Editar PM' : 'Nova PM'}</h2>
-
-        <PMEventForm
+    <Modal
+      title={eventId ? 'Editar PM' : 'Nova PM'}
+      onClose={onClose}
+      footer={
+        // Eliminar à esquerda, longe do par Cancelar/Guardar: é a única acção deste
+        // modal que não se desfaz, e não pode estar encostada à que se clica sempre.
+        <div className="flex w-full items-center justify-between">
+          {eventId && permissions.canDeletePM ? (
+            <Button variant="dangerGhost" onClick={handleDelete} disabled={saving}>
+              Eliminar
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={onClose} disabled={saving}>
+              {readOnly ? 'Fechar' : 'Cancelar'}
+            </Button>
+            {!readOnly && (
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? 'A guardar…' : 'Guardar'}
+              </Button>
+            )}
+          </div>
+        </div>
+      }
+    >
+      <PMEventForm
           equipmentId={equipmentId}
           engineerId={engineerId}
           startDate={startDate}
@@ -166,30 +189,9 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
           onEngineerChange={setEngineerId}
           onStartDateChange={setStartDate}
           onEndDateChange={setEndDate}
-          onStatusChange={setStatus}
-          onNotesChange={setNotes}
-        />
-
-        <div className="mt-4 flex items-center justify-between">
-          {eventId && permissions.canDeletePM ? (
-            <Button variant="danger" onClick={handleDelete} disabled={saving}>
-              Eliminar
-            </Button>
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={onClose} disabled={saving}>
-              {readOnly ? 'Fechar' : 'Cancelar'}
-            </Button>
-            {!readOnly && (
-              <Button variant="primary" onClick={handleSave} disabled={saving}>
-                Guardar
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+        onStatusChange={setStatus}
+        onNotesChange={setNotes}
+      />
+    </Modal>
   );
 }

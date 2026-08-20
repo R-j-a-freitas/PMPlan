@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { Topbar } from '../app/Topbar';
+import { PageShell } from '../app/PageShell';
 import { buildHospitalExportRows, parseHospitalImportRows } from '../lib/importers/hospitalImportExport';
 import { SPANISH_REGIONS, spanishRegionName } from '../lib/spanishRegions';
 import { exportRowsToSpreadsheet, readSpreadsheetFile } from '../lib/spreadsheet';
@@ -18,7 +18,16 @@ import { HospitalContactsModal } from '../components/modals/HospitalContactsModa
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
 import { HospitalSignedDocuments, UnmatchedSignedDocuments } from '../components/documents';
 import { matchesSearch } from '../lib/searchText';
-import { Badge, Button, FormModal, ImportExportButtons, SearchInput } from '../components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  FormModal,
+  ImportExportButtons,
+  PageHeader,
+  SearchInput,
+} from '../components/ui';
 
 const EMPTY_FORM = { name: '', shortName: '', country: 'PT' as Country, locality: '', city: '', zoneId: '' };
 
@@ -44,7 +53,7 @@ function LocalityField({
       <input
         list="pt-concelhos"
         placeholder="Concelho (ex: Braga)"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -52,7 +61,7 @@ function LocalityField({
   }
   return (
     <select
-      className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+      className="pm-field"
       value={value}
       onChange={(event) => onChange(event.target.value)}
     >
@@ -98,7 +107,7 @@ function ZoneSelect({
 
   return (
     <select
-      className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+      className="pm-field"
       value={value}
       onChange={(event) => onChange(event.target.value)}
     >
@@ -152,18 +161,18 @@ function HospitalFormModal({
       <input
         autoFocus
         placeholder="Nome"
-        className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="col-span-2 pm-field"
         value={form.name}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
       />
       <input
         placeholder="Nome curto (ex: IPO Porto)"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.shortName}
         onChange={(event) => setForm({ ...form, shortName: event.target.value })}
       />
       <select
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.country}
         onChange={(event) => setForm({ ...form, country: event.target.value as Country, locality: '', city: '' })}
       >
@@ -178,7 +187,7 @@ function HospitalFormModal({
       {form.country === 'ES' && (
         <input
           placeholder="Cidade (ex: Vigo)"
-          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+          className="pm-field"
           value={form.city}
           onChange={(event) => setForm({ ...form, city: event.target.value })}
         />
@@ -349,38 +358,47 @@ export function Clients() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <Topbar />
+    <PageShell wide>
       <datalist id="pt-concelhos">
         {ptLocalities.map((locality) => (
           <option key={locality} value={locality} />
         ))}
       </datalist>
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-gray-900">Hospitais</h1>
-          {canManageZones && (
-            <div className="flex items-center gap-2">
-              <Button onClick={() => setCreating(true)}>Adicionar</Button>
+
+      <PageHeader
+        title="Hospitais"
+        description="Cada hospital pertence sempre a uma zona — é dela que os equipamentos herdam a sua."
+        actions={
+          canManageZones && (
+            <>
               <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
-            </div>
-          )}
-        </div>
+              <Button onClick={() => setCreating(true)}>Adicionar hospital</Button>
+            </>
+          )
+        }
+      />
 
-        {/* Documentos assinados que chegaram sem hospital identificado — no topo, porque
-            ficarem esquecidos numa fila que ninguém vê é a única forma de este mecanismo
-            falhar em silêncio. Só aparece quando existe algum. */}
-        <UnmatchedSignedDocuments hospitals={hospitals} />
+      {/* Documentos assinados que chegaram sem hospital identificado — no topo, porque
+          ficarem esquecidos numa fila que ninguém vê é a única forma de este mecanismo
+          falhar em silêncio. Só aparece quando existe algum. */}
+      <UnmatchedSignedDocuments hospitals={hospitals} />
 
-        <SearchInput
-          value={searchText}
-          onChange={setSearchText}
-          placeholder="Procurar hospital por nome ou nome curto…"
-        />
-
-        <table className="w-full border-collapse text-sm">
+      <Card
+        padded={false}
+        title={`${filteredHospitals.length} hospital(is)`}
+        actions={
+          <SearchInput
+            value={searchText}
+            onChange={setSearchText}
+            placeholder="Procurar por nome ou nome curto…"
+            className="w-72"
+          />
+        }
+      >
+        <div className="overflow-x-auto">
+        <table className="pm-table">
           <thead>
-            <tr className="border-b border-gray-200 text-left text-gray-500">
+            <tr>
               <th className="py-1.5 pr-2">Nome</th>
               <th className="py-1.5 pr-2">Nome curto</th>
               <th className="py-1.5 pr-2">País</th>
@@ -400,26 +418,26 @@ export function Clients() {
               ).length;
               return (
                 <Fragment key={hospital.id}>
-                <tr className="border-b border-gray-100">
+                <tr>
                   {editing ? (
                     <>
                       <td className="py-1.5 pr-2">
                         <input
-                          className="w-full rounded-md border border-gray-300 px-2 py-1"
+                          className="pm-field w-full"
                           value={editForm.name}
                           onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
                         />
                       </td>
                       <td className="py-1.5 pr-2">
                         <input
-                          className="w-full rounded-md border border-gray-300 px-2 py-1"
+                          className="pm-field w-full"
                           value={editForm.shortName}
                           onChange={(event) => setEditForm({ ...editForm, shortName: event.target.value })}
                         />
                       </td>
                       <td className="py-1.5 pr-2">
                         <select
-                          className="rounded-md border border-gray-300 px-2 py-1"
+                          className="pm-field"
                           value={editForm.country}
                           onChange={(event) =>
                             setEditForm({
@@ -445,7 +463,7 @@ export function Clients() {
                         {editForm.country === 'ES' && (
                           <input
                             placeholder="Cidade"
-                            className="w-full rounded-md border border-gray-300 px-2 py-1"
+                            className="pm-field w-full"
                             value={editForm.city}
                             onChange={(event) => setEditForm({ ...editForm, city: event.target.value })}
                           />
@@ -463,11 +481,11 @@ export function Clients() {
                         {hospital.contacts.length > 0 ? hospital.contacts.map((c) => c.name).join(', ') : '—'}
                       </td>
                       <td className="py-1.5 pr-2 text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="secondary" onClick={() => setEditingId(null)} disabled={saving}>
+                        <div className="flex justify-end gap-1.5">
+                          <Button variant="secondary" size="sm" onClick={() => setEditingId(null)} disabled={saving}>
                             Cancelar
                           </Button>
-                          <Button onClick={() => handleSaveEdit(hospital.id)} disabled={saving}>
+                          <Button size="sm" onClick={() => handleSaveEdit(hospital.id)} disabled={saving}>
                             Guardar
                           </Button>
                         </div>
@@ -487,30 +505,31 @@ export function Clients() {
                       </td>
                       <td className="py-1.5 pr-2">{hospital.city ?? '—'}</td>
                       <td className="py-1.5 pr-2">
-                        <Badge color={hospital.zone_color}>{hospital.zone_code}</Badge>
+                        <Badge variant="neutral">{hospital.zone_code}</Badge>
                       </td>
                       <td className="py-1.5 pr-2">
                         {hospital.contacts.length > 0 ? hospital.contacts.map((c) => c.name).join(', ') : '—'}
                       </td>
                       <td className="py-1.5 pr-2 text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-1">
                           {/* Documentos assinados é consulta, não gestão — fica disponível
                               também para quem não pode editar hospitais. */}
                           <Button
-                            variant="secondary"
+                            variant="ghost"
+                            size="sm"
                             onClick={() => setDocumentsHospitalId(documentsOpen ? null : hospital.id)}
                           >
                             Documentos{documentCount > 0 ? ` (${documentCount})` : ''}
                           </Button>
                           {canManageZones && (
                             <>
-                              <Button variant="secondary" onClick={() => setContactsHospitalId(hospital.id)}>
+                              <Button variant="ghost" size="sm" onClick={() => setContactsHospitalId(hospital.id)}>
                                 Contactos
                               </Button>
-                              <Button variant="secondary" onClick={() => startEdit(hospital)}>
+                              <Button variant="secondary" size="sm" onClick={() => startEdit(hospital)}>
                                 Editar
                               </Button>
-                              <Button variant="danger" onClick={() => deleteHospital(hospital.id)}>
+                              <Button variant="dangerGhost" size="sm" onClick={() => deleteHospital(hospital.id)}>
                                 Eliminar
                               </Button>
                             </>
@@ -521,7 +540,7 @@ export function Clients() {
                   )}
                 </tr>
                 {documentsOpen && !editing && (
-                  <tr className="border-b border-gray-100 bg-gray-50">
+                  <tr className="pm-row-detail bg-gray-50">
                     <td colSpan={8} className="p-2">
                       <HospitalSignedDocuments hospitalId={hospital.id} />
                     </td>
@@ -532,13 +551,20 @@ export function Clients() {
             })}
           </tbody>
         </table>
+        </div>
 
         {filteredHospitals.length === 0 && (
-          <p className="mt-3 text-sm text-gray-400">
-            {hospitals.length === 0 ? 'Sem hospitais registados.' : 'Nenhum hospital corresponde à pesquisa.'}
-          </p>
+          <EmptyState
+            action={
+              hospitals.length === 0 && canManageZones ? (
+                <Button onClick={() => setCreating(true)}>Adicionar hospital</Button>
+              ) : undefined
+            }
+          >
+            {hospitals.length === 0 ? 'Ainda não há hospitais registados.' : 'Nenhum hospital corresponde à pesquisa.'}
+          </EmptyState>
         )}
-      </div>
+      </Card>
 
       {creating && (
         <HospitalFormModal
@@ -569,6 +595,6 @@ export function Clients() {
           onClose={() => setContactsHospitalId(null)}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

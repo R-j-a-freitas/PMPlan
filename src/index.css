@@ -14,6 +14,159 @@ body,
   overflow: hidden;
 }
 
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Anel de foco único em toda a app. Antes nenhum controlo tinha estado de foco
+     visível — navegar por teclado era navegar às cegas. Fica no :focus-visible para
+     não aparecer no clique de rato, onde só faria ruído. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    @apply outline-none ring-2 ring-brand-500/40 ring-offset-1 ring-offset-white;
+  }
+
+  /* Caixas de selecção e rádios na cor da marca — por omissão o browser pinta-as
+     no seu próprio azul, que não é o nosso. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 text-brand-600;
+    accent-color: #2563eb;
+  }
+
+  /* Barras de scroll discretas nas áreas internas (sidebar, listas, cartões) — a
+     barra cinzenta cheia do Windows corta a composição em duas. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    @apply rounded-full border-[3px] border-solid border-transparent bg-gray-300 bg-clip-content;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 bg-clip-content;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ─── Componentes base ───────────────────────────────────────────────────────
+   As três formas que se repetem em toda a app (campo, cartão, tabela) vivem aqui
+   e não em 100 strings de classes copiadas: é o que garante que "coerente" se
+   mantém coerente à medida que a app cresce. */
+@layer components {
+  /* Campo de formulário — input, select e textarea partilham a mesma caixa.
+     Sem largura própria: quem precisa de a ocupar toda acrescenta `w-full`. */
+  .pm-field {
+    @apply rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 shadow-sm transition
+           placeholder:text-gray-400
+           hover:border-gray-400
+           focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:ring-offset-0
+           disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400;
+  }
+
+  /* Superfície branca sobre o fundo cinzento da página. Todo o conteúdo de uma
+     página vive dentro de um destes. */
+  .pm-card {
+    @apply rounded-xl border border-gray-200 bg-white shadow-card;
+  }
+
+  /* Tabela de dados. As células mantêm o seu espaçamento próprio; o que esta
+     classe impõe é o cabeçalho, as separações, a altura da linha e o realce ao
+     passar o rato — que é o que fazia cada tabela parecer de uma app diferente. */
+  .pm-table {
+    @apply w-full border-collapse text-left text-sm text-gray-700;
+  }
+  /* O espaçamento das células vive aqui, e não nas ~200 células espalhadas pelas
+     páginas: os selectores compostos ganham em especificidade às utilitárias que lá
+     estão (`py-1.5 pr-2`), o que permite unificar a métrica sem tocar em cada uma. */
+  .pm-table thead th {
+    @apply whitespace-nowrap border-b border-gray-200 bg-gray-50/60 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-gray-500;
+  }
+  /* Sem `align-middle`: é já o valor por omissão das células de tabela, e declará-lo
+     aqui venceria (por especificidade) os `align-top` que algumas linhas de edição
+     precisam quando têm campos altos ao lado de campos de uma linha. */
+  .pm-table tbody td {
+    @apply px-3 py-2;
+  }
+  /* Respiro nas pontas, para as linhas não encostarem à moldura do cartão. */
+  .pm-table thead th:first-child,
+  .pm-table tbody td:first-child {
+    @apply pl-4;
+  }
+  .pm-table thead th:last-child,
+  .pm-table tbody td:last-child {
+    @apply pr-4;
+  }
+  .pm-table tbody tr {
+    @apply h-11 border-b border-gray-100 transition-colors;
+  }
+  .pm-table tbody tr:last-child {
+    @apply border-b-0;
+  }
+  .pm-table tbody tr:hover {
+    @apply bg-brand-50/40;
+  }
+  /* Linhas de detalhe expandidas (ex. documentos assinados por hospital) não são
+     alvos de leitura linha-a-linha — não acendem com o rato. */
+  .pm-table tbody tr.pm-row-detail:hover {
+    @apply bg-gray-50;
+  }
+
+  /* ─── Sidebar de planeamento ─────────────────────────────────────────────
+     A coluna esquerda é a superfície mais densa da app: cinco listas encaixadas
+     (zonas, engenheiros, modalidades, equipamentos, carga) que só valem alguma
+     coisa se se virem ao mesmo tempo — quem planeia está a cruzar zona com
+     engenheiro com máquina, e cada rolamento parte esse cruzamento ao meio.
+
+     Por isso a sidebar corre um degrau de escala abaixo do resto da app: 12px na
+     linha (contra 14px), 10px no cabeçalho de secção, caixas de selecção de 14px
+     e três píxeis de respiro vertical por linha. Cabem cerca de mais um terço de
+     linhas no mesmo ecrã.
+
+     As métricas vivem aqui e não espalhadas pelos cinco componentes: era assim
+     que as listas divergiam umas das outras — cada uma com o seu `text-sm` e o
+     seu `py-1` copiados — e é a divergência, não o tamanho, que faz uma coluna
+     destas parecer desarrumada. */
+  .pm-sidebar {
+    @apply text-xs leading-tight;
+  }
+
+  /* Ganha em especificidade à regra global de `input[type=checkbox]` (h-4 w-4).
+     É preciso: uma caixa de 16px ao lado de texto de 12px passa a ser o elemento
+     mais alto da linha, e a altura da linha deixava de ser decidida pela letra. */
+  .pm-sidebar input[type='checkbox'] {
+    @apply h-3.5 w-3.5;
+  }
+
+  /* Linha de lista — a mesma caixa para zonas, engenheiros, modalidades e carga.
+     O `py-[3px]` não é arbitrário: com `leading-tight` a 12px, é o que dá uma
+     linha de 21px, alta o suficiente para ser um alvo de rato aceitável e baixa
+     o suficiente para caberem ~12 numa secção sem rolar. */
+  .pm-sidebar .pm-sidebar-row {
+    @apply flex items-center gap-1.5 rounded px-1 py-[3px];
+  }
+
+  /* Cabeçalho de agrupamento DENTRO de uma secção (o nome da zona por cima dos
+     engenheiros dela). Um degrau abaixo da linha e sem peso de cor: é contexto,
+     não é escolha — quem lê procura o nome do engenheiro, não o da zona. */
+  .pm-sidebar .pm-sidebar-group {
+    @apply truncate text-[11px] font-medium text-gray-500;
+  }
+
+  /* Seta ▸/▾ de colapso. Quadrada e do tamanho da caixa de selecção, para as
+     linhas com seta e as linhas com caixa alinharem à mesma coluna. */
+  .pm-sidebar .pm-sidebar-caret {
+    @apply flex h-4 w-3.5 shrink-0 items-center justify-center text-[10px] leading-none text-gray-400 hover:text-gray-600;
+  }
+}
+
 /* Overlay de conflitos (ConflictIndicator) — borda vermelha em eventos com conflito por resolver. */
 .pmplan-event-conflict {
   outline: 2px solid #dc2626;
@@ -51,4 +204,15 @@ body,
 .fc-multimonth .fc-daygrid-day-bottom {
   padding-top: 0 !important;
   font-size: 10px;
+}
+
+/* O calendário herda a tipografia e as linhas da app em vez das suas próprias. */
+.fc {
+  --fc-border-color: #e5e7eb;
+  --fc-today-bg-color: #eff6ff;
+  --fc-page-bg-color: #ffffff;
+}
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number {
+  @apply text-xs font-medium text-gray-500;
 }

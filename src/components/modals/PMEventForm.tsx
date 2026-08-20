@@ -2,16 +2,8 @@ import { useState } from 'react';
 import { useEngineerStore, useEquipmentStore } from '../../stores';
 import type { PMEvent, PMStatus } from '../../types';
 import { toDisplayDate } from '../../lib/dateFormat';
+import { PM_STATUS_OPTIONS as STATUS_OPTIONS } from '../../lib/pmStatus';
 import { DateInput } from '../ui';
-
-const STATUS_OPTIONS: { value: PMStatus; label: string }[] = [
-  { value: 'planned', label: 'Planeada' },
-  { value: 'confirmed', label: 'Confirmada' },
-  { value: 'in_progress', label: 'Em curso' },
-  { value: 'completed', label: 'Concluída' },
-  { value: 'delayed', label: 'Atrasada' },
-  { value: 'cancelled', label: 'Cancelada' },
-];
 
 interface PMEventFormProps {
   equipmentId: string;
@@ -45,7 +37,7 @@ export function PMEventForm(props: PMEventFormProps) {
       <label className="flex flex-col gap-1 text-sm">
         Equipamento
         <select
-          className="rounded-md border border-gray-300 px-2 py-1 disabled:bg-gray-100"
+          className="pm-field disabled:bg-gray-100"
           value={props.equipmentId}
           disabled={props.disabled}
           onChange={(event) => props.onEquipmentChange(event.target.value)}
@@ -91,7 +83,7 @@ export function PMEventForm(props: PMEventFormProps) {
       <label className="flex flex-col gap-1 text-sm">
         Engenheiro
         <select
-          className="rounded-md border border-gray-300 px-2 py-1 disabled:bg-gray-100"
+          className="pm-field disabled:bg-gray-100"
           value={props.engineerId}
           disabled={props.disabled}
           onChange={(event) => props.onEngineerChange(event.target.value)}
@@ -120,7 +112,7 @@ export function PMEventForm(props: PMEventFormProps) {
         <label className="flex flex-col gap-1 text-sm">
           Estado
           <select
-            className="rounded-md border border-gray-300 px-2 py-1 disabled:bg-gray-100"
+            className="pm-field disabled:bg-gray-100"
             value={props.status}
             disabled={props.disabled}
             onChange={(event) => props.onStatusChange(event.target.value as PMStatus)}
@@ -137,7 +129,7 @@ export function PMEventForm(props: PMEventFormProps) {
       <label className="flex flex-col gap-1 text-sm">
         Notas
         <textarea
-          className="rounded-md border border-gray-300 px-2 py-1 disabled:bg-gray-100"
+          className="pm-field disabled:bg-gray-100"
           rows={2}
           value={props.notes}
           disabled={props.disabled}

@@ -61,7 +61,10 @@ const SystemHealth = lazy(() => import('../pages/SystemHealth').then((m) => ({ d
 
 function RouteFallback() {
   return (
-    <div className="flex h-screen w-screen items-center justify-center text-sm text-gray-500">A carregar…</div>
+    <div className="flex h-screen w-screen flex-col items-center justify-center gap-3 bg-gray-50">
+      <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-brand-600 border-t-transparent" />
+      <p className="text-sm text-gray-500">A carregar…</p>
+    </div>
   );
 }
 

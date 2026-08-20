@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Topbar } from '../app/Topbar';
+import { PageShell } from '../app/PageShell';
 import { useHolidays } from '../hooks';
 import { computeActiveLocalities } from '../lib/activeLocalities';
 import { toDisplayDate } from '../lib/dateFormat';
@@ -15,7 +15,7 @@ import {
 } from '../stores';
 import type { Country, Holiday, HolidayRule, HolidayRuleType, Zone } from '../types';
 import { matchesSearch } from '../lib/searchText';
-import { Button, FormModal, SearchInput } from '../components/ui';
+import { Button, Card, EmptyState, FormModal, PageHeader, SearchInput } from '../components/ui';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_YEAR + 2];
@@ -68,18 +68,18 @@ function HolidayFormModal({
       <input
         autoFocus
         placeholder="Nome do feriado"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.name}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
       />
       <input
         type="date"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.date}
         onChange={(event) => setForm({ ...form, date: event.target.value })}
       />
       <select
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.country}
         onChange={(event) => setForm({ ...form, country: event.target.value as Country, locality: '' })}
       >
@@ -89,13 +89,13 @@ function HolidayFormModal({
       {form.country === 'PT' ? (
         <input
           placeholder="Concelho (vazio = nacional)"
-          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+          className="pm-field"
           value={form.locality}
           onChange={(event) => setForm({ ...form, locality: event.target.value })}
         />
       ) : (
         <select
-          className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+          className="pm-field"
           value={form.locality}
           onChange={(event) => setForm({ ...form, locality: event.target.value })}
         >
@@ -108,7 +108,7 @@ function HolidayFormModal({
         </select>
       )}
       <select
-        className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="col-span-2 pm-field"
         value={form.zoneId}
         onChange={(event) => setForm({ ...form, zoneId: event.target.value })}
       >
@@ -150,7 +150,7 @@ function HolidayRuleFormModal({
         autoFocus
         list="pt-concelhos-regras"
         placeholder="Concelho"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.locality}
         onChange={(event) => setForm({ ...form, locality: event.target.value })}
       />
@@ -161,12 +161,12 @@ function HolidayRuleFormModal({
       </datalist>
       <input
         placeholder="Nome do feriado"
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="pm-field"
         value={form.name}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
       />
       <select
-        className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+        className="col-span-2 pm-field"
         value={form.ruleType}
         onChange={(event) => setForm({ ...form, ruleType: event.target.value as HolidayRuleType })}
       >
@@ -176,7 +176,7 @@ function HolidayRuleFormModal({
       {form.ruleType === 'fixed_date' ? (
         <>
           <select
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+            className="pm-field"
             value={form.fixedMonth}
             onChange={(event) => setForm({ ...form, fixedMonth: event.target.value })}
           >
@@ -192,7 +192,7 @@ function HolidayRuleFormModal({
               type="number"
               min={1}
               max={31}
-              className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm"
+              className="w-20 pm-field"
               value={form.fixedDay}
               onChange={(event) => setForm({ ...form, fixedDay: event.target.value })}
             />
@@ -202,7 +202,7 @@ function HolidayRuleFormModal({
         <input
           type="number"
           placeholder="Dias após a Páscoa"
-          className="col-span-2 rounded-md border border-gray-300 px-2 py-1 text-sm"
+          className="col-span-2 pm-field"
           value={form.easterOffsetDays}
           onChange={(event) => setForm({ ...form, easterOffsetDays: event.target.value })}
         />
@@ -223,44 +223,44 @@ interface HolidaySectionProps {
 // Uma secção (tabela) por âmbito de feriado — reutilizada pelas 4 categorias da página.
 function HolidaySection({ title, hint, holidays, canManageHolidays, onDelete, localityLabel }: HolidaySectionProps) {
   return (
-    <div className="mb-6">
-      <h2 className="text-sm font-semibold uppercase text-gray-500">{title}</h2>
-      {hint && <p className="mb-2 text-xs text-gray-400">{hint}</p>}
+    <Card padded={false} title={title} subtitle={hint}>
       {holidays.length === 0 ? (
-        <p className="text-sm text-gray-400">Sem feriados.</p>
+        <EmptyState size="compact">Sem feriados nesta categoria para o ano seleccionado.</EmptyState>
       ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-left text-gray-500">
-              <th className="py-1.5 pr-2">Data</th>
-              <th className="py-1.5 pr-2">Nome</th>
-              {localityLabel && <th className="py-1.5 pr-2">Localidade</th>}
-              <th className="py-1.5 pr-2">Origem</th>
-              <th className="py-1.5 pr-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {holidays.map((holiday) => (
-              <tr key={holiday.id} className="border-b border-gray-100">
-                <td className="py-1.5 pr-2">{toDisplayDate(holiday.date)}</td>
-                <td className="py-1.5 pr-2">{holiday.name}</td>
-                {localityLabel && <td className="py-1.5 pr-2">{localityLabel(holiday)}</td>}
-                <td className="py-1.5 pr-2 text-xs text-gray-400">
-                  {holiday.source.startsWith('manual') ? 'Manual' : 'Nager.Date'}
-                </td>
-                <td className="py-1.5 pr-2 text-right">
-                  {canManageHolidays && (
-                    <Button variant="danger" onClick={() => onDelete(holiday.id)}>
-                      Eliminar
-                    </Button>
-                  )}
-                </td>
+        <div className="overflow-x-auto">
+          <table className="pm-table">
+            <thead>
+              <tr>
+                <th className="py-1.5 pr-2">Data</th>
+                <th className="py-1.5 pr-2">Nome</th>
+                {localityLabel && <th className="py-1.5 pr-2">Localidade</th>}
+                <th className="py-1.5 pr-2">Origem</th>
+                <th className="py-1.5 pr-2" />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {holidays.map((holiday) => (
+                <tr key={holiday.id}>
+                  <td className="py-1.5 pr-2 tabular-nums">{toDisplayDate(holiday.date)}</td>
+                  <td className="py-1.5 pr-2 font-medium text-gray-800">{holiday.name}</td>
+                  {localityLabel && <td className="py-1.5 pr-2">{localityLabel(holiday)}</td>}
+                  <td className="py-1.5 pr-2 text-xs text-gray-400">
+                    {holiday.source.startsWith('manual') ? 'Manual' : 'Nager.Date'}
+                  </td>
+                  <td className="py-1.5 pr-2 text-right">
+                    {canManageHolidays && (
+                      <Button variant="dangerGhost" size="sm" onClick={() => onDelete(holiday.id)}>
+                        Eliminar
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -384,21 +384,19 @@ export function Holidays() {
   }
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden">
-      <Topbar />
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-gray-900">Feriados</h1>
-          {canManageHolidays && <Button onClick={() => setCreatingHoliday(true)}>Adicionar feriado</Button>}
-        </div>
+    <PageShell>
+      <PageHeader
+        title="Feriados"
+        description="Os feriados de cada zona são reflectidos no calendário e respeitados pelo gerador do plano anual."
+        actions={canManageHolidays && <Button onClick={() => setCreatingHoliday(true)}>Adicionar feriado</Button>}
+      />
 
-        <label className="mb-3 flex w-fit items-center gap-2 text-sm">
+      {/* Ano e procura numa barra só: a procura aplica-se às 4 categorias e às regras em
+          simultâneo, por isso pertence ao topo da página e não a cada secção. */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm text-gray-600">
           Ano
-          <select
-            className="rounded-md border border-gray-300 px-2 py-1"
-            value={year}
-            onChange={(event) => setYear(Number(event.target.value))}
-          >
+          <select className="pm-field" value={year} onChange={(event) => setYear(Number(event.target.value))}>
             {YEAR_OPTIONS.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -406,15 +404,14 @@ export function Holidays() {
             ))}
           </select>
         </label>
-
-        {/* A procura aplica-se às 4 categorias e às regras em simultâneo — daí ficar aqui
-            em cima e não dentro de cada secção. */}
         <SearchInput
           value={searchText}
           onChange={setSearchText}
           placeholder="Procurar feriado por nome ou concelho/região…"
         />
+      </div>
 
+      <div className="flex flex-col gap-4">
         <HolidaySection
           title="Feriados Nacionais Portugueses"
           holidays={nationalPT}
@@ -444,55 +441,54 @@ export function Holidays() {
           localityLabel={(holiday) => (holiday.locality ? spanishRegionName(holiday.locality) : '')}
         />
 
-        <div className="mb-6">
-          {/* O botão fica nesta secção, e não no topo da página, porque uma regra
-              recorrente é outra coisa que não um feriado manual — separar evita
-              adicionar-se uma julgando estar a adicionar a outra. */}
-          <div className="flex items-start justify-between gap-4">
-            <h2 className="text-sm font-semibold uppercase text-gray-500">Regras Recorrentes (Feriados Locais PT)</h2>
-            {canManageHolidays && (
+        {/* O botão fica nesta secção, e não no topo da página, porque uma regra
+            recorrente é outra coisa que não um feriado manual — separar evita
+            adicionar-se uma julgando estar a adicionar a outra. */}
+        <Card
+          padded={false}
+          title="Regras Recorrentes (Feriados Locais PT)"
+          subtitle="Definida uma vez, a regra projecta-se para qualquer ano — fixa (mesmo dia todos os anos) ou móvel (dias relativos à Páscoa: Segunda-feira de Páscoa = +1, Corpo de Deus = +60)."
+          actions={
+            canManageHolidays && (
               <Button variant="secondary" onClick={() => setCreatingRule(true)}>
                 Adicionar regra
               </Button>
-            )}
-          </div>
-          <p className="mb-2 text-xs text-gray-400">
-            Em vez de adicionar o feriado ano a ano, define-se aqui uma vez — fixo (mesmo dia todos os anos) ou móvel
-            (dias relativos à Páscoa, ex: Segunda-feira de Páscoa = +1, Corpo de Deus = +60). A app projecta-o
-            automaticamente para qualquer ano de planeamento.
-          </p>
-
+            )
+          }
+        >
           {visibleRules.length === 0 ? (
-            <p className="text-sm text-gray-400">Sem regras para concelhos com equipamentos instalados.</p>
+            <EmptyState size="compact">Sem regras para concelhos com equipamentos instalados.</EmptyState>
           ) : (
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-gray-500">
-                  <th className="py-1.5 pr-2">Concelho</th>
-                  <th className="py-1.5 pr-2">Nome</th>
-                  <th className="py-1.5 pr-2">Recorrência</th>
-                  <th className="py-1.5 pr-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRules.map((rule) => (
-                  <tr key={rule.id} className="border-b border-gray-100">
-                    <td className="py-1.5 pr-2">{rule.locality}</td>
-                    <td className="py-1.5 pr-2">{rule.name}</td>
-                    <td className="py-1.5 pr-2 text-xs text-gray-400">{describeRule(rule)}</td>
-                    <td className="py-1.5 pr-2 text-right">
-                      {canManageHolidays && (
-                        <Button variant="danger" onClick={() => handleDeleteRule(rule.id)}>
-                          Eliminar
-                        </Button>
-                      )}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="pm-table">
+                <thead>
+                  <tr>
+                    <th className="py-1.5 pr-2">Concelho</th>
+                    <th className="py-1.5 pr-2">Nome</th>
+                    <th className="py-1.5 pr-2">Recorrência</th>
+                    <th className="py-1.5 pr-2" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {visibleRules.map((rule) => (
+                    <tr key={rule.id}>
+                      <td className="py-1.5 pr-2">{rule.locality}</td>
+                      <td className="py-1.5 pr-2 font-medium text-gray-800">{rule.name}</td>
+                      <td className="py-1.5 pr-2 text-xs text-gray-400">{describeRule(rule)}</td>
+                      <td className="py-1.5 pr-2 text-right">
+                        {canManageHolidays && (
+                          <Button variant="dangerGhost" size="sm" onClick={() => handleDeleteRule(rule.id)}>
+                            Eliminar
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        </div>
+        </Card>
       </div>
 
       {creatingHoliday && (
@@ -512,6 +508,6 @@ export function Holidays() {
           onSubmit={handleCreateRule}
         />
       )}
-    </div>
+    </PageShell>
   );
 }
