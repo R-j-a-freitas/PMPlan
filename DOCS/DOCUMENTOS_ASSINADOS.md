@@ -8,7 +8,7 @@ resposta ao email.
 
 ```
 Carta de assinatura ─────► cliente
-   Reply-To: documentos@stockmate.pt (+ quem enviou)
+   Reply-To: documentos@pmplan.net (+ quem enviou)
    Assunto:  "... — Hosp. de Braga [PM-80DE6BE8]"
                                     └── código da proposta
                                         (BT-... na via de braquiterapia)
@@ -67,38 +67,46 @@ Três passos externos, que não estão no código.
 
 ### 1. Receção de email na Resend
 
-Em <https://resend.com> → **Domains → stockmate.pt → Inbound/Receiving** → activar.
-A Resend mostra o registo MX a criar; adicioná-lo no DNS (Hetzner):
+Em <https://resend.com> → **Domains → pmplan.net → Inbound/Receiving** → activar.
+A Resend mostra o registo MX a criar; adicioná-lo no DNS (Cloudflare):
 
 | Tipo | Nome | Prioridade | Valor |
 |---|---|---|---|
-| MX | `@` (raiz, `stockmate.pt`) | 10 | `inbound-smtp.eu-west-1.amazonaws.com` |
+| MX | `@` (raiz, `pmplan.net`) | 10 | `inbound-smtp.eu-west-1.amazonaws.com` |
 
 A região tem de bater certo com a do domínio na Resend (`eu-west-1`, Irlanda). **Usar
 sempre o valor exacto que o painel mostra** em vez de copiar esta tabela — é ele que manda.
 
 Porque é que na raiz é seguro, contra a recomendação genérica da Resend de usar um
 subdomínio: essa recomendação existe para não roubar o correio a quem já recebe email no
-domínio. O `stockmate.pt` **não tem MX nenhum** — não recebe email hoje, não há nada para
-partir. O que existe é `send.stockmate.pt` (MX de bounces da Resend) e o DKIM em
+domínio. O `pmplan.net` é dedicado ao PMPlan e **não tem caixas de correio nenhumas** — não
+há nada para partir. O que existe é `send.pmplan.net` (MX de bounces da Resend) e o DKIM em
 `resend._domainkey`, e nenhum dos dois é afectado por um MX na raiz.
 
-Se algum dia o `stockmate.pt` passar a ter caixas de correio a sério, a alternativa é
-mover isto para um subdomínio (ex. `docs.stockmate.pt`, com o endereço a passar a
-`documentos@docs.stockmate.pt`) e actualizar o `SIGNED_DOCUMENTS_MAILBOX`.
+Na Cloudflare há uma condição a mais: o **Email Routing tem de estar desligado**. Se
+estiver, ela põe os MX dela na raiz e o inbound da Resend nunca chega lá.
+
+Se algum dia o `pmplan.net` passar a ter caixas de correio a sério, a alternativa é mover
+isto para um subdomínio (ex. `docs.pmplan.net`, com o endereço a passar a
+`documentos@docs.pmplan.net`) e actualizar o `SIGNED_DOCUMENTS_MAILBOX`.
+
 
 > **O inbound é catch-all.** Com o MX na raiz, a Resend entrega ao webhook *todos* os
-> emails para qualquer endereço `@stockmate.pt` — incluindo respostas ao `noreply@`,
+> emails para qualquer endereço `@pmplan.net` — incluindo respostas ao `noreply@`,
 > notificações e spam. Não é preciso criar a caixa `documentos@`: ela passa a existir por
 > se ter activado a receção. Por isso a função filtra à entrada (ver
 > `isForDocumentsMailbox`): só processa emails dirigidos à caixa de documentos, ou cujo
 > assunto traga um código de proposta emitido por nós. Sem esse filtro, qualquer PDF que
 > chegasse ao domínio ia parar ao arquivo.
 
-O endereço tem de ficar igual em `SIGNED_DOCUMENTS_MAILBOX` em
-[src/lib/proposalEmail.ts](../src/lib/proposalEmail.ts) (frontend) e no secret opcional
-`SIGNED_DOCUMENTS_MAILBOX` da Edge Function. Se não coincidirem, as respostas deixam de
-ser arquivadas **sem nenhum erro visível** — é a falha mais fácil de não dar por ela.
+O endereço em `SIGNED_DOCUMENTS_MAILBOX` de
+[src/lib/proposalEmail.ts](../src/lib/proposalEmail.ts) (o que vai na carta) tem de constar
+do secret `SIGNED_DOCUMENTS_MAILBOX` da Edge Function, que aceita uma **lista separada por
+vírgulas**. Se não constar, as respostas deixam de ser arquivadas **sem nenhum erro
+visível** — é a falha mais fácil de não dar por ela. A lista existe para as mudanças de
+domínio: mantendo lá a caixa antiga, as respostas às cartas que já saíram continuam a
+entrar.
+
 
 ### 2. Webhook
 
@@ -112,8 +120,10 @@ Resend → **Webhooks** → novo endpoint:
 
 ```bash
 supabase secrets set RESEND_WEBHOOK_SECRET=whsec_...
-# Opcional — só se o endereço deixar de ser documentos@stockmate.pt:
-# supabase secrets set SIGNED_DOCUMENTS_MAILBOX=documentos@docs.stockmate.pt
+# Lista separada por vírgulas: a caixa actual mais as antigas que ainda recebem respostas
+# a cartas enviadas antes de uma mudança de domínio.
+supabase secrets set SIGNED_DOCUMENTS_MAILBOX=documentos@pmplan.net,documentos@stockmate.pt
+
 supabase functions deploy inbound-signed-document --no-verify-jwt
 supabase functions deploy send-proposal-email   # passou a aceitar replyTo
 ```

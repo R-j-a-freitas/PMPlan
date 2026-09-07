@@ -115,8 +115,8 @@ O utilizador principal é o gestor/planeador de serviço técnico da Elekta que 
 | Configurações — gestão de zonas | ✅ Concluído | `Settings.tsx` |
 | Deploy em Hetzner VPS com Caddy | ⏳ Planeado | Infra especificada, não configurada |
 | HTTPS automático via Let's Encrypt | ⏳ Planeado | Dependente do deploy VPS |
-| Domínio próprio PMPlan | ⏳ Planeado | Email `noreply@pmplan.pt` (actualmente usa `noreply@stockmate.pt` temporariamente) |
-| Conta Resend dedicada ao PMPlan | ⏳ Planeado | Actualmente usa conta emprestada de outro projecto |
+| Domínio próprio PMPlan | ✅ Concluído | `pmplan.net`, DNS na Cloudflare, email `noreply@pmplan.net` |
+| Conta Resend dedicada ao PMPlan | ⏳ Planeado | Chave API já é própria ("PMPLAN"); a conta continua partilhada com outro projecto |
 | Auditoria de alterações (log de quem fez o quê e quando) | ⏳ Planeado | |
 | App mobile nativa (React Native) | ⏳ Fora de âmbito (v2) | Fora do âmbito actual — PWA instalável cobre a maioria dos casos |
 
@@ -142,11 +142,12 @@ A sincronização bidirecional com o calendário Outlook dos engenheiros (criar 
 
 **Próximo passo:** Abrir pedido ao IT da Elekta para criação de App Registration com scope `Calendars.ReadWrite`.
 
-### Email — Conta e Domínio Temporários
-O envio de email usa temporariamente a conta Resend do projecto `stockmate.pt` com `FROM: noreply@stockmate.pt`. Este endereço deve ser substituído por `noreply@pmplan.pt` (ou domínio definitivo) assim que:
-1. Domínio dedicado ao PMPlan for adquirido e configurado.
-2. Conta Resend própria do PMPlan for criada.
-3. Secrets Supabase actualizados: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME`.
+### Email — Conta Resend ainda partilhada
+O domínio deixou de ser temporário: o envio e a recepção passaram para o `pmplan.net`, dedicado ao projecto, com DNS na Cloudflare e `FROM: noreply@pmplan.net`. Fica por fazer apenas a separação da **conta** Resend, que continua a ser a de outro projecto:
+1. ~~Domínio dedicado ao PMPlan adquirido e configurado.~~ Feito.
+2. A `RESEND_API_KEY` já é dedicada (chave "PMPLAN"), mas a **conta** ainda é partilhada com outro projecto. Enquanto for, os webhooks de recepção desse projecto recebem também o correio do `pmplan.net` — a Resend não filtra webhooks por domínio. Separar implica mover o domínio para uma conta nova e recriar chave e webhook.
+3. Enquanto a conta for partilhada, `documentos@stockmate.pt` continua na lista do `SIGNED_DOCUMENTS_MAILBOX`, para que as respostas às cartas enviadas antes da mudança continuem a ser arquivadas.
+
 
 ### Limpeza de Segurança antes do GitHub
 Antes de publicar o código no GitHub, remover:

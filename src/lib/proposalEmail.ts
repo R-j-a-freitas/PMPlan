@@ -78,7 +78,7 @@ export interface EmailAttachment {
  *  Tem de ser exactamente o endereço configurado como inbound na Resend (Receiving →
  *  domínio com MX apontado à Resend). Mudar aqui sem mudar lá — ou ao contrário — faz os
  *  documentos deixarem de ser arquivados sem nenhum erro visível. */
-export const SIGNED_DOCUMENTS_MAILBOX = 'documentos@stockmate.pt';
+export const SIGNED_DOCUMENTS_MAILBOX = 'documentos@pmplan.net';
 
 /** Marca o assunto da carta com o código da proposta ("... [PM-3F2A9C1B]"). É por aqui que
  *  a resposta do cliente é reconhecida: o assunto sobrevive ao "Re:" de qualquer cliente de

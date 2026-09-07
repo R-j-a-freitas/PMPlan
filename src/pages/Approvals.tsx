@@ -56,8 +56,7 @@ function utf8ToBase64(text: string): string {
 // Os destinatários fixos em CC (ex.: a Teresa, contacto Elekta) já não estão hardcoded —
 // vivem na tabela email_recipients e são geridos na app (tab "Destinatários em CC", ver
 // EmailRecipientsEditor). O "From" só pode usar o domínio verificado na conta Resend
-// (stockmate.pt, emprestada — ver memória do projecto), por isso estas pessoas vão sempre
-// em CC e não como remetente.
+// (pmplan.net), por isso estas pessoas vão sempre em CC e não como remetente.
 /** Uma linha da tabela = um hospital numa via de aprovação. A braquiterapia é um processo
  *  independente (migração 0017): o mesmo hospital pode aparecer duas vezes, em fases
  *  diferentes, porque a validação do engenheiro, a aprovação do cliente, a carta e a

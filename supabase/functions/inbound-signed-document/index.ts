@@ -26,9 +26,25 @@ const RESEND_WEBHOOK_SECRET = Deno.env.get('RESEND_WEBHOOK_SECRET') ?? '';
 
 const BUCKET = 'signed-documents';
 
-// Caixa que recebe os documentos assinados. Tem de ser igual ao SIGNED_DOCUMENTS_MAILBOX
-// em src/lib/proposalEmail.ts — é o endereço que vai em CC e Reply-To na carta.
-const DOCUMENTS_MAILBOX = (Deno.env.get('SIGNED_DOCUMENTS_MAILBOX') ?? 'documentos@stockmate.pt').toLowerCase();
+// Caixas que recebem os documentos assinados, separadas por vírgulas ou espaços. O que a
+// carta leva em CC e Reply-To (SIGNED_DOCUMENTS_MAILBOX em src/lib/proposalEmail.ts) tem
+// de estar nesta lista, senão as respostas dos clientes não são arquivadas.
+//
+// É uma lista e não um endereço só por causa das mudanças de domínio: as cartas enviadas
+// antes da mudança levam a caixa antiga no Reply-To, e as respostas continuam a ir para lá
+// durante semanas. Mantendo cá a antiga, essas respostas continuam a ser arquivadas — e a
+// guarda isFromOurselves continua a reconhecer as nossas próprias cartas antigas. Sem isso
+// a perda seria silenciosa: um email que não passa o filtro devolve 200, não erro.
+//
+// Aceita vírgula, ponto-e-vírgula ou espaço como separador de propósito: `secrets set
+// X=a,b` no PowerShell chega cá como "a b" (a vírgula é o operador de array dele), e um
+// separador mal interpretado partia o filtro inteiro sem dar erro nenhum.
+const DOCUMENTS_MAILBOXES = (Deno.env.get('SIGNED_DOCUMENTS_MAILBOX') ?? 'documentos@pmplan.net')
+  .split(/[\s,;]+/)
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
+
 
 // Cliente no escopo do módulo: é apenas URL + chave, não guarda estado por pedido, e
 // assim as funções abaixo usam-no directamente em vez de o receber como parâmetro (o tipo
@@ -216,7 +232,7 @@ async function identifyHospital(email: ReceivedEmail): Promise<MatchResult> {
 }
 
 // O inbound da Resend é catch-all: com o MX no domínio, este webhook recebe TODOS os
-// emails para qualquer endereço @stockmate.pt — respostas ao noreply, spam, notificações.
+// emails para qualquer endereço do domínio — respostas ao noreply, spam, notificações.
 // Sem este filtro, qualquer PDF que chegasse ao domínio ia parar ao arquivo de documentos
 // assinados de clientes.
 //
@@ -231,7 +247,7 @@ function isForDocumentsMailbox(email: ReceivedEmail): boolean {
   const recipients = [...(email.to ?? []), ...(email.cc ?? []), ...(email.received_for ?? [])]
     .map((value) => extractEmailAddress(value))
     .filter((value): value is string => !!value);
-  if (recipients.includes(DOCUMENTS_MAILBOX)) return true;
+  if (recipients.some((recipient) => DOCUMENTS_MAILBOXES.includes(recipient))) return true;
   return /\b(?:PM|BT)-[0-9A-F]{8}\b/i.test(email.subject ?? '');
 }
 
@@ -244,8 +260,8 @@ function isForDocumentsMailbox(email: ReceivedEmail): boolean {
 function isFromOurselves(email: ReceivedEmail): boolean {
   const fromAddress = extractEmailAddress(email.from);
   if (!fromAddress) return false;
-  const ourDomain = DOCUMENTS_MAILBOX.split('@')[1];
-  return !!ourDomain && fromAddress.endsWith(`@${ourDomain}`);
+  const ourDomains = DOCUMENTS_MAILBOXES.map((mailbox) => mailbox.split('@')[1]).filter(Boolean);
+  return ourDomains.some((domain) => fromAddress.endsWith(`@${domain}`));
 }
 
 function isAcceptedAttachment(attachment: ReceivedAttachment): boolean {
@@ -305,7 +321,7 @@ Deno.serve(async (req) => {
   }
 
   if (!isForDocumentsMailbox(email)) {
-    console.log(`Email ${emailId} não dirigido a ${DOCUMENTS_MAILBOX} nem com código de proposta; ignorado.`);
+    console.log(`Email ${emailId} não dirigido a ${DOCUMENTS_MAILBOXES.join(', ')} nem com código de proposta; ignorado.`);
     return jsonResponse({ stored: 0, reason: 'não dirigido à caixa de documentos' });
   }
 

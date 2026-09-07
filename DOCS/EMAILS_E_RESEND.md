@@ -9,7 +9,7 @@ DNS. Para o detalhe do arquivo de documentos assinados, ver
 ## 1. Quem recebe o quê
 
 Três etapas, com regras diferentes. Todas são enviadas de
-`PMPlan - Elekta <noreply@stockmate.pt>` e existem em versão **PT e ES**, escolhida pelo
+`PMPlan - Elekta <noreply@pmplan.net>` e existem em versão **PT e ES**, escolhida pelo
 `country` do hospital — nunca uma versão única.
 
 Cada etapa tem ainda um template por **via de aprovação**: a via geral usa
@@ -22,7 +22,7 @@ editáveis em *Aprovações → Templates das aprovações*. Ver
 |---|---|---|---|
 | **Para** | engenheiros das PMs | contactos do hospital | contactos do hospital |
 | **CC** | quem envia + CC fixos activos | + Team Leader da zona | + Team Leader da zona |
-| **Reply-To** | `EMAIL_REPLY_TO_DEFAULT` | `EMAIL_REPLY_TO_DEFAULT` | quem envia + CC fixos activos + `documentos@stockmate.pt` |
+| **Reply-To** | `EMAIL_REPLY_TO_DEFAULT` | `EMAIL_REPLY_TO_DEFAULT` | quem envia + CC fixos activos + `documentos@pmplan.net` |
 | **Anexos** | — | — | PDF da carta + `.ics` |
 | **Assunto** | normal | normal | acrescido de `[PM-XXXXXXXX]`, ou `[BT-XXXXXXXX]` na via da braquiterapia |
 
@@ -58,7 +58,7 @@ o TL da zona-mãe, por isso basta defini-lo em `North & West` e `South & Eastern
 
 ## 2. Configuração na Resend
 
-**Domínio:** `stockmate.pt` · **Região:** `eu-west-1` (Irlanda) · **DNS:** Hetzner
+**Domínio:** `pmplan.net` · **Região:** `eu-west-1` (Irlanda) · **DNS:** Cloudflare
 
 A região importa: os hostnames da AWS por trás da Resend são regionais, e um registo de
 outra região não funciona.
@@ -68,9 +68,9 @@ outra região não funciona.
 | Tipo | Nome | Prioridade | Valor | Para quê |
 |---|---|---|---|---|
 | TXT | `resend._domainkey` | — | `p=MIGfMA0GCS…` | DKIM (verificação do domínio) |
-| MX | `send` | 10 | `feedback-smtp.eu-west-1.amazonses.com.` | bounces do que enviamos |
+| MX | `send` | 10 | `feedback-smtp.eu-west-1.amazonses.com` | bounces do que enviamos |
 | TXT | `send` | — | `v=spf1 include:amazonses.com ~all` | SPF |
-| MX | `@` | 10 | `inbound-smtp.eu-west-1.amazonaws.com.` | **receber** emails |
+| MX | `@` | 10 | `inbound-smtp.eu-west-1.amazonaws.com` | **receber** emails |
 | TXT | `_dmarc` | — | `v=DMARC1; p=none;` | política DMARC |
 
 Três armadilhas que já custaram tempo:
@@ -81,21 +81,29 @@ Três armadilhas que já custaram tempo:
 2. **São dois registos, em nomes diferentes.** O de envio vive em `send`, o de receção em
    `@`. Editar o de envio para lhe pôr o valor de receção parte os dois de uma vez — o
    domínio deixa de validar para envio e continua sem receber.
-3. **Ponto final no valor.** Sem ele a Hetzner trata o valor como relativo e cola-lhe o
-   domínio atrás (`…amazonses.com.stockmate.pt`), criando um host que não existe. É o que
-   se passa hoje com o `admin.stockmate.pt`, de outro projecto.
+3. **O Email Routing da Cloudflare tem de estar desligado.** Se estiver ligado, ela impõe
+   os MX dela na raiz e o inbound da Resend nunca chega. Não confundir com o proxy: a nuvem
+   laranja não existe em MX nem TXT, não há nada a desligar aí.
+
+Uma quarta, que era da Hetzner e aqui deixou de existir: o **ponto final no valor**. Num
+DNS que trate o valor como relativo, `…amazonses.com` sem ponto vira
+`…amazonses.com.pmplan.net`, um host que não existe. A Cloudflare trata sempre o valor MX
+como absoluto, por isso no formulário dela escreve-se sem ponto. Num ficheiro BIND
+importado, ao contrário, o ponto final é obrigatório.
+
 
 ### Porque é que o MX de receção está na raiz
 
 A Resend recomenda usar um subdomínio, para não roubar o correio a quem já recebe email no
-domínio. Aqui não havia esse risco: o `stockmate.pt` não tinha MX nenhum. Se algum dia
-passar a ter caixas de correio a sério, move-se para um subdomínio (ex.
-`docs.stockmate.pt`) e actualiza-se o `SIGNED_DOCUMENTS_MAILBOX` nos dois sítios da secção 4.
+domínio. Aqui não há esse risco: o `pmplan.net` é dedicado ao PMPlan e não tem caixas de
+correio nenhumas. Se algum dia passar a ter, move-se para um subdomínio (ex.
+`docs.pmplan.net`) e actualiza-se o `SIGNED_DOCUMENTS_MAILBOX` nos dois sítios da secção 4.
+
 
 ### Receção é catch-all
 
 Não se cria a caixa `documentos@`: activa-se a receção e **todos** os endereços
-`@stockmate.pt` passam a entregar ao webhook — incluindo respostas ao `noreply@`,
+`@pmplan.net` passam a entregar ao webhook — incluindo respostas ao `noreply@`,
 notificações e spam. A filtragem é feita na Edge Function, não na Resend.
 
 ### Webhook
@@ -108,6 +116,15 @@ notificações e spam. A filtragem é feita na Edge Function, não na Resend.
 
 Não subscrever os eventos de saída (`email.sent`, `email.delivered`, …): a função ignora-os,
 mas seria uma invocação por cada email enviado.
+
+> **Os webhooks são da conta, não do domínio.** A Resend não filtra por domínio: cada
+> endpoint subscrito a `email.received` recebe o correio de *todos* os domínios da conta. E
+> a conta é partilhada com outro projecto, que tem o seu próprio endpoint
+> (`iodeccrdasvokesaynoq…/email-inbound`) — logo os documentos assinados dos hospitais são
+> entregues também lá, e o correio desse projecto chega também aqui. De cá, o filtro da
+> função trata disso; do lado deles não temos controlo. É a razão de peso para separar as
+> contas (ver "Ainda por fazer").
+
 
 ---
 
@@ -135,10 +152,10 @@ supabase secrets set NOME=valor --project-ref bwtodvouhjecjcuhfgvw
 |---|---|---|
 | `RESEND_API_KEY` | sim | — |
 | `RESEND_WEBHOOK_SECRET` | sim (receção) | `whsec_…` do painel da Resend |
-| `RESEND_FROM_EMAIL` | não | `noreply@stockmate.pt` |
+| `RESEND_FROM_EMAIL` | não | `noreply@pmplan.net` |
 | `RESEND_FROM_NAME` | não | `PMPlan - Elekta` |
 | `EMAIL_REPLY_TO_DEFAULT` | não | `teresa.matos@elekta.com` |
-| `SIGNED_DOCUMENTS_MAILBOX` | não | `documentos@stockmate.pt` |
+| `SIGNED_DOCUMENTS_MAILBOX` | não | `documentos@pmplan.net` (lista separada por vírgulas) |
 
 Os secrets são lidos em runtime — mudá-los não obriga a novo deploy.
 
@@ -146,13 +163,31 @@ Os secrets são lidos em runtime — mudá-los não obriga a novo deploy.
 
 ## 4. Sítios onde o endereço da caixa de documentos aparece
 
-Tem de ser o mesmo nos dois. Se divergirem, as respostas dos clientes deixam de ser
-arquivadas **sem nenhum erro visível** — é a falha mais fácil de não dar por ela.
+O endereço do código tem de constar do secret. Se não constar, as respostas dos clientes
+deixam de ser arquivadas **sem nenhum erro visível** — é a falha mais fácil de não dar por
+ela.
 
 1. `SIGNED_DOCUMENTS_MAILBOX` em [`src/lib/proposalEmail.ts`](../src/lib/proposalEmail.ts)
-   (o que vai no `Reply-To` da carta).
-2. Secret `SIGNED_DOCUMENTS_MAILBOX` da Edge Function (o filtro à entrada). Se não for
-   definido, usa o mesmo valor por omissão.
+   — um endereço só, o que vai no `Reply-To` da carta.
+2. Secret `SIGNED_DOCUMENTS_MAILBOX` da Edge Function (o filtro à entrada) — uma **lista
+   separada por vírgulas**. Se não for definido, usa `documentos@pmplan.net`.
+
+A lista existe por causa das mudanças de domínio. As cartas enviadas antes da mudança levam
+a caixa antiga no `Reply-To`, e as respostas continuam a ir para lá durante semanas: com a
+antiga na lista, continuam a ser arquivadas, e a guarda `isFromOurselves` continua a
+reconhecer as nossas próprias cartas antigas. Hoje o secret vale
+`documentos@pmplan.net,documentos@stockmate.pt`; a antiga sai quando já não chegar lá nada.
+
+
+> **Aspas obrigatórias no PowerShell.** `supabase secrets set X=a,b` sem aspas chega ao
+> servidor como `a b`: a vírgula é o operador de construção de arrays do PowerShell, que
+> parte o argumento em dois. Já aconteceu — o secret ficou com um espaço em vez da vírgula
+> e o filtro deixou de reconhecer qualquer destinatário, sem erro nenhum. O parser aceita
+> hoje vírgula, ponto-e-vírgula ou espaço por causa disso, mas escreve-se sempre
+> `supabase secrets set X="a,b"`. Para confirmar o que lá ficou: `supabase secrets list`
+> mostra o SHA-256 do valor, que se compara com o do valor esperado.
+
+
 
 ---
 
@@ -169,6 +204,11 @@ arquivadas **sem nenhum erro visível** — é a falha mais fácil de não dar p
 
 ### Aplicação
 
+- **Domínio próprio `pmplan.net`**, com DNS na Cloudflare, em vez do `stockmate.pt`
+  emprestado a outro projecto: `noreply@pmplan.net` no envio, `documentos@pmplan.net` na
+  recepção. O `SIGNED_DOCUMENTS_MAILBOX` da Edge Function passou a aceitar uma lista de
+  caixas (secção 4), para que as respostas às cartas enviadas antes da mudança continuem a
+  ser arquivadas. A conta Resend ainda é a mesma de antes.
 - **Team Leader por zona**, herdado pelas zonas-filhas, em CC dos emails a clientes.
   Coluna "Team Leader" na tabela de Aprovações mostra quem vai em cópia (riscado quando o
   interruptor está desligado, "Sem TL" a vermelho quando a zona não tem nenhum).
@@ -190,8 +230,6 @@ arquivadas **sem nenhum erro visível** — é a falha mais fácil de não dar p
 
 - **Rodar o `RESEND_WEBHOOK_SECRET`.** O valor actual circulou fora do painel.
   Resend → Webhooks → ⋯ → *Roll secret*, depois `supabase secrets set`.
-- **`admin.stockmate.pt`** tem o MX sem ponto final, por isso os bounces desse outro
-  projecto não são entregues. Fora do âmbito deste trabalho.
 - **Juan Manuel Bravo** não existe como engenheiro, por isso a zona
   `South & Eastern Spain` está sem TL e os hospitais de Madrid aparecem como "Sem TL".
   Criar a ficha em Engenheiros e escolhê-lo em Configurações → Zonas.
@@ -216,6 +254,6 @@ Verificar o DNS a partir de fora (a cache do resolver pode mascarar uma alteraç
 os registos têm TTL 1800):
 
 ```bash
-nslookup -type=MX stockmate.pt 8.8.8.8
-nslookup -type=MX send.stockmate.pt 8.8.8.8
+nslookup -type=MX pmplan.net 8.8.8.8
+nslookup -type=MX send.pmplan.net 8.8.8.8
 ```

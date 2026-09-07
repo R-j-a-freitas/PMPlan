@@ -57,7 +57,7 @@ Se o PowerShell recusar correr o `.ps1` (política de execução):
 ## Emails
 
 Propostas, cartas de assinatura e o arquivo dos documentos assinados devolvidos pelos
-clientes passam todos pela Resend (domínio `stockmate.pt`).
+clientes passam todos pela Resend (domínio `pmplan.net`).
 
 - Quem recebe o quê, configuração da Resend e do DNS: **[DOCS/EMAILS_E_RESEND.md](DOCS/EMAILS_E_RESEND.md)**
 - Arquivo dos documentos assinados: **[DOCS/DOCUMENTOS_ASSINADOS.md](DOCS/DOCUMENTOS_ASSINADOS.md)**
