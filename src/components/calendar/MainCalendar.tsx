@@ -6,7 +6,8 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import listPlugin from '@fullcalendar/list';
 import multiMonthPlugin from '@fullcalendar/multimonth';
 import interactionPlugin from '@fullcalendar/interaction';
-import ptBrLocale from '@fullcalendar/core/locales/pt-br';
+import ptLocale from '@fullcalendar/core/locales/pt';
+import esLocale from '@fullcalendar/core/locales/es';
 import type { DateSelectArg, DayCellContentArg, EventClickArg, EventInput } from '@fullcalendar/core';
 import type { EventReceiveArg } from '@fullcalendar/interaction';
 import {
@@ -21,9 +22,11 @@ import {
 } from '../../stores';
 import { useDragDrop } from '../../hooks';
 import { computeActiveLocalities, filterRelevantHolidays } from '../../lib/activeLocalities';
+import { buildModalityScopeMatcher } from '../../lib/modalityScope';
 import { addDaysToIsoDate } from '../../lib/dateFormat';
 import { renderEventContent } from './EventContent';
 import { buildHolidayBackgroundEvents, buildHolidayDayInfo } from './HolidayLayer';
+import { useLang, useT } from '../../i18n';
 import { getConflictClassNames } from './ConflictIndicator';
 
 // Vistas Standard apenas (secção 6) — sem Timeline/Resource View (Premium).
@@ -62,6 +65,13 @@ interface MainCalendarProps {
   onCreateEvent: (date: Date, prefill?: CreateEventPrefill) => void;
 }
 
+// Titulo do evento no calendario: nome do equipamento e, quando a PM traz etiqueta, o
+// que se vai fazer nessa visita (ex: "FT00746 FLEXITRON - SCRX + PM + OTP"). A etiqueta
+// nao vem da modalidade porque muda de visita para visita na mesma maquina.
+function eventTitle(equipmentName: string, label: string | null | undefined): string {
+  return label ? `${equipmentName} - ${label}` : equipmentName;
+}
+
 export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: MainCalendarProps) {
   const events = useCalendarStore((state) => state.events);
   const previewEvents = useCalendarStore((state) => state.previewEvents);
@@ -71,10 +81,12 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
   const fetchEvents = useCalendarStore((state) => state.fetchEvents);
   const setVisibleTitle = useCalendarStore((state) => state.setVisibleTitle);
   const eventLineDensity = useUiStore((state) => state.eventLineDensity);
+  const t = useT();
+  const lang = useLang();
   const equipment = useEquipmentStore((state) => state.equipment);
   const selectedEquipmentId = useEquipmentStore((state) => state.selectedEquipmentId);
   const selectedEquipmentIds = useEquipmentStore((state) => state.selectedEquipmentIds);
-  const selectedModalities = useEquipmentStore((state) => state.filters.modalities);
+  const selectedModalityKeys = useEquipmentStore((state) => state.filters.modalityKeys);
   const selectedEngineerIds = useEngineerStore((state) => state.selectedEngineerIds);
   const holidays = useHolidayStore((state) => state.holidays);
   const zones = useZoneStore((state) => state.zones);
@@ -98,6 +110,13 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
     }
   }, [planningYear, calendarRef]);
 
+  // Modalidades marcadas por zona-mãe (chave `zonaId::modalidade`): o equipamento está numa
+  // zona-folha, por isso a comparação passa pelo matcher que expande a mãe aos descendentes.
+  const matchesModality = useMemo(
+    () => buildModalityScopeMatcher(selectedModalityKeys, zones),
+    [selectedModalityKeys, zones],
+  );
+
   const conflictedEventIds = useMemo(
     () => new Set(conflictLog.filter((entry) => !entry.resolved && entry.event_id).map((entry) => entry.event_id)),
     [conflictLog],
@@ -112,7 +131,10 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
     [holidays, activeLocalities],
   );
 
-  const holidayDayInfo = useMemo(() => buildHolidayDayInfo(relevantHolidays, zones), [relevantHolidays, zones]);
+  const holidayDayInfo = useMemo(
+    () => buildHolidayDayInfo(relevantHolidays, zones, t),
+    [relevantHolidays, zones, t],
+  );
 
   const calendarEvents = useMemo<EventInput[]>(() => {
     // O calendário reflecte sempre exactamente o que está marcado no planeamento (zonas,
@@ -126,7 +148,7 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
     const hasZoneFilter = selectedZoneIds.length > 0;
     const hasEngineerFilter = selectedEngineerIds.length > 0;
     const hasEquipmentFilter = selectedEquipmentIds.length > 0;
-    const hasModalityFilter = selectedModalities.length > 0;
+    const hasModalityFilter = selectedModalityKeys.length > 0;
     const visibleEvents =
       !hasZoneFilter && !hasEngineerFilter && !hasEquipmentFilter && !hasModalityFilter
         ? []
@@ -136,7 +158,7 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
             const engineerMatch =
               hasEngineerFilter && !!event.engineer_id && selectedEngineerIds.includes(event.engineer_id);
             const equipmentMatch = hasEquipmentFilter && selectedEquipmentIds.includes(event.equipment_id);
-            const modalityMatch = hasModalityFilter && !!eq && selectedModalities.includes(eq.modality);
+            const modalityMatch = hasModalityFilter && !!eq && matchesModality(eq.zone_id, eq.modality);
             return zoneMatch || engineerMatch || equipmentMatch || modalityMatch;
           });
 
@@ -144,7 +166,7 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       const eq = equipment.find((item) => item.id === event.equipment_id);
       return {
         id: event.id,
-        title: eq?.name ?? 'Equipamento',
+        title: eventTitle(eq?.name ?? t('common.equipment'), event.calendar_label),
         start: event.start_date,
         allDay: true,
         // event.end_date é o último dia inclusive da PM (convenção da app — BD, modal,
@@ -174,7 +196,7 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       const eq = equipment.find((item) => item.id === event.equipment_id);
       return {
         id: event.id,
-        title: eq?.name ?? 'Equipamento',
+        title: eq?.name ?? t('common.equipment'),
         start: event.start_date,
         allDay: true,
         end: addDaysToIsoDate(event.end_date, 1),
@@ -200,7 +222,11 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
     selectedZoneIds,
     selectedEngineerIds,
     selectedEquipmentIds,
-    selectedModalities,
+    selectedModalityKeys,
+    matchesModality,
+    // `t` só é usado no título de recurso de um equipamento que não esteja carregado,
+    // mas trocar de idioma tem de reconstruir os eventos para esse fallback acompanhar.
+    t,
   ]);
 
   // A prop `events` do @fullcalendar/react nem sempre redesenha quando o array muda de
@@ -223,10 +249,13 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       initialDate={`${planningYear}-01-01`}
       headerToolbar={false}
       height="100%"
-      // Locale PT-BR + formato 24H (secção: datas em DD/MM/AAAA, sem AM/PM).
-      locale={ptBrLocale}
-      // Semana começa sempre à segunda-feira — sobrepõe-se ao domingo que o locale pt-br
-      // traz por omissão (aplica-se a todas as vistas: mês, trimestre, ano e semana).
+      // Nomes de meses e dias da semana no idioma do utilizador, com formato 24H
+      // (secção: datas em DD/MM/AAAA, sem AM/PM). O locale pt-PT do FullCalendar
+      // substitui o pt-BR que aqui estava: os nomes de mês são iguais, mas os dias da
+      // semana não ("segunda-feira" vs "segunda-feira" abreviado de forma diferente).
+      locale={lang === 'es' ? esLocale : ptLocale}
+      // Semana começa sempre à segunda-feira — fixado aqui em vez de depender do locale,
+      // que difere entre os dois (aplica-se a mês, trimestre, ano e semana).
       firstDay={1}
       slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
       eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
@@ -235,7 +264,7 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       selectable={permissions.canCreatePM}
       editable={permissions.canEditPM}
       droppable={permissions.canCreatePM}
-      eventContent={(arg) => renderEventContent(arg, eventLineDensity)}
+      eventContent={(arg) => renderEventContent(arg, eventLineDensity, t)}
       eventClassNames={(arg) => [
         ...getConflictClassNames(conflictedEventIds.has(arg.event.id)),
         ...(arg.event.extendedProps.isPreview ? ['pmplan-event-preview'] : []),

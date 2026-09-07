@@ -14,7 +14,16 @@ import {
   useZoneStore,
 } from '../stores';
 import { KNOWN_MODALITIES } from '../types';
-import type { EngineerWithZones, EquipmentInsert, HospitalWithZone, PmPerYear, WeekendWork } from '../types';
+import type {
+  EngineerWithZones,
+  EquipmentFull,
+  EquipmentInsert,
+  HospitalWithZone,
+  PmPerYear,
+  WeekendWork,
+} from '../types';
+import { useTableSort } from '../hooks';
+import type { SortAccessors } from '../hooks';
 import { EquipmentRow } from '../components/equipment';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
 import type { ImportAliases } from '../lib/importers/importHelpers';
@@ -27,7 +36,10 @@ import {
   ImportExportButtons,
   PageHeader,
   SearchInput,
+  SortableTh,
 } from '../components/ui';
+import { useT, type TFunction } from '../i18n';
+import { WEEKEND_WORK_KEYS } from '../i18n/labels';
 
 const EMPTY_FORM = {
   name: '',
@@ -47,10 +59,31 @@ const EMPTY_FORM = {
 
 type EquipmentForm = typeof EMPTY_FORM;
 
+type EquipmentSortKey =
+  | 'name'
+  | 'hospital'
+  | 'zone'
+  | 'model'
+  | 'serialNumber'
+  | 'modality'
+  | 'pmPerYear'
+  | 'pmDurationDays'
+  | 'needsShutdown'
+  | 'weekendWork'
+  | 'engineerPrimary'
+  | 'engineerSecondary'
+  | 'active';
+
+// "Fim-de-semana" ordena por disponibilidade crescente (só úteis → sáb → sáb+dom) e não
+// pelo rótulo: ordenar "Sáb" antes de "Sáb+Dom" antes de "Só úteis" seria alfabético e
+// não diria nada sobre o contrato.
+const WEEKEND_WORK_RANK: Record<WeekendWork, number> = { none: 0, saturday: 1, both: 2 };
+
 // Introdução de novo equipamento — ver FormModal para o porquê de estar em modal. É o
 // formulário mais longo da app (13 campos), o que o tornava o mais incómodo de ter
 // sempre aberto por cima da lista.
 function EquipmentFormModal({
+  t,
   hospitals,
   engineers,
   modalityNames,
@@ -59,6 +92,7 @@ function EquipmentFormModal({
   onCancel,
   onSubmit,
 }: {
+  t: TFunction;
   hospitals: HospitalWithZone[];
   engineers: EngineerWithZones[];
   modalityNames: string[];
@@ -74,7 +108,7 @@ function EquipmentFormModal({
 
   return (
     <FormModal
-      title="Novo equipamento"
+      title={t('equipment.new')}
       size="lg"
       saving={saving}
       canSubmit={Boolean(form.name.trim() && form.hospitalId)}
@@ -83,7 +117,7 @@ function EquipmentFormModal({
     >
       <input
         autoFocus
-        placeholder="Nome"
+        placeholder={t('common.name')}
         className="pm-field"
         value={form.name}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
@@ -93,7 +127,7 @@ function EquipmentFormModal({
         value={form.hospitalId}
         onChange={(event) => setForm({ ...form, hospitalId: event.target.value })}
       >
-        <option value="">Hospital… (obrigatório)</option>
+        <option value="">{t('equipment.field.hospitalRequired')}</option>
         {hospitals.map((hospital) => (
           <option key={hospital.id} value={hospital.id}>
             {hospital.name} ({hospital.zone_code})
@@ -101,13 +135,13 @@ function EquipmentFormModal({
         ))}
       </select>
       <input
-        placeholder="Modelo"
+        placeholder={t('common.model')}
         className="pm-field"
         value={form.model}
         onChange={(event) => setForm({ ...form, model: event.target.value })}
       />
       <input
-        placeholder="Nº de Série"
+        placeholder={t('equipment.field.serialNumber')}
         className="pm-field"
         value={form.serialNumber}
         onChange={(event) => setForm({ ...form, serialNumber: event.target.value })}
@@ -129,7 +163,7 @@ function EquipmentFormModal({
           </option>
         ))}
         <option disabled>──────────</option>
-        <option value={MODALITY_MANAGE_VALUE}>✏️ Editar modalidades…</option>
+        <option value={MODALITY_MANAGE_VALUE}>{t('modality.manage')}</option>
       </select>
       <select
         className="pm-field"
@@ -138,12 +172,12 @@ function EquipmentFormModal({
       >
         {[1, 2, 3, 4].map((n) => (
           <option key={n} value={n}>
-            {n}x PM/ano
+            {t('equipment.field.pmPerYear', { count: n })}
           </option>
         ))}
       </select>
       <label className="flex items-center gap-2 text-sm text-gray-600">
-        Duração (dias)
+        {t('equipment.field.duration')}
         <input
           type="number"
           min={1}
@@ -155,19 +189,19 @@ function EquipmentFormModal({
       <select
         className="pm-field"
         value={form.weekendWork}
-        title="Trabalho ao fim-de-semana (contrato)"
+        title={t('equipment.field.weekendTitle')}
         onChange={(event) => setForm({ ...form, weekendWork: event.target.value as WeekendWork })}
       >
-        <option value="none">Só dias úteis</option>
-        <option value="saturday">Inclui sábado</option>
-        <option value="both">Inclui sáb + dom</option>
+        <option value="none">{t('weekend.none.long')}</option>
+        <option value="saturday">{t('weekend.saturday.long')}</option>
+        <option value="both">{t('weekend.both.long')}</option>
       </select>
       <select
         className="pm-field"
         value={form.engineerPrimaryId}
         onChange={(event) => setForm({ ...form, engineerPrimaryId: event.target.value })}
       >
-        <option value="">Engenheiro principal…</option>
+        <option value="">{t('equipment.field.engineerPrimary')}</option>
         {engineers.map((engineer) => (
           <option key={engineer.id} value={engineer.id}>
             {engineer.name}
@@ -179,7 +213,7 @@ function EquipmentFormModal({
         value={form.engineerSecondaryId}
         onChange={(event) => setForm({ ...form, engineerSecondaryId: event.target.value })}
       >
-        <option value="">Engenheiro secundário…</option>
+        <option value="">{t('equipment.field.engineerSecondary')}</option>
         {engineers.map((engineer) => (
           <option key={engineer.id} value={engineer.id}>
             {engineer.name}
@@ -187,7 +221,7 @@ function EquipmentFormModal({
         ))}
       </select>
       <label className="flex items-center gap-2 text-sm text-gray-600">
-        Cor no calendário
+        {t('equipment.field.color')}
         <input
           type="color"
           className="h-8 w-10 rounded-md border border-gray-300"
@@ -201,7 +235,7 @@ function EquipmentFormModal({
           checked={form.needsShutdown}
           onChange={(event) => setForm({ ...form, needsShutdown: event.target.checked })}
         />
-        Necessita paragem
+        {t('equipment.field.needsShutdown')}
       </label>
       <label className="flex items-center gap-1 text-sm text-gray-600">
         <input
@@ -209,7 +243,7 @@ function EquipmentFormModal({
           checked={form.active}
           onChange={(event) => setForm({ ...form, active: event.target.checked })}
         />
-        Activo
+        {t('equipment.field.active')}
       </label>
     </FormModal>
   );
@@ -217,6 +251,7 @@ function EquipmentFormModal({
 
 // CRUD equipamentos (secção 3) — zone_id é sempre derivado do hospital seleccionado (secção 4, regra 1).
 export function Equipment() {
+  const t = useT();
   const canManageEquipment = useAuthStore((state) => state.permissions.canManageEquipment);
   const equipment = useEquipmentStore((state) => state.equipment);
   const fetchEquipment = useEquipmentStore((state) => state.fetchEquipment);
@@ -257,15 +292,54 @@ export function Equipment() {
   // Nomes das modalidades para o dropdown (da BD; fallback à lista fixa antes do fetch).
   const modalityNames = modalities.length > 0 ? modalities.map((modality) => modality.name) : [...KNOWN_MODALITIES];
 
-  // Procura pelos campos que identificam a máquina na lista — nome, hospital, modelo,
-  // nº de série e modalidade.
-  const filteredEquipment = useMemo(
-    () =>
-      equipment.filter((item) =>
-        matchesSearch(searchText, [item.name, item.hospital_name, item.model, item.serial_number, item.modality]),
-      ),
-    [equipment, searchText],
-  );
+  // Procura sobre as treze colunas, cada uma pelo texto que mostra: os números vão a
+  // texto, os sim/não e o estado pelos rótulos que se leem na linha, e os engenheiros
+  // pelo nome (a linha nunca mostra o id).
+  const filteredEquipment = useMemo(() => {
+    const engineerName = (id: string | null) => engineers.find((engineer) => engineer.id === id)?.name ?? null;
+    return equipment.filter((item) =>
+      matchesSearch(searchText, [
+        item.name,
+        item.hospital_name,
+        item.hospital_short_name,
+        item.zone_code,
+        item.zone_name,
+        item.model,
+        item.serial_number,
+        item.modality,
+        String(item.pm_per_year),
+        String(item.pm_duration_days),
+        item.needs_shutdown ? t('common.yes') : t('common.no'),
+        t(WEEKEND_WORK_KEYS[item.weekend_work]),
+        engineerName(item.engineer_primary_id),
+        engineerName(item.engineer_secondary_id),
+        item.active ? t('equipment.state.active') : t('equipment.state.inactive'),
+      ]),
+    );
+  }, [equipment, engineers, searchText, t]);
+
+  // Os extractores dependem da lista de engenheiros (as colunas de engenheiro mostram o
+  // nome, não o id) — daí virem de um useMemo em vez de uma constante de módulo.
+  const equipmentSort = useMemo<SortAccessors<EquipmentFull, EquipmentSortKey>>(() => {
+    const engineerName = (id: string | null) => engineers.find((engineer) => engineer.id === id)?.name ?? null;
+    return {
+      name: (item) => item.name,
+      hospital: (item) => item.hospital_name,
+      zone: (item) => item.zone_code,
+      model: (item) => item.model,
+      serialNumber: (item) => item.serial_number,
+      modality: (item) => item.modality,
+      pmPerYear: (item) => item.pm_per_year,
+      pmDurationDays: (item) => item.pm_duration_days,
+      needsShutdown: (item) => item.needs_shutdown,
+      weekendWork: (item) => WEEKEND_WORK_RANK[item.weekend_work],
+      engineerPrimary: (item) => engineerName(item.engineer_primary_id),
+      engineerSecondary: (item) => engineerName(item.engineer_secondary_id),
+      active: (item) => item.active,
+    };
+  }, [engineers]);
+
+  const { rows: visibleEquipment, sortableProps } = useTableSort(filteredEquipment, equipmentSort, 'name');
 
   async function handleCreate(form: EquipmentForm) {
     const hospital = hospitals.find((item) => item.id === form.hospitalId);
@@ -292,7 +366,7 @@ export function Equipment() {
       });
       setCreating(false);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao criar equipamento.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('equipment.createFailed') });
     } finally {
       setSaving(false);
     }
@@ -312,7 +386,7 @@ export function Equipment() {
       setImportAliases({});
       setImportRaw(raw);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao ler o ficheiro.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('import.readFileFailed') });
     }
   }
 
@@ -334,8 +408,12 @@ export function Equipment() {
         variant: errors.length > 0 ? 'warning' : 'success',
         message:
           errors.length > 0
-            ? `${success} equipamento(s) importado(s), ${errors.length} falharam: ${errors.map((e) => `linha ${e.rowNumber}`).join(', ')}.`
-            : `${success} equipamento(s) importado(s) com sucesso.`,
+            ? t('equipment.importedWithErrors', {
+                count: success,
+                failed: errors.length,
+                rows: errors.map((e) => t('import.rowNumber', { row: e.rowNumber })).join(', '),
+              })
+            : t('equipment.imported', { count: success }),
       });
       closeImport();
     } finally {
@@ -346,13 +424,13 @@ export function Equipment() {
   return (
     <PageShell wide>
       <PageHeader
-        title="Equipamentos"
-        description="A zona de cada equipamento vem sempre do hospital onde está instalado. A cor é a que o identifica no calendário."
+        title={t('equipment.title')}
+        description={t('equipment.description')}
         actions={
           canManageEquipment && (
             <>
               <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
-              <Button onClick={() => setCreating(true)}>Adicionar equipamento</Button>
+              <Button onClick={() => setCreating(true)}>{t('equipment.add')}</Button>
             </>
           )
         }
@@ -360,12 +438,12 @@ export function Equipment() {
 
       <Card
         padded={false}
-        title={`${filteredEquipment.length} equipamento(s)`}
+        title={t('equipment.count', { count: filteredEquipment.length })}
         actions={
           <SearchInput
             value={searchText}
             onChange={setSearchText}
-            placeholder="Procurar por nome, hospital, modelo, nº de série…"
+            placeholder={t('equipment.searchPlaceholder')}
             className="w-72"
           />
         }
@@ -374,24 +452,24 @@ export function Equipment() {
         <table className="pm-table">
           <thead>
             <tr>
-              <th className="py-1.5 pr-2">Nome</th>
-              <th className="py-1.5 pr-2">Hospital</th>
-              <th className="py-1.5 pr-2">Zona</th>
-              <th className="py-1.5 pr-2">Modelo</th>
-              <th className="py-1.5 pr-2">Nº Série</th>
-              <th className="py-1.5 pr-2">Modalidade</th>
-              <th className="py-1.5 pr-2">PM/ano</th>
-              <th className="py-1.5 pr-2">Duração (dias)</th>
-              <th className="py-1.5 pr-2">Paragem</th>
-              <th className="py-1.5 pr-2">Fim-de-semana</th>
-              <th className="py-1.5 pr-2">Eng. principal</th>
-              <th className="py-1.5 pr-2">Eng. secundário</th>
-              <th className="py-1.5 pr-2">Activo</th>
+              <SortableTh {...sortableProps('name')}>{t('common.name')}</SortableTh>
+              <SortableTh {...sortableProps('hospital')}>{t('common.hospital')}</SortableTh>
+              <SortableTh {...sortableProps('zone')}>{t('common.zone')}</SortableTh>
+              <SortableTh {...sortableProps('model')}>{t('common.model')}</SortableTh>
+              <SortableTh {...sortableProps('serialNumber')}>{t('equipment.col.serialNumber')}</SortableTh>
+              <SortableTh {...sortableProps('modality')}>{t('common.modality')}</SortableTh>
+              <SortableTh {...sortableProps('pmPerYear')}>{t('equipment.col.pmPerYear')}</SortableTh>
+              <SortableTh {...sortableProps('pmDurationDays')}>{t('equipment.col.duration')}</SortableTh>
+              <SortableTh {...sortableProps('needsShutdown')}>{t('equipment.col.shutdown')}</SortableTh>
+              <SortableTh {...sortableProps('weekendWork')}>{t('equipment.col.weekend')}</SortableTh>
+              <SortableTh {...sortableProps('engineerPrimary')}>{t('equipment.col.engineerPrimary')}</SortableTh>
+              <SortableTh {...sortableProps('engineerSecondary')}>{t('equipment.col.engineerSecondary')}</SortableTh>
+              <SortableTh {...sortableProps('active')}>{t('equipment.col.active')}</SortableTh>
               <th className="py-1.5 pr-2" />
             </tr>
           </thead>
           <tbody>
-            {filteredEquipment.map((item) => (
+            {visibleEquipment.map((item) => (
               <EquipmentRow
                 key={item.id}
                 item={item}
@@ -407,19 +485,18 @@ export function Equipment() {
           <EmptyState
             action={
               equipment.length === 0 && canManageEquipment ? (
-                <Button onClick={() => setCreating(true)}>Adicionar equipamento</Button>
+                <Button onClick={() => setCreating(true)}>{t('equipment.add')}</Button>
               ) : undefined
             }
           >
-            {equipment.length === 0
-              ? 'Ainda não há equipamentos registados.'
-              : 'Nenhum equipamento corresponde à pesquisa.'}
+            {equipment.length === 0 ? t('equipment.empty') : t('equipment.noMatch')}
           </EmptyState>
         )}
       </Card>
 
       {creating && (
         <EquipmentFormModal
+          t={t}
           hospitals={hospitals}
           engineers={engineers}
           modalityNames={modalityNames}
@@ -432,7 +509,7 @@ export function Equipment() {
 
       {importRows && (
         <ImportPreviewModal
-          title="Importar equipamentos"
+          title={t('equipment.importTitle')}
           rows={importRows}
           renderPreview={(data) => data.name}
           importing={importing}

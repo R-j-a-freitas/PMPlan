@@ -12,6 +12,8 @@ import { ZoneMultiSelect } from '../components/engineers';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
 import type { ImportAliases } from '../lib/importers/importHelpers';
 import { matchesSearch } from '../lib/searchText';
+import { useTableSort } from '../hooks';
+import type { SortAccessors } from '../hooks';
 import {
   Badge,
   Button,
@@ -21,7 +23,9 @@ import {
   ImportExportButtons,
   PageHeader,
   SearchInput,
+  SortableTh,
 } from '../components/ui';
+import { useT, type TFunction } from '../i18n';
 
 const EMPTY_FORM = {
   name: '',
@@ -33,6 +37,8 @@ const EMPTY_FORM = {
   primaryZoneId: '',
 };
 
+type EngineerSortKey = 'name' | 'email' | 'phone' | 'zones' | 'skills' | 'active' | 'login';
+
 function splitSkills(value: string): string[] {
   return value
     .split(',')
@@ -43,33 +49,29 @@ function splitSkills(value: string): string[] {
 // Traduz o erro de eliminação numa mensagem accionável. Um engenheiro não pode ser
 // apagado enquanto for referenciado por outros registos (FK sem cascata): equipamentos,
 // PMs ou uma conta de login associada.
-function describeDeleteEngineerError(err: unknown): string {
+function describeDeleteEngineerError(err: unknown, t: TFunction): string {
   const e = err as { code?: string; message?: string; details?: string };
   const text = `${e.message ?? ''} ${e.details ?? ''}`;
   if (e.code === '23503' || /foreign key|violates/i.test(text)) {
-    if (/user_profiles/.test(text)) {
-      return 'Este engenheiro tem uma conta de login associada. Em "Editar", clique em "Remover acesso" antes de o eliminar.';
-    }
-    if (/pm_events/.test(text)) {
-      return 'Este engenheiro tem PMs (manutenções) associadas. Reatribua ou remova essas PMs antes de o eliminar.';
-    }
-    if (/equipment/.test(text)) {
-      return 'Este engenheiro está atribuído a equipamentos (principal/secundário). Reatribua esses equipamentos antes de o eliminar.';
-    }
-    return 'Não é possível eliminar: existem registos associados a este engenheiro.';
+    if (/user_profiles/.test(text)) return t('engineers.deleteBlocked.account');
+    if (/pm_events/.test(text)) return t('engineers.deleteBlocked.pms');
+    if (/equipment/.test(text)) return t('engineers.deleteBlocked.equipment');
+    return t('engineers.deleteBlocked.generic');
   }
-  return e.message ?? 'Falha ao eliminar o engenheiro.';
+  return e.message ?? t('engineers.deleteFailed');
 }
 
 type EngineerForm = typeof EMPTY_FORM;
 
 // Introdução de novo engenheiro — ver FormModal para o porquê de estar em modal.
 function EngineerFormModal({
+  t,
   zones,
   saving,
   onCancel,
   onSubmit,
 }: {
+  t: TFunction;
   zones: Zone[];
   saving: boolean;
   onCancel: () => void;
@@ -79,7 +81,7 @@ function EngineerFormModal({
 
   return (
     <FormModal
-      title="Novo engenheiro"
+      title={t('engineers.new')}
       saving={saving}
       canSubmit={Boolean(form.name.trim() && form.email.trim())}
       onCancel={onCancel}
@@ -87,26 +89,26 @@ function EngineerFormModal({
     >
       <input
         autoFocus
-        placeholder="Nome"
+        placeholder={t('common.name')}
         className="pm-field"
         value={form.name}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
       />
       <input
-        placeholder="Email"
+        placeholder={t('common.email')}
         type="email"
         className="pm-field"
         value={form.email}
         onChange={(event) => setForm({ ...form, email: event.target.value })}
       />
       <input
-        placeholder="Telefone"
+        placeholder={t('common.phone')}
         className="pm-field"
         value={form.phone}
         onChange={(event) => setForm({ ...form, phone: event.target.value })}
       />
       <input
-        placeholder="Skills (separadas por vírgula)"
+        placeholder={t('engineers.skillsPlaceholder')}
         className="pm-field"
         value={form.skills}
         onChange={(event) => setForm({ ...form, skills: event.target.value })}
@@ -125,7 +127,7 @@ function EngineerFormModal({
           checked={form.active}
           onChange={(event) => setForm({ ...form, active: event.target.checked })}
         />
-        Activo
+        {t('engineers.active')}
       </label>
     </FormModal>
   );
@@ -135,6 +137,7 @@ function EngineerFormModal({
 // (ex: Norte + Galiza) — zoneIds vai todo para engineer_zones via RPC set_engineer_zones,
 // com primaryZoneId a marcar qual delas é a principal (secção 4, regra 2).
 export function Engineers() {
+  const t = useT();
   const canManageEngineers = useAuthStore((state) => state.permissions.canManageEngineers);
   const engineers = useEngineerStore((state) => state.engineers);
   const fetchEngineers = useEngineerStore((state) => state.fetchEngineers);
@@ -172,11 +175,59 @@ export function Engineers() {
     [importRaw, zones, importAliases],
   );
 
-  // Procura por nome ou email — é por aí que se identifica um engenheiro na lista.
+  // Procura sobre as sete colunas: as zonas tanto pelo código como pelo nome (a linha
+  // só mostra o código, mas quem procura pensa em "Galiza" e não em "GAL"), e o estado
+  // e o acesso pelos rótulos que se leem na linha.
   const filteredEngineers = useMemo(
-    () => engineers.filter((engineer) => matchesSearch(searchText, [engineer.name, engineer.email])),
-    [engineers, searchText],
+    () =>
+      engineers.filter((engineer) => {
+        const engineerZones = engineer.zones.flatMap((engineerZone) => {
+          const zone = zones.find((candidate) => candidate.id === engineerZone.zone_id);
+          return zone ? [zone.code, zone.name] : [];
+        });
+        const account = accounts.find((candidate) => candidate.engineer_id === engineer.id);
+        return matchesSearch(searchText, [
+          engineer.name,
+          engineer.email,
+          engineer.phone,
+          ...engineerZones,
+          ...engineer.skills,
+          engineer.active ? t('engineers.state.active') : t('engineers.state.inactive'),
+          account
+            ? account.must_change_password
+              ? t('engineers.login.pendingFirstLogin')
+              : t('engineers.login.active')
+            : t('engineers.login.none'),
+        ]);
+      }),
+    [engineers, zones, accounts, searchText, t],
   );
+
+  // Zonas e conta de login vivem fora da linha (zones/accounts), por isso os extractores
+  // são memoizados em vez de constantes de módulo. "Zonas" ordena pelo código da zona
+  // principal (a que a linha marca com ★) — é a que decide a quem o trabalho pertence;
+  // "Login" ordena por acesso crescente: sem conta, conta por estrear, conta em uso.
+  const engineerSort = useMemo<SortAccessors<EngineerWithZones, EngineerSortKey>>(
+    () => ({
+      name: (engineer) => engineer.name,
+      email: (engineer) => engineer.email,
+      phone: (engineer) => engineer.phone,
+      zones: (engineer) => {
+        const primary = engineer.zones.find((engineerZone) => engineerZone.is_primary) ?? engineer.zones[0];
+        return primary ? (zones.find((zone) => zone.id === primary.zone_id)?.code ?? null) : null;
+      },
+      skills: (engineer) => engineer.skills.join(', '),
+      active: (engineer) => engineer.active,
+      login: (engineer) => {
+        const account = accounts.find((candidate) => candidate.engineer_id === engineer.id);
+        if (!account) return 0;
+        return account.must_change_password ? 1 : 2;
+      },
+    }),
+    [zones, accounts],
+  );
+
+  const { rows: visibleEngineers, sortableProps } = useTableSort(filteredEngineers, engineerSort, 'name');
 
   // Só admin (canManageEngineers) consegue ler os perfis de outros (RLS) e criar contas.
   useEffect(() => {
@@ -201,16 +252,15 @@ export function Engineers() {
       if (error) throw error;
       pushToast({
         variant: 'success',
-        message: `${data?.existed ? 'Conta de login associada a' : 'Conta de login criada para'} ${engineer.email}. O engenheiro pode agora definir a palavra-passe em "Esqueci-me da palavra-passe".`,
+        message: data?.existed
+          ? t('engineers.login.linked', { email: engineer.email })
+          : t('engineers.login.created', { email: engineer.email }),
       });
       await fetchAccounts();
     } catch (err) {
       pushToast({
         variant: 'error',
-        message: await edgeFunctionErrorMessage(
-          err,
-          'Falha ao criar a conta de login (a Edge Function admin-create-user está deployed?).',
-        ),
+        message: await edgeFunctionErrorMessage(err, t('engineers.login.createFailed')),
       });
     } finally {
       setActivatingId(null);
@@ -221,20 +271,18 @@ export function Engineers() {
   // admin-delete-user; o perfil desaparece em cascata). Pode recriar-se depois com
   // "Criar acesso". Acção destrutiva — pede confirmação.
   async function handleRemoveLogin(engineer: EngineerWithZones, userId: string) {
-    const confirmed = window.confirm(
-      `Remover o acesso de login de ${engineer.name}? A conta será eliminada; poderá recriá-la depois com "Criar acesso".`,
-    );
+    const confirmed = window.confirm(t('engineers.login.confirmRemove', { name: engineer.name }));
     if (!confirmed) return;
     setRemovingId(engineer.id);
     try {
       const { error } = await supabase.functions.invoke('admin-delete-user', { body: { userId } });
       if (error) throw error;
-      pushToast({ variant: 'success', message: `Acesso de login removido para ${engineer.email}.` });
+      pushToast({ variant: 'success', message: t('engineers.login.removed', { email: engineer.email }) });
       await fetchAccounts();
     } catch (err) {
       pushToast({
         variant: 'error',
-        message: await edgeFunctionErrorMessage(err, 'Falha ao remover o acesso de login.'),
+        message: await edgeFunctionErrorMessage(err, t('engineers.login.removeFailed')),
       });
     } finally {
       setRemovingId(null);
@@ -259,7 +307,7 @@ export function Engineers() {
       }
       setCreating(false);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao criar engenheiro.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('engineers.createFailed') });
     } finally {
       setSaving(false);
     }
@@ -275,7 +323,7 @@ export function Engineers() {
       setImportAliases({});
       setImportRaw(raw);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao ler o ficheiro.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('import.readFileFailed') });
     }
   }
 
@@ -297,8 +345,12 @@ export function Engineers() {
         variant: errors.length > 0 ? 'warning' : 'success',
         message:
           errors.length > 0
-            ? `${success} engenheiro(s) importado(s), ${errors.length} falharam: ${errors.map((e) => `linha ${e.rowNumber}`).join(', ')}.`
-            : `${success} engenheiro(s) importado(s) com sucesso.`,
+            ? t('engineers.importedWithErrors', {
+                count: success,
+                failed: errors.length,
+                rows: errors.map((e) => t('import.rowNumber', { row: e.rowNumber })).join(', '),
+              })
+            : t('engineers.imported', { count: success }),
       });
       closeImport();
     } finally {
@@ -320,13 +372,13 @@ export function Engineers() {
   }
 
   async function handleDeleteEngineer(engineer: EngineerWithZones) {
-    const confirmed = window.confirm(`Eliminar o engenheiro ${engineer.name}? Esta acção não pode ser desfeita.`);
+    const confirmed = window.confirm(t('engineers.confirmDelete', { name: engineer.name }));
     if (!confirmed) return;
     try {
       await deleteEngineer(engineer.id);
-      pushToast({ variant: 'success', message: `Engenheiro ${engineer.name} eliminado.` });
+      pushToast({ variant: 'success', message: t('engineers.deleted', { name: engineer.name }) });
     } catch (err) {
-      pushToast({ variant: 'error', message: describeDeleteEngineerError(err) });
+      pushToast({ variant: 'error', message: describeDeleteEngineerError(err, t) });
     }
   }
 
@@ -351,7 +403,7 @@ export function Engineers() {
       }
       setEditingId(null);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao actualizar engenheiro.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('engineers.updateFailed') });
     } finally {
       setSaving(false);
     }
@@ -360,13 +412,13 @@ export function Engineers() {
   return (
     <PageShell wide>
       <PageHeader
-        title="Engenheiros"
-        description="Um engenheiro pode cobrir várias zonas em simultâneo; a marcada com ★ é a principal."
+        title={t('engineers.title')}
+        description={t('engineers.description')}
         actions={
           canManageEngineers && (
             <>
               <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
-              <Button onClick={() => setCreating(true)}>Adicionar engenheiro</Button>
+              <Button onClick={() => setCreating(true)}>{t('engineers.add')}</Button>
             </>
           )
         }
@@ -374,12 +426,12 @@ export function Engineers() {
 
       <Card
         padded={false}
-        title={`${filteredEngineers.length} engenheiro(s)`}
+        title={t('engineers.count', { count: filteredEngineers.length })}
         actions={
           <SearchInput
             value={searchText}
             onChange={setSearchText}
-            placeholder="Procurar por nome ou email…"
+            placeholder={t('contacts.searchPlaceholder')}
             className="w-72"
           />
         }
@@ -388,18 +440,18 @@ export function Engineers() {
         <table className="pm-table">
           <thead>
             <tr>
-              <th className="py-1.5 pr-2">Nome</th>
-              <th className="py-1.5 pr-2">Email</th>
-              <th className="py-1.5 pr-2">Telefone</th>
-              <th className="py-1.5 pr-2">Zonas</th>
-              <th className="py-1.5 pr-2">Skills</th>
-              <th className="py-1.5 pr-2">Activo</th>
-              {canManageEngineers && <th className="py-1.5 pr-2">Login</th>}
+              <SortableTh {...sortableProps('name')}>{t('common.name')}</SortableTh>
+              <SortableTh {...sortableProps('email')}>{t('common.email')}</SortableTh>
+              <SortableTh {...sortableProps('phone')}>{t('common.phone')}</SortableTh>
+              <SortableTh {...sortableProps('zones')}>{t('common.zones')}</SortableTh>
+              <SortableTh {...sortableProps('skills')}>{t('engineers.skills')}</SortableTh>
+              <SortableTh {...sortableProps('active')}>{t('engineers.active')}</SortableTh>
+              {canManageEngineers && <SortableTh {...sortableProps('login')}>{t('engineers.login')}</SortableTh>}
               <th className="py-1.5 pr-2" />
             </tr>
           </thead>
           <tbody>
-            {filteredEngineers.map((engineer) => {
+            {visibleEngineers.map((engineer) => {
               const editing = editingId === engineer.id;
               // "Activa" = conta de login já ligada a este engenheiro. Uma conta órfã
               // (email igual mas sem engineer_id) não conta como activa — o botão fica
@@ -441,7 +493,7 @@ export function Engineers() {
                       </td>
                       <td className="py-1.5 pr-2 align-top">
                         <input
-                          placeholder="Skills (vírgulas)"
+                          placeholder={t('engineers.skillsShort')}
                           className="pm-field w-full"
                           value={editForm.skills}
                           onChange={(event) => setEditForm({ ...editForm, skills: event.target.value })}
@@ -463,20 +515,22 @@ export function Engineers() {
                               onClick={() => handleRemoveLogin(engineer, account.id)}
                               disabled={removingId === engineer.id}
                             >
-                              {removingId === engineer.id ? 'A remover…' : 'Remover acesso'}
+                              {removingId === engineer.id
+                                ? t('engineers.login.removing')
+                                : t('engineers.login.remove')}
                             </Button>
                           ) : (
-                            <span className="text-sm text-gray-400">Sem acesso</span>
+                            <span className="text-sm text-gray-400">{t('engineers.login.none')}</span>
                           )}
                         </td>
                       )}
                       <td className="py-1.5 pr-2 text-right align-top">
                         <div className="flex justify-end gap-1.5">
                           <Button variant="secondary" size="sm" onClick={() => setEditingId(null)} disabled={saving}>
-                            Cancelar
+                            {t('common.cancel')}
                           </Button>
                           <Button size="sm" onClick={() => handleSaveEdit(engineer)} disabled={saving}>
-                            Guardar
+                            {t('common.save')}
                           </Button>
                         </div>
                       </td>
@@ -503,14 +557,14 @@ export function Engineers() {
                       <td className="py-1.5 pr-2">{engineer.skills.length > 0 ? engineer.skills.join(', ') : '—'}</td>
                       <td className="py-1.5 pr-2">
                         <Badge tone={engineer.active ? 'success' : 'neutral'}>
-                          {engineer.active ? 'Activo' : 'Inactivo'}
+                          {engineer.active ? t('engineers.state.active') : t('engineers.state.inactive')}
                         </Badge>
                       </td>
                       {canManageEngineers && (
                         <td className="py-1.5 pr-2">
                           <label
                             className="flex items-center gap-1.5 text-sm text-gray-600"
-                            title={account ? 'Conta de login activa' : 'Criar conta de login para este engenheiro'}
+                            title={account ? t('engineers.login.activeTitle') : t('engineers.login.createTitle')}
                           >
                             <input
                               type="checkbox"
@@ -520,11 +574,11 @@ export function Engineers() {
                             />
                             {account
                               ? account.must_change_password
-                                ? 'Activa · 1º login pendente'
-                                : 'Activa'
+                                ? t('engineers.login.pendingFirstLogin')
+                                : t('engineers.login.active')
                               : activatingId === engineer.id
-                                ? 'A criar…'
-                                : 'Criar acesso'}
+                                ? t('engineers.login.creating')
+                                : t('engineers.login.create')}
                           </label>
                         </td>
                       )}
@@ -532,10 +586,10 @@ export function Engineers() {
                         {canManageEngineers && (
                           <div className="flex justify-end gap-1">
                             <Button variant="secondary" size="sm" onClick={() => startEdit(engineer)}>
-                              Editar
+                              {t('common.edit')}
                             </Button>
                             <Button variant="dangerGhost" size="sm" onClick={() => handleDeleteEngineer(engineer)}>
-                              Eliminar
+                              {t('common.delete')}
                             </Button>
                           </div>
                         )}
@@ -553,19 +607,18 @@ export function Engineers() {
           <EmptyState
             action={
               engineers.length === 0 && canManageEngineers ? (
-                <Button onClick={() => setCreating(true)}>Adicionar engenheiro</Button>
+                <Button onClick={() => setCreating(true)}>{t('engineers.add')}</Button>
               ) : undefined
             }
           >
-            {engineers.length === 0
-              ? 'Ainda não há engenheiros registados.'
-              : 'Nenhum engenheiro corresponde à pesquisa.'}
+            {engineers.length === 0 ? t('engineers.empty') : t('engineers.noMatch')}
           </EmptyState>
         )}
       </Card>
 
       {creating && (
         <EngineerFormModal
+          t={t}
           zones={zones}
           saving={saving}
           onCancel={() => setCreating(false)}
@@ -575,7 +628,7 @@ export function Engineers() {
 
       {importRows && (
         <ImportPreviewModal
-          title="Importar engenheiros"
+          title={t('engineers.importTitle')}
           rows={importRows}
           renderPreview={(data) => data.engineer.name}
           importing={importing}

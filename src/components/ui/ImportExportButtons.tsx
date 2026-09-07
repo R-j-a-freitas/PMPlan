@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { Button } from './Button';
+import { useT } from '../../i18n';
 
 interface ImportExportButtonsProps {
   onExport: () => void;
@@ -10,15 +11,16 @@ interface ImportExportButtonsProps {
 // já os dados actuais (serve de modelo para reimportar), Importar abre o picker de
 // ficheiro (input escondido) e devolve o ficheiro escolhido ao chamador.
 export function ImportExportButtons({ onExport, onFileSelected }: ImportExportButtonsProps) {
+  const t = useT();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="flex gap-2">
       <Button type="button" variant="secondary" onClick={onExport}>
-        Exportar
+        {t('common.export')}
       </Button>
       <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>
-        Importar
+        {t('common.import')}
       </Button>
       <input
         ref={fileInputRef}

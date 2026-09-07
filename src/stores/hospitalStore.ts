@@ -3,6 +3,14 @@ import { devtools } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import type { HospitalInsert, HospitalUpdate, HospitalWithZone } from '../types';
 
+/** Uma linha de importação: cria (existingId null) ou actualiza um hospital existente. */
+export interface HospitalImportEntry {
+  rowNumber: number;
+  existingId: string | null;
+  insert: HospitalInsert | null;
+  update: HospitalUpdate | null;
+}
+
 interface HospitalState {
   hospitals: HospitalWithZone[];
   loading: boolean;
@@ -13,6 +21,10 @@ interface HospitalState {
   bulkCreateHospital: (
     rows: { rowNumber: number; data: HospitalInsert }[],
   ) => Promise<{ success: number; errors: { rowNumber: number; message: string }[] }>;
+  /** Importação de ficheiro: cada linha cria ou actualiza (ver parseHospitalImportRows). */
+  bulkImportHospitals: (
+    rows: HospitalImportEntry[],
+  ) => Promise<{ created: number; updated: number; errors: { rowNumber: number; message: string }[] }>;
   /** Mudar de zona aqui propaga zone_id a todo o equipamento do hospital (trigger trg_hospital_zone_change). */
   updateHospital: (id: string, patch: HospitalUpdate) => Promise<void>;
   deleteHospital: (id: string) => Promise<void>;
@@ -57,6 +69,27 @@ export const useHospitalStore = create<HospitalState>()(
         }
         await get().fetchHospitals();
         return { success, errors };
+      },
+
+      bulkImportHospitals: async (rows) => {
+        const errors: { rowNumber: number; message: string }[] = [];
+        let created = 0;
+        let updated = 0;
+        // Linha a linha, como o bulkCreateHospital: uma linha má não pode fazer cair as
+        // boas, e quem importa precisa de saber QUE linhas falharam.
+        for (const row of rows) {
+          if (row.existingId && row.update) {
+            const { error } = await supabase.from('hospitals').update(row.update).eq('id', row.existingId);
+            if (error) errors.push({ rowNumber: row.rowNumber, message: error.message });
+            else updated++;
+          } else if (row.insert) {
+            const { error } = await supabase.from('hospitals').insert(row.insert);
+            if (error) errors.push({ rowNumber: row.rowNumber, message: error.message });
+            else created++;
+          }
+        }
+        await get().fetchHospitals();
+        return { created, updated, errors };
       },
 
       updateHospital: async (id, patch) => {

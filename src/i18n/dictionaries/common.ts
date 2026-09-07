@@ -1,0 +1,120 @@
+import type { Dictionary } from '../types';
+
+// Vocabulário partilhado por toda a aplicação: acções, estados e rótulos que aparecem em
+// mais do que um ecrã. Uma acção só entra aqui se for a MESMA acção em todo o lado — o
+// "Guardar" de um formulário é sempre o mesmo, mas o "Adicionar" de cada página tem
+// complemento próprio ("Adicionar equipamento") e vive no dicionário da sua área.
+export const common = {
+  // ─── Acções ──────────────────────────────────────────────────────────────────
+  'common.save': ['Guardar', 'Guardar'],
+  'common.saving': ['A guardar…', 'Guardando…'],
+  'common.cancel': ['Cancelar', 'Cancelar'],
+  'common.close': ['Fechar', 'Cerrar'],
+  'common.dismissNotice': ['Fechar aviso', 'Cerrar aviso'],
+  'common.edit': ['Editar', 'Editar'],
+  'common.delete': ['Eliminar', 'Eliminar'],
+  'common.remove': ['Remover', 'Quitar'],
+  'common.add': ['Adicionar', 'Añadir'],
+  'common.create': ['Criar', 'Crear'],
+  'common.confirm': ['Confirmar', 'Confirmar'],
+  'common.back': ['Voltar', 'Volver'],
+  'common.search': ['Pesquisar', 'Buscar'],
+  'common.clear': ['Limpar', 'Limpiar'],
+  'common.clearFilters': ['Limpar filtros', 'Limpiar filtros'],
+  'common.refresh': ['Actualizar', 'Actualizar'],
+  'common.export': ['Exportar', 'Exportar'],
+  'common.import': ['Importar', 'Importar'],
+  'common.download': ['Descarregar', 'Descargar'],
+  'common.preview': ['Pré-visualizar', 'Vista previa'],
+  'common.send': ['Enviar', 'Enviar'],
+  'common.selectAll': ['Seleccionar tudo', 'Seleccionar todo'],
+  'common.deselectAll': ['Desmarcar tudo', 'Desmarcar todo'],
+  'common.apply': ['Aplicar', 'Aplicar'],
+  'common.retry': ['Tentar novamente', 'Reintentar'],
+  'common.open': ['Abrir', 'Abrir'],
+  'common.view': ['Ver', 'Ver'],
+  'common.more': ['mais', 'más'],
+
+  // ─── Estados e mensagens ─────────────────────────────────────────────────────
+  'common.loading': ['A carregar…', 'Cargando…'],
+  'common.sending': ['A enviar…', 'Enviando…'],
+  'common.noResults': ['Sem resultados.', 'Sin resultados.'],
+  'common.none': ['Nenhum', 'Ninguno'],
+  'common.all': ['Todos', 'Todos'],
+  'common.yes': ['Sim', 'Sí'],
+  'common.no': ['Não', 'No'],
+  'common.optional': ['opcional', 'opcional'],
+  'common.error': ['Erro', 'Error'],
+  'common.unknownError': ['Ocorreu um erro inesperado.', 'Se ha producido un error inesperado.'],
+  'common.saveError': ['Não foi possível guardar.', 'No se ha podido guardar.'],
+  'common.deleteError': ['Não foi possível eliminar.', 'No se ha podido eliminar.'],
+  'common.loadError': ['Não foi possível carregar os dados.', 'No se han podido cargar los datos.'],
+  'common.saved': ['Alterações guardadas.', 'Cambios guardados.'],
+  'common.noPermission': ['Sem permissão para esta acção.', 'Sin permiso para esta acción.'],
+
+  // ─── Campos e conceitos do domínio ───────────────────────────────────────────
+  'common.name': ['Nome', 'Nombre'],
+  'common.email': ['Email', 'Email'],
+  'common.phone': ['Telefone', 'Teléfono'],
+  'common.notes': ['Notas', 'Notas'],
+  'common.date': ['Data', 'Fecha'],
+  'common.startDate': ['Data de início', 'Fecha de inicio'],
+  'common.endDate': ['Data de fim', 'Fecha de fin'],
+  'common.start': ['Início', 'Inicio'],
+  'common.end': ['Fim', 'Fin'],
+  'common.year': ['Ano', 'Año'],
+  'common.days': ['dias', 'días'],
+  'common.day': ['dia', 'día'],
+  'common.status': ['Estado', 'Estado'],
+  'common.type': ['Tipo', 'Tipo'],
+  'common.country': ['País', 'País'],
+  'common.city': ['Cidade', 'Ciudad'],
+  'common.locality': ['Localidade', 'Localidad'],
+  'common.zone': ['Zona', 'Zona'],
+  'common.zones': ['Zonas', 'Zonas'],
+  'common.hospital': ['Hospital', 'Hospital'],
+  'common.hospitals': ['Hospitais', 'Hospitales'],
+  'common.equipment': ['Equipamento', 'Equipo'],
+  'common.equipmentPlural': ['Equipamentos', 'Equipos'],
+  'common.engineer': ['Engenheiro', 'Ingeniero'],
+  'common.engineers': ['Engenheiros', 'Ingenieros'],
+  'common.modality': ['Modalidade', 'Modalidad'],
+  'common.modalities': ['Modalidades', 'Modalidades'],
+  'common.serialNumber': ['Número de série', 'Número de serie'],
+  'common.serialNumberShort': ['N/S', 'N/S'],
+  'common.model': ['Modelo', 'Modelo'],
+  'common.contact': ['Contacto', 'Contacto'],
+  'common.contacts': ['Contactos', 'Contactos'],
+  'common.role': ['Função', 'Cargo'],
+  'common.pms': ['PMs', 'PMs'],
+  'common.unassigned': ['Sem atribuição', 'Sin asignar'],
+  'common.noEngineer': ['Sem engenheiro', 'Sin ingeniero'],
+
+  // ─── Estados de PM (interface) ───────────────────────────────────────────────
+  // Atenção: os relatórios exportados (PDF/Excel) continuam a levar os rótulos em
+  // português fixados em lib/pmStatus.ts — a exportação é um documento da empresa, não
+  // muda com o idioma de quem carrega no botão.
+  'status.planned': ['Planeada', 'Planificada'],
+  'status.confirmed': ['Confirmada', 'Confirmada'],
+  'status.in_progress': ['Em curso', 'En curso'],
+  'status.completed': ['Concluída', 'Completada'],
+  'status.delayed': ['Atrasada', 'Retrasada'],
+  'status.cancelled': ['Cancelada', 'Cancelada'],
+
+  // ─── Idioma ──────────────────────────────────────────────────────────────────
+  'lang.title': ['Idioma', 'Idioma'],
+  'lang.choose': ['Escolha o idioma', 'Elija el idioma'],
+  'lang.chooseDescription': [
+    'Em que idioma quer usar a aplicação? Pode mudar quando quiser na barra superior.',
+    '¿En qué idioma quiere usar la aplicación? Puede cambiarlo cuando quiera en la barra superior.',
+  ],
+  'lang.continue': ['Continuar', 'Continuar'],
+  'lang.saveFailed': [
+    'O idioma foi aplicado, mas não ficou guardado no seu perfil — a escolha volta a ser pedida no próximo acesso.',
+    'El idioma se ha aplicado, pero no ha quedado guardado en su perfil — la elección se volverá a pedir en el próximo acceso.',
+  ],
+  'lang.exportNote': [
+    'As cartas e os emails enviados aos clientes continuam a seguir o país do hospital, não este idioma.',
+    'Las cartas y los correos enviados a los clientes siguen el país del hospital, no este idioma.',
+  ],
+} as const satisfies Dictionary;

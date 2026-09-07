@@ -1,6 +1,7 @@
 import type { EventInput } from '@fullcalendar/core';
 import { spanishRegionName } from '../../lib/spanishRegions';
 import type { Holiday, Zone } from '../../types';
+import type { TFunction, TranslationKey } from '../../i18n';
 
 // Feriados como Background Events (secção 9) — sempre visíveis, independentemente de
 // filtros activos. Um dia só precisa de UM background event mesmo que tenha vários
@@ -25,24 +26,33 @@ export interface HolidayDayInfo {
   zoneNames: string[];
 }
 
-const COUNTRY_LABELS: Record<string, string> = { PT: 'Portugal', ES: 'Espanha' };
+const COUNTRY_LABEL_KEYS: Record<string, TranslationKey> = { PT: 'country.PT', ES: 'country.ES' };
 
 // Âmbito real do feriado: zona (fecho operacional do PMPlan), localidade (concelho PT ou
 // Comunidade Autónoma ES) ou, só se nenhum dos dois estiver preenchido, nacional — ver
 // regra em conflictRules.ts. holiday.zone_id sozinho NÃO chega para decidir isto (a
 // generalidade dos feriados regionais/locais tem zone_id null e locality preenchida).
-function describeScope(holiday: Holiday, zones: Zone[]): { label: string; zoneName: string | null } {
+function describeScope(holiday: Holiday, zones: Zone[], t: TFunction): { label: string; zoneName: string | null } {
   const zone = holiday.zone_id ? zones.find((candidate) => candidate.id === holiday.zone_id) : null;
-  if (zone) return { label: `${holiday.name} (feriado regional — ${zone.name})`, zoneName: zone.name };
+  if (zone) {
+    return {
+      label: t('calendar.holidayRegionalZone', { name: holiday.name, zone: zone.name }),
+      zoneName: zone.name,
+    };
+  }
 
   if (holiday.locality) {
     const localityName = holiday.country === 'ES' ? spanishRegionName(holiday.locality) : holiday.locality;
-    const scopeWord = holiday.type === 'local' ? 'local' : 'regional';
-    return { label: `${holiday.name} (feriado ${scopeWord} — ${localityName})`, zoneName: null };
+    const key = holiday.type === 'local' ? 'calendar.holidayLocal' : 'calendar.holidayRegional';
+    return { label: t(key, { name: holiday.name, locality: localityName }), zoneName: null };
   }
 
+  const countryKey = COUNTRY_LABEL_KEYS[holiday.country];
   return {
-    label: `${holiday.name} (feriado nacional — ${COUNTRY_LABELS[holiday.country] ?? holiday.country})`,
+    label: t('calendar.holidayNational', {
+      name: holiday.name,
+      country: countryKey ? t(countryKey) : holiday.country,
+    }),
     zoneName: null,
   };
 }
@@ -52,11 +62,11 @@ function describeScope(holiday: Holiday, zones: Zone[]): { label: string; zoneNa
 // rato (secção: "quando passado o rato por cima" deve mostrar do que se trata e quem
 // afecta). Deduplicado por linha de texto — vários hospitais na mesma zona não devem
 // repetir a mesma linha duas vezes.
-export function buildHolidayDayInfo(holidays: Holiday[], zones: Zone[]): Map<string, HolidayDayInfo> {
+export function buildHolidayDayInfo(holidays: Holiday[], zones: Zone[], t: TFunction): Map<string, HolidayDayInfo> {
   const map = new Map<string, { labels: Set<string>; zoneNames: Set<string> }>();
 
   for (const holiday of holidays) {
-    const { label, zoneName } = describeScope(holiday, zones);
+    const { label, zoneName } = describeScope(holiday, zones, t);
     const existing = map.get(holiday.date);
     if (existing) {
       existing.labels.add(label);

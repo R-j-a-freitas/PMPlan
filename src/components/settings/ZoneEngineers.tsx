@@ -1,5 +1,6 @@
 import { useEngineerStore, useUiStore, useZoneStore } from '../../stores';
 import type { EngineerWithZones, Zone } from '../../types';
+import { useT } from '../../i18n';
 
 interface ZoneEngineersProps {
   zoneId: string;
@@ -23,6 +24,7 @@ function getAncestorIds(zoneId: string, zones: Zone[]): string[] {
 // engenheiros"). Reaproveita o RPC set_engineer_zones existente, recalculando a lista
 // completa de zonas do engenheiro para não apagar as outras atribuições dele.
 export function ZoneEngineers({ zoneId, readOnly }: ZoneEngineersProps) {
+  const t = useT();
   const engineers = useEngineerStore((state) => state.engineers);
   const setEngineerZones = useEngineerStore((state) => state.setEngineerZones);
   const zones = useZoneStore((state) => state.zones);
@@ -51,15 +53,15 @@ export function ZoneEngineers({ zoneId, readOnly }: ZoneEngineersProps) {
     } catch (err) {
       pushToast({
         variant: 'error',
-        message: err instanceof Error ? err.message : 'Falha ao actualizar a zona do engenheiro.',
+        message: err instanceof Error ? err.message : t('zones.engineerZoneFailed'),
       });
     }
   }
 
   return (
     <div className="flex flex-col gap-1">
-      <h4 className="text-xs font-semibold uppercase text-gray-500">Engenheiros desta zona</h4>
-      {engineers.length === 0 && <p className="text-sm text-gray-400">Sem engenheiros registados.</p>}
+      <h4 className="text-xs font-semibold uppercase text-gray-500">{t('zones.engineersHere')}</h4>
+      {engineers.length === 0 && <p className="text-sm text-gray-400">{t('zones.noEngineers')}</p>}
       {engineers.map((engineer) => {
         const covers = engineer.zones.some((zone) => zone.zone_id === zoneId);
         return (
@@ -72,7 +74,7 @@ export function ZoneEngineers({ zoneId, readOnly }: ZoneEngineersProps) {
             />
             {engineer.name}
             {engineer.primary_zone_id === zoneId && (
-              <span className="text-xs text-gray-400">(principal)</span>
+              <span className="text-xs text-gray-400">{t('zones.primaryTag')}</span>
             )}
           </label>
         );
@@ -80,7 +82,7 @@ export function ZoneEngineers({ zoneId, readOnly }: ZoneEngineersProps) {
 
       {inheritedEngineers.length > 0 && (
         <div className="mt-2 border-t border-gray-100 pt-2">
-          <h5 className="text-xs font-semibold uppercase text-gray-400">Herdados da zona-mãe</h5>
+          <h5 className="text-xs font-semibold uppercase text-gray-400">{t('zones.inheritedFromParent')}</h5>
           {inheritedEngineers.map((engineer) => (
             <p key={engineer.id} className="text-sm text-gray-500">
               {engineer.name}

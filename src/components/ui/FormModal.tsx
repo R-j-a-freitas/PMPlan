@@ -2,10 +2,12 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { Button } from './Button';
 import { Modal } from './Modal';
+import { useT } from '../../i18n';
 
 interface FormModalProps {
   title: string;
-  /** Texto do botão de confirmação (por omissão "Adicionar"). */
+  /** Texto do botão de confirmação, já traduzido por quem abre o modal (por omissão
+   *  "Adicionar"). */
   submitLabel?: string;
   /** Bloqueia os botões enquanto grava, para não haver duplo submit. */
   saving?: boolean;
@@ -28,7 +30,7 @@ interface FormModalProps {
 // enquanto está aberto, para cada abertura começar limpa.
 export function FormModal({
   title,
-  submitLabel = 'Adicionar',
+  submitLabel,
   saving = false,
   canSubmit = true,
   size = 'md',
@@ -36,6 +38,8 @@ export function FormModal({
   onCancel,
   children,
 }: FormModalProps) {
+  const t = useT();
+
   // Enter submete a partir de qualquer campo — num formulário de meia dúzia de campos é
   // o reflexo natural, e evita ter de ir com o rato ao botão. Fica de fora nos <textarea>,
   // onde Enter é mudança de linha.
@@ -58,10 +62,10 @@ export function FormModal({
       footer={
         <>
           <Button variant="secondary" onClick={onCancel} disabled={saving}>
-            Cancelar
+            {t('common.cancel')}
           </Button>
           <Button onClick={onSubmit} disabled={saving || !canSubmit}>
-            {saving ? 'A guardar…' : submitLabel}
+            {saving ? t('common.saving') : (submitLabel ?? t('common.add'))}
           </Button>
         </>
       }

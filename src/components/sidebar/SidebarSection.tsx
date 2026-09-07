@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { useT } from '../../i18n';
 
 /** Recuo por nível de hierarquia, em píxeis. Vive aqui — com a moldura partilhada das
  *  secções — porque as quatro listas com árvore (zonas, engenheiros, modalidades, carga)
@@ -20,6 +21,7 @@ interface SidebarSectionProps {
 // não mexe em nenhuma selecção/filtro, que continuam a vir das stores. Mesma seta ▸/▾ já
 // usada nas zonas dentro de cada secção.
 export function SidebarSection({ title, titleAccessory, defaultCollapsed = false, children }: SidebarSectionProps) {
+  const t = useT();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   return (
@@ -29,7 +31,11 @@ export function SidebarSection({ title, titleAccessory, defaultCollapsed = false
           type="button"
           onClick={() => setCollapsed((value) => !value)}
           aria-expanded={!collapsed}
-          aria-label={collapsed ? `Expandir ${title}` : `Colapsar ${title}`}
+          aria-label={
+            collapsed
+              ? t('sidebar.expandSection', { name: title })
+              : t('sidebar.collapseSection', { name: title })
+          }
           className="flex flex-1 items-center gap-1.5 text-left text-gray-400 hover:text-gray-600"
         >
           <span className="pm-sidebar-caret">{collapsed ? '▸' : '▾'}</span>

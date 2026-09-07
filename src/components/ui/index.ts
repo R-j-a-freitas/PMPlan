@@ -12,3 +12,5 @@ export * from './DateInput';
 export * from './ImportExportButtons';
 export * from './FormModal';
 export * from './SearchInput';
+export * from './SortableTh';
+export * from './LanguageSwitcher';

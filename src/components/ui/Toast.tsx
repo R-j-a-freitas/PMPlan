@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useUiStore } from '../../stores';
+import { useT } from '../../i18n';
 import type { ToastMessage } from '../../stores';
 
 // Superfície branca com uma barra de cor à esquerda, em vez do rectângulo saturado de
@@ -15,6 +16,7 @@ const VARIANT_CLASSES: Record<ToastMessage['variant'], { bar: string; icon: stri
 const AUTO_DISMISS_MS = 5000;
 
 export function ToastContainer() {
+  const t = useT();
   const toasts = useUiStore((state) => state.toasts);
   const dismissToast = useUiStore((state) => state.dismissToast);
 
@@ -48,7 +50,7 @@ export function ToastContainer() {
               <button
                 type="button"
                 onClick={() => dismissToast(toast.id)}
-                aria-label="Fechar aviso"
+                aria-label={t('common.dismissNotice')}
                 className="-mr-1 rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
               >
                 ✕

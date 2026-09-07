@@ -19,6 +19,14 @@ export type PMEvent = {
   completed_at: string | null;
   status: PMStatus;
   outlook_event_id: string | null;
+  /** Etiqueta curta a seguir ao nome do equipamento no calendario (ex: "SCRX + PM + OTP").
+   *  Numa troca de fonte aproveita-se a deslocacao para fazer mais alguma coisa na mesma
+   *  maquina, e o que se faz muda de visita para visita — por isso vive na PM e nao na
+   *  modalidade do equipamento. null = mostra so o nome do equipamento. */
+  calendar_label: string | null;
+  /** Descricao da intervencao para a carta do cliente, ja na lingua do hospital.
+   *  null = usa o texto derivado da modalidade (ver lib/exporters/letterPdf). */
+  client_description: string | null;
   notes: string | null;
   created_by: string | null;
   created_at: string;
@@ -27,8 +35,10 @@ export type PMEvent = {
 
 export type PMEventInsert = Omit<
   PMEvent,
-  'id' | 'created_at' | 'updated_at' | 'completed_at' | 'created_by'
->;
+  'id' | 'created_at' | 'updated_at' | 'completed_at' | 'created_by' | 'calendar_label' | 'client_description'
+> &
+  // Opcionais na criacao: so as PMs de braquiterapia com extras e que os preenchem.
+  Partial<Pick<PMEvent, 'calendar_label' | 'client_description'>>;
 // updated_at não tem trigger automático no schema (secção 4) — calendarStore.updateEvent
 // define-o explicitamente em cada update, por isso fica disponível aqui.
 export type PMEventUpdate = Partial<PMEventInsert> & { updated_at?: string };

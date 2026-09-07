@@ -6,52 +6,37 @@ import {
 } from '../../lib/conflictRules';
 import { useCalendarStore, useEngineerStore, useEquipmentStore, useZoneStore } from '../../stores';
 import { SIDEBAR_INDENT_PX, SidebarSection } from './SidebarSection';
+import { useT, type TFunction, type TranslationKey } from '../../i18n';
 
 const LOAD_LOW_THRESHOLD = 0.6;
 
+/** Explicação de uma métrica de carga: a fórmula, o que cada termo significa e as
+ *  ressalvas. Guardada em chaves de tradução (e não em texto) para o popover falar o
+ *  idioma da interface — é aqui que se explica o número que decide o planeamento. */
 interface MetricsInfo {
-  formula: string;
-  lines: { term: string; text: string }[];
-  notes: string[];
+  formulaKey: TranslationKey;
+  lines: { termKey: TranslationKey; textKey: TranslationKey }[];
+  noteKeys: TranslationKey[];
 }
 
 const ZONE_METRICS_INFO: MetricsInfo = {
-  formula: 'Carga = procura ÷ capacidade, em dias-PM',
+  formulaKey: 'load.formula',
   lines: [
-    {
-      term: 'Capacidade',
-      text: 'nº de engenheiros da zona × dias de trabalho do ano (1 dia-PM por engenheiro por dia).',
-    },
-    {
-      term: 'Procura',
-      text: 'duração (início e fim inclusive) das PMs activas com início nesse ano, cujo equipamento está nesta zona.',
-    },
-    {
-      term: 'Dias de trabalho',
-      text: 'segunda a sexta, mais os sábados/domingos em que há PMs marcadas — um fim-de-semana trabalhado conta como dia normal.',
-    },
+    { termKey: 'load.term.capacity', textKey: 'load.zone.capacity' },
+    { termKey: 'load.term.demand', textKey: 'load.zone.demand' },
+    { termKey: 'load.term.workingDays', textKey: 'load.zone.workingDays' },
   ],
-  notes: [
-    'Uma zona-mãe inclui sempre as zonas filhas, tanto nos engenheiros como nas PMs — por isso a percentagem da mãe não é a soma das filhas.',
-    'Um engenheiro que cubra várias zonas conta por inteiro em cada uma delas.',
-    'Feriados não são descontados aos dias de trabalho.',
-  ],
+  noteKeys: ['load.zone.note1', 'load.zone.note2', 'load.zone.note3'],
 };
 
 const ENGINEER_METRICS_INFO: MetricsInfo = {
-  formula: 'Carga = procura ÷ capacidade, em dias-PM',
+  formulaKey: 'load.formula',
   lines: [
-    { term: 'Capacidade', text: 'dias de trabalho do ano (1 dia-PM por dia).' },
-    {
-      term: 'Procura',
-      text: 'duração (início e fim inclusive) das PMs activas atribuídas a este engenheiro, com início nesse ano.',
-    },
-    {
-      term: 'Dias de trabalho',
-      text: 'segunda a sexta, mais os sábados/domingos em que ele tem PMs marcadas — um fim-de-semana trabalhado conta como dia normal.',
-    },
+    { termKey: 'load.term.capacity', textKey: 'load.engineer.capacity' },
+    { termKey: 'load.term.demand', textKey: 'load.engineer.demand' },
+    { termKey: 'load.term.workingDays', textKey: 'load.engineer.workingDays' },
   ],
-  notes: ['Feriados e férias não são descontados aos dias de trabalho.'],
+  noteKeys: ['load.engineer.note1'],
 };
 
 function loadColorClassName(ratio: number): string {
@@ -63,7 +48,7 @@ function loadColorClassName(ratio: number): string {
 // Ícone "i" a explicar as métricas de carga. Abre ao passar o rato e fixa-se ao clique
 // (o `title` nativo que estava aqui antes não dava para ler com calma — desaparecia
 // sozinho e não formatava a explicação, que tem várias linhas e ressalvas).
-function InfoIcon({ label, info }: { label: string; info: MetricsInfo }) {
+function InfoIcon({ t, label, info }: { t: TFunction; label: string; info: MetricsInfo }) {
   const [pinned, setPinned] = useState(false);
   const [hovered, setHovered] = useState(false);
   const open = pinned || hovered;
@@ -89,7 +74,7 @@ function InfoIcon({ label, info }: { label: string; info: MetricsInfo }) {
         onFocus={() => setHovered(true)}
         onBlur={() => setHovered(false)}
         aria-expanded={open}
-        aria-label={`Como é calculada a ${label}`}
+        aria-label={t('load.howCalculated', { label })}
         className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-gray-200 text-[9px] font-bold leading-none text-gray-500 hover:bg-gray-300 hover:text-gray-700"
       >
         i
@@ -101,19 +86,19 @@ function InfoIcon({ label, info }: { label: string; info: MetricsInfo }) {
           role="tooltip"
           className="absolute right-0 top-5 z-20 w-72 rounded-lg border border-gray-200 bg-white p-3 text-left shadow-float"
         >
-          <p className="mb-2 text-xs font-semibold text-gray-900">{info.formula}</p>
+          <p className="mb-2 text-xs font-semibold text-gray-900">{t(info.formulaKey)}</p>
           <dl className="flex flex-col gap-1.5">
-            {info.lines.map(({ term, text }) => (
-              <div key={term}>
-                <dt className="text-[11px] font-semibold text-gray-700">{term}</dt>
-                <dd className="text-[11px] leading-snug text-gray-600">{text}</dd>
+            {info.lines.map(({ termKey, textKey }) => (
+              <div key={termKey}>
+                <dt className="text-[11px] font-semibold text-gray-700">{t(termKey)}</dt>
+                <dd className="text-[11px] leading-snug text-gray-600">{t(textKey)}</dd>
               </div>
             ))}
           </dl>
           <ul className="mt-2 flex list-disc flex-col gap-1 border-t border-gray-100 pl-4 pt-2">
-            {info.notes.map((note) => (
-              <li key={note} className="text-[11px] leading-snug text-gray-500">
-                {note}
+            {info.noteKeys.map((noteKey) => (
+              <li key={noteKey} className="text-[11px] leading-snug text-gray-500">
+                {t(noteKey)}
               </li>
             ))}
           </ul>
@@ -128,6 +113,7 @@ function InfoIcon({ label, info }: { label: string; info: MetricsInfo }) {
 // activo (Topbar) — não mensal. Duas leituras, por zona (zona-mãe agrega as filhas, ver
 // conflictRules.computeZoneLoadRatio) e por engenheiro, ambas colapsadas por omissão.
 export function LoadMap() {
+  const t = useT();
   const planningYear = useCalendarStore((state) => state.planningYear);
   // `calendarStore.events` só tem o que a vista activa do calendário tem carregado (Mês/
   // Semana ficam com uma fatia pequena do ano) — as métricas de carga precisam sempre do
@@ -177,8 +163,8 @@ export function LoadMap() {
   return (
     <>
       <SidebarSection
-        title={`Carga de zona (${planningYear})`}
-        titleAccessory={<InfoIcon label="carga de zona" info={ZONE_METRICS_INFO} />}
+        title={t('load.zoneTitle', { year: planningYear })}
+        titleAccessory={<InfoIcon t={t} label={t('load.zoneLabel')} info={ZONE_METRICS_INFO} />}
         defaultCollapsed
       >
         <div className="flex flex-col">
@@ -193,8 +179,8 @@ export function LoadMap() {
       </SidebarSection>
 
       <SidebarSection
-        title={`Carga por engenheiro (${planningYear})`}
-        titleAccessory={<InfoIcon label="carga por engenheiro" info={ENGINEER_METRICS_INFO} />}
+        title={t('load.engineerTitle', { year: planningYear })}
+        titleAccessory={<InfoIcon t={t} label={t('load.engineerLabel')} info={ENGINEER_METRICS_INFO} />}
         defaultCollapsed
       >
         <div className="flex flex-col">

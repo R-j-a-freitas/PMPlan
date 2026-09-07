@@ -4,6 +4,7 @@ import { resolveZoneTeamLeaderId } from '../../lib/zoneTree';
 import type { Zone } from '../../types';
 import { Badge, Button } from '../ui';
 import { ZoneEngineers } from './ZoneEngineers';
+import { useT } from '../../i18n';
 
 interface ZoneNodeProps {
   zone: Zone;
@@ -46,6 +47,7 @@ function getDescendantIds(zoneId: string, allZones: Zone[]): Set<string> {
 // Nó recursivo da árvore de zonas (secção: zona-mãe "Northwest" agrupando "Galiza",
 // "Canárias", etc.) — cada zona gere a sua própria edição e renderiza as suas filhas.
 export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProps) {
+  const t = useT();
   const updateZone = useZoneStore((state) => state.updateZone);
   const deleteZone = useZoneStore((state) => state.deleteZone);
   const hospitals = useHospitalStore((state) => state.hospitals);
@@ -96,7 +98,7 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
       });
       setEditing(false);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao actualizar zona.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('zones.updateFailed') });
     } finally {
       setSaving(false);
     }
@@ -106,7 +108,7 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
     try {
       await deleteZone(zone.id);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao eliminar zona.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('zones.deleteFailed') });
     }
   }
 
@@ -130,7 +132,7 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
               value={form.parentZoneId}
               onChange={(event) => setForm({ ...form, parentZoneId: event.target.value })}
             >
-              <option value="">(zona de topo)</option>
+              <option value="">{t('zones.field.noParentShort')}</option>
               {parentOptions.map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.name}
@@ -141,12 +143,14 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
                 numa zona-filha não é "sem TL" — herda o da zona-mãe (ver placeholder). */}
             <select
               className="pm-field"
-              title="Team Leader — entra em CC nos emails aos clientes desta zona"
+              title={t('zones.teamLeaderTitle')}
               value={form.teamLeaderId}
               onChange={(event) => setForm({ ...form, teamLeaderId: event.target.value })}
             >
               <option value="">
-                {inheritedTeamLeader ? `TL herdado: ${inheritedTeamLeader.name}` : '(sem Team Leader)'}
+                {inheritedTeamLeader
+                  ? t('zones.teamLeaderInherited', { name: inheritedTeamLeader.name })
+                  : t('zones.teamLeaderNoneOption')}
               </option>
               {engineers.map((engineer) => (
                 <option key={engineer.id} value={engineer.id}>
@@ -159,20 +163,25 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
           <>
             <Badge variant="neutral">{zone.code}</Badge>
             <span className="text-sm font-medium">{zone.name}</span>
-            <span className="text-xs text-gray-400">{zoneHospitals.length} hospital(is)</span>
+            <span className="text-xs text-gray-400">
+              {t('zones.hospitalCount', { count: zoneHospitals.length })}
+            </span>
             {/* O TL é a informação que decide o CC dos emails ao cliente — fica visível
                 sem ter de abrir a edição, e um vazio a sério (nem próprio nem herdado)
                 aparece a vermelho porque significa envios sem TL em cópia. */}
             {ownTeamLeader && (
               <span className="text-xs text-gray-500">
-                TL: <span className="font-medium text-gray-700">{ownTeamLeader.name}</span>
+                {t('zones.teamLeaderOwn')}{' '}
+                <span className="font-medium text-gray-700">{ownTeamLeader.name}</span>
               </span>
             )}
             {!ownTeamLeader && inheritedTeamLeader && (
-              <span className="text-xs text-gray-400">TL (herdado): {inheritedTeamLeader.name}</span>
+              <span className="text-xs text-gray-400">
+                {t('zones.teamLeaderInheritedShort', { name: inheritedTeamLeader.name })}
+              </span>
             )}
             {!ownTeamLeader && !inheritedTeamLeader && (
-              <span className="text-xs font-medium text-red-600">Sem Team Leader</span>
+              <span className="text-xs font-medium text-red-600">{t('zones.teamLeaderMissing')}</span>
             )}
           </>
         )}
@@ -180,24 +189,24 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
           {editing ? (
             <>
               <Button variant="secondary" size="sm" onClick={() => setEditing(false)} disabled={saving}>
-                Cancelar
+                {t('common.cancel')}
               </Button>
               <Button size="sm" onClick={handleSave} disabled={saving}>
-                Guardar
+                {t('common.save')}
               </Button>
             </>
           ) : (
             <>
               <Button variant="ghost" size="sm" onClick={() => setExpanded(!expanded)}>
-                {expanded ? 'Fechar' : 'Gerir'}
+                {expanded ? t('common.close') : t('zones.manage')}
               </Button>
               {canManageZones && (
                 <>
                   <Button variant="secondary" size="sm" onClick={startEdit}>
-                    Editar
+                    {t('common.edit')}
                   </Button>
                   <Button variant="dangerGhost" size="sm" onClick={handleDelete}>
-                    Eliminar
+                    {t('common.delete')}
                   </Button>
                 </>
               )}
@@ -209,8 +218,8 @@ export function ZoneNode({ zone, depth, allZones, canManageZones }: ZoneNodeProp
       {expanded && !editing && (
         <div className="grid grid-cols-2 gap-4 border-t border-gray-200 p-3">
           <div>
-            <h4 className="mb-1 text-xs font-semibold uppercase text-gray-500">Hospitais</h4>
-            {zoneHospitals.length === 0 && <p className="text-sm text-gray-400">Sem hospitais nesta zona.</p>}
+            <h4 className="mb-1 text-xs font-semibold uppercase text-gray-500">{t('common.hospitals')}</h4>
+            {zoneHospitals.length === 0 && <p className="text-sm text-gray-400">{t('zones.noHospitals')}</p>}
             <ul className="flex flex-col gap-0.5 text-sm">
               {zoneHospitals.map((hospital) => (
                 <li key={hospital.id}>

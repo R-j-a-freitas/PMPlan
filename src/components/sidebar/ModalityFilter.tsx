@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useEquipmentStore, useZoneStore } from '../../stores';
 import { expandZoneSelection } from '../../lib/zoneTree';
+import { modalityScopeKey } from '../../lib/modalityScope';
 import { SIDEBAR_INDENT_PX, SidebarSection } from './SidebarSection';
+import { useT } from '../../i18n';
 
 // Filtro por modalidade de equipamento (LINAC, Flexitron, …), agrupado apenas pelas zonas-mãe
 // (topo da hierarquia). Sob cada zona-mãe listam-se as modalidades presentes em TODO o seu
 // equipamento (agregando as zonas-filha, sem as subdividir). A lista é restringida às zonas em
 // âmbito (selectedZoneIds). Marcar modalidades restringe a lista de equipamentos abaixo
 // (EquipmentList combina zona AND modalidade AND pesquisa); nada marcado = todas. O filtro é por
-// NOME de modalidade — a mesma modalidade em duas zonas-mãe partilha o estado da checkbox.
+// PAR (zona-mãe, modalidade) — cada linha é independente, marcar "Flexitron" no Sul não mexe no
+// "Flexitron" do Norte (ver lib/modalityScope).
 export function ModalityFilter() {
+  const t = useT();
   const equipment = useEquipmentStore((state) => state.equipment);
   const filters = useEquipmentStore((state) => state.filters);
   const setModalityFilter = useEquipmentStore((state) => state.setModalityFilter);
@@ -63,45 +67,47 @@ export function ModalityFilter() {
       }));
   }, [zones, visibleEquipment]);
 
-  // Conjunto plano de todas as modalidades em âmbito — poda a selecção quando as zonas mudam
-  // (evita um beco sem saída: modalidade marcada sem checkbox visível para a desmarcar).
-  const availableModalities = useMemo(() => {
+  // Conjunto plano de todas as chaves (zona, modalidade) em âmbito — poda a selecção quando as
+  // zonas mudam (evita um beco sem saída: modalidade marcada sem checkbox visível para a desmarcar).
+  const availableKeys = useMemo(() => {
     const all = new Set<string>();
-    for (const group of groups) for (const modality of group.modalities) all.add(modality);
+    for (const group of groups) {
+      for (const modality of group.modalities) all.add(modalityScopeKey(group.zone.id, modality));
+    }
     return all;
   }, [groups]);
 
   useEffect(() => {
-    const stillValid = filters.modalities.filter((modality) => availableModalities.has(modality));
-    if (stillValid.length !== filters.modalities.length) setModalityFilter(stillValid);
-  }, [availableModalities, filters.modalities, setModalityFilter]);
+    const stillValid = filters.modalityKeys.filter((key) => availableKeys.has(key));
+    if (stillValid.length !== filters.modalityKeys.length) setModalityFilter(stillValid);
+  }, [availableKeys, filters.modalityKeys, setModalityFilter]);
 
-  function toggleModality(modality: string) {
-    const next = filters.modalities.includes(modality)
-      ? filters.modalities.filter((current) => current !== modality)
-      : [...filters.modalities, modality];
+  function toggleModality(key: string) {
+    const next = filters.modalityKeys.includes(key)
+      ? filters.modalityKeys.filter((current) => current !== key)
+      : [...filters.modalityKeys, key];
     setModalityFilter(next);
   }
 
-  if (availableModalities.size === 0) return null;
+  if (availableKeys.size === 0) return null;
 
   // Como a modalidade alimenta o calendário (em OR com zonas/engenheiros, ver MainCalendar),
   // "Todas" significa SELECCIONAR todas as modalidades em âmbito — não "filtro vazio". Só assim
   // marcar "Todas" mostra as PMs de todo o equipamento no calendário; nada marcado = vazio.
   // Mesmo padrão do "Todos" dos Engenheiros (EngineerFilter).
-  const allModalities = [...availableModalities];
-  const allSelected = allModalities.every((modality) => filters.modalities.includes(modality));
+  const allKeys = [...availableKeys];
+  const allSelected = allKeys.every((key) => filters.modalityKeys.includes(key));
 
   function toggleAll() {
-    setModalityFilter(allSelected ? [] : allModalities);
+    setModalityFilter(allSelected ? [] : allKeys);
   }
 
   return (
-    <SidebarSection title="Equipamentos">
+    <SidebarSection title={t('sidebar.equipment')}>
       <div className="flex flex-col">
         <label className="pm-sidebar-row hover:bg-gray-50">
           <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-          <span>Todos</span>
+          <span>{t('sidebar.allMasc')}</span>
         </label>
         {groups.map(({ zone, modalities }) => {
           const collapsed = collapsedZoneIds.has(zone.id);
@@ -111,7 +117,11 @@ export function ModalityFilter() {
                 <button
                   type="button"
                   onClick={() => toggleCollapse(zone.id)}
-                  aria-label={collapsed ? `Expandir ${zone.name}` : `Colapsar ${zone.name}`}
+                  aria-label={
+                    collapsed
+                      ? t('sidebar.expandSection', { name: zone.name })
+                      : t('sidebar.collapseSection', { name: zone.name })
+                  }
                   className="pm-sidebar-caret"
                 >
                   {collapsed ? '▸' : '▾'}
@@ -119,20 +129,23 @@ export function ModalityFilter() {
                 <span className="pm-sidebar-group">{zone.name}</span>
               </div>
               {!collapsed &&
-                modalities.map((modality) => (
-                  <label
-                    key={`${zone.id}-${modality}`}
-                    className="pm-sidebar-row hover:bg-gray-50"
-                    style={{ marginLeft: SIDEBAR_INDENT_PX }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={filters.modalities.includes(modality)}
-                      onChange={() => toggleModality(modality)}
-                    />
-                    <span className="truncate">{modality}</span>
-                  </label>
-                ))}
+                modalities.map((modality) => {
+                  const key = modalityScopeKey(zone.id, modality);
+                  return (
+                    <label
+                      key={key}
+                      className="pm-sidebar-row hover:bg-gray-50"
+                      style={{ marginLeft: SIDEBAR_INDENT_PX }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={filters.modalityKeys.includes(key)}
+                        onChange={() => toggleModality(key)}
+                      />
+                      <span className="truncate">{modality}</span>
+                    </label>
+                  );
+                })}
             </div>
           );
         })}

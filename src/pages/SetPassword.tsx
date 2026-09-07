@@ -2,7 +2,8 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../stores';
-import { Button } from '../components/ui';
+import { Button, LanguageSwitcher } from '../components/ui';
+import { useT } from '../i18n';
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -11,6 +12,7 @@ const MIN_PASSWORD_LENGTH = 8;
 // temporária dada por um admin (must_change_password=true) — RequireAuth redirige
 // para cá automaticamente. Em ambos os casos só falta escolher a palavra-passe final.
 export function SetPassword() {
+  const t = useT();
   const navigate = useNavigate();
   const session = useAuthStore((state) => state.session);
   const [password, setPassword] = useState('');
@@ -23,11 +25,11 @@ export function SetPassword() {
     setError(null);
 
     if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`A palavra-passe tem de ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`);
+      setError(t('setPassword.tooShort', { count: MIN_PASSWORD_LENGTH }));
       return;
     }
     if (password !== confirmPassword) {
-      setError('As palavras-passe não coincidem.');
+      setError(t('setPassword.mismatch'));
       return;
     }
 
@@ -51,11 +53,7 @@ export function SetPassword() {
       await supabase.auth.signOut();
       navigate('/login', { replace: true, state: { passwordChanged: true } });
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Falha ao definir a palavra-passe. Peça um novo convite ao administrador.',
-      );
+      setError(err instanceof Error ? err.message : t('setPassword.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -66,17 +64,18 @@ export function SetPassword() {
       <form onSubmit={handleSubmit} className="pm-card w-full max-w-sm p-6">
         {/* Mesma entrada visual do login: o logótipo, e não um "PMPlan" escrito à mão
             noutra cor — são o mesmo momento do mesmo produto. */}
+        <div className="mb-3 flex justify-end">
+          <LanguageSwitcher />
+        </div>
         <img src="/pmplan-logo.png" alt="PMPlan" className="mx-auto mb-3 h-28 w-auto" />
-        <p className="mb-5 text-center text-sm text-gray-500">
-          Defina a sua palavra-passe para activar a conta.
-        </p>
+        <p className="mb-5 text-center text-sm text-gray-500">{t('setPassword.subtitle')}</p>
 
         {error && (
           <p className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
         )}
 
         <label className="mb-3 flex flex-col gap-1.5 text-sm font-medium text-gray-700">
-          Nova palavra-passe
+          {t('setPassword.new')}
           <input
             type="password"
             required
@@ -86,10 +85,12 @@ export function SetPassword() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
-          <span className="text-xs font-normal text-gray-400">Pelo menos {MIN_PASSWORD_LENGTH} caracteres.</span>
+          <span className="text-xs font-normal text-gray-400">
+            {t('setPassword.minLength', { count: MIN_PASSWORD_LENGTH })}
+          </span>
         </label>
         <label className="mb-5 flex flex-col gap-1.5 text-sm font-medium text-gray-700">
-          Confirmar palavra-passe
+          {t('setPassword.confirm')}
           <input
             type="password"
             required
@@ -100,7 +101,7 @@ export function SetPassword() {
         </label>
 
         <Button type="submit" className="h-9 w-full" disabled={submitting}>
-          {submitting ? 'A gravar…' : 'Definir palavra-passe'}
+          {submitting ? t('setPassword.submitting') : t('setPassword.submit')}
         </Button>
       </form>
     </div>

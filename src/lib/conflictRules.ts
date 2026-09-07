@@ -75,7 +75,11 @@ export function checkEngineerOverlap(
   return {
     hasConflict: true,
     type: 'engineer_overlap',
-    message: `O engenheiro já tem uma PM agendada entre ${toDisplayDate(overlapping.start_date)} e ${toDisplayDate(overlapping.end_date)}.`,
+    messageKey: 'conflict.engineerOverlap',
+    messageParams: {
+      start: toDisplayDate(overlapping.start_date),
+      end: toDisplayDate(overlapping.end_date),
+    },
     ...(suggestedDate ? { suggestedDate } : {}),
   };
 }
@@ -100,6 +104,40 @@ function findNextFreeDateForEngineer(
     if (!result.hasConflict) return candidateStart;
   }
   return undefined;
+}
+
+/** Regra 1 aplicada a uma reatribuição em bloco (mudar o engenheiro de várias PMs de uma
+ *  vez): devolve a primeira PM do conjunto que ficaria sobreposta a outra PM do mesmo
+ *  engenheiro, ou null se o bloco todo couber.
+ *
+ *  O engenheiro novo é aplicado ao pool ANTES de verificar: as PMs que o engenheiro
+ *  antigo deixa de ter não bloqueiam a mudança, e duas PMs do próprio bloco que se
+ *  sobreponham entre si contam como conflito. Só esta regra é reavaliada — as outras
+ *  (feriado, fim-de-semana, hospital/cidade, quota) dependem das datas e do equipamento,
+ *  que aqui não mudam. */
+export function findEngineerOverlapInReassign(
+  engineerId: string,
+  targetIds: string[],
+  events: PMEvent[],
+): { event: PMEvent; conflict: ConflictResult } | null {
+  if (!engineerId || targetIds.length === 0) return null;
+  const targets = new Set(targetIds);
+  const pool = events.map((event) =>
+    targets.has(event.id) ? { ...event, engineer_id: engineerId } : event,
+  );
+
+  for (const event of pool) {
+    if (!targets.has(event.id) || !eventIsActive(event)) continue;
+    const conflict = checkEngineerOverlap(
+      engineerId,
+      new Date(event.start_date),
+      new Date(event.end_date),
+      pool,
+      event.id,
+    );
+    if (conflict.hasConflict) return { event, conflict };
+  }
+  return null;
 }
 
 // Regra 2: Nenhuma PM em feriado
@@ -138,7 +176,8 @@ export function checkHolidayConflict(
   return {
     hasConflict: true,
     type: 'holiday_block',
-    message: `${matched.name} (feriado) — não é possível agendar PM neste dia.`,
+    messageKey: 'conflict.holiday',
+    messageParams: { name: matched.name },
     suggestedDate,
   };
 }
@@ -172,11 +211,15 @@ export function checkWeekendConflict(
     suggestedDate = addDays(suggestedDate, 1);
   }
 
-  const dayName = blocked.getDay() === 6 ? 'sábado' : 'domingo';
   return {
     hasConflict: true,
     type: 'weekend_block',
-    message: `${format(blocked, 'dd/MM/yyyy')} é ${dayName} — o contrato do equipamento não permite PMs neste dia.`,
+    messageKey: 'conflict.weekend',
+    messageParams: {
+      date: format(blocked, 'dd/MM/yyyy'),
+      // O nome do dia vai como chave e não como palavra: é a interface que o traduz.
+      day: blocked.getDay() === 6 ? 'conflict.saturday' : 'conflict.sunday',
+    },
     suggestedDate,
   };
 }
@@ -271,7 +314,11 @@ export function checkHospitalSameWeekConflict(
   return {
     hasConflict: true,
     type: 'hospital_same_week',
-    message: `O hospital já tem outro equipamento em PM na mesma semana (${toDisplayDate(overlapping.start_date)} a ${toDisplayDate(overlapping.end_date)}) — não pode haver PM no mesmo cliente na mesma semana.`,
+    messageKey: 'conflict.hospitalSameWeek',
+    messageParams: {
+      start: toDisplayDate(overlapping.start_date),
+      end: toDisplayDate(overlapping.end_date),
+    },
   };
 }
 
@@ -290,7 +337,12 @@ export function checkCitySameDayConflict(
   return {
     hasConflict: true,
     type: 'city_same_day',
-    message: `Já existe outra PM em ${params.cityKey} entre ${toDisplayDate(overlapping.start_date)} e ${toDisplayDate(overlapping.end_date)} — só pode haver 1 PM por cidade por dia.`,
+    messageKey: 'conflict.citySameDay',
+    messageParams: {
+      city: params.cityKey ?? '',
+      start: toDisplayDate(overlapping.start_date),
+      end: toDisplayDate(overlapping.end_date),
+    },
   };
 }
 
@@ -340,7 +392,8 @@ export function checkPmQuota(
   return {
     hasConflict: true,
     type: 'pm_quota_exceeded',
-    message: `Este equipamento já tem ${count} PM(s) planeadas em ${year} — o contrato prevê ${pmPerYear}/ano.`,
+    messageKey: 'conflict.pmQuota',
+    messageParams: { count, year, max: pmPerYear },
   };
 }
 
@@ -493,7 +546,8 @@ export function checkZoneLoad(
   return {
     hasConflict: true,
     type: 'zone_overload',
-    message: `Carga da zona em ${year} a ${loadPercent}% da capacidade estimada (${demandDays}/${capacityDays} dias-PM).`,
+    messageKey: 'conflict.zoneLoad',
+    messageParams: { year, percent: loadPercent, demand: demandDays, capacity: capacityDays },
   };
 }
 

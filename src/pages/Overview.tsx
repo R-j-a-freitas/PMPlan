@@ -7,19 +7,44 @@ import {
   computeZoneLoadRatio,
   countPmEventsForEquipmentInYear,
 } from '../lib/conflictRules';
-import { PM_STATUS_META, PM_STATUS_ORDER } from '../lib/pmStatus';
-import { Card, EmptyState, PageHeader } from '../components/ui';
-import type { PMEvent, PMStatus } from '../types';
+import { PM_STATUS_COLORS, PM_STATUS_ORDER } from '../lib/pmStatus';
+import { Card, EmptyState, PageHeader, SortableTh } from '../components/ui';
+import { useT, type TranslationKey } from '../i18n';
+import { PM_STATUS_KEYS } from '../i18n/labels';
+import { useTableSort } from '../hooks';
+import type { SortAccessors } from '../hooks';
+import type { EquipmentFull, PMEvent, PMStatus } from '../types';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
-// Rótulos e cores por estado da PM — partilhados com o formulário de PM e os relatórios
-// (ver lib/pmStatus). Usadas em preenchimentos com rótulo directo ao lado, por isso o
-// contraste do texto nunca depende delas.
-const STATUS_META = PM_STATUS_META;
+// Cores por estado da PM — partilhadas com os relatórios (ver lib/pmStatus). Usadas em
+// preenchimentos com rótulo directo ao lado, por isso o contraste do texto nunca
+// depende delas. Os rótulos são traduzidos (PM_STATUS_KEYS).
 const STATUS_ORDER = PM_STATUS_ORDER;
 
-const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+/** Meses abreviados no idioma activo, para o eixo do gráfico mensal. */
+const MONTH_KEYS: TranslationKey[] = [
+  'month.1', 'month.2', 'month.3', 'month.4', 'month.5', 'month.6',
+  'month.7', 'month.8', 'month.9', 'month.10', 'month.11', 'month.12',
+];
+
+/** Linha da lista "abaixo da quota": o equipamento, quantas PMs já tem no ano e quantas
+ *  ainda faltam para cumprir o contrato. */
+interface QuotaGapRow {
+  eq: EquipmentFull;
+  scheduled: number;
+  gap: number;
+}
+
+type QuotaGapSortKey = 'equipment' | 'hospital' | 'modality' | 'scheduled' | 'gap';
+
+const QUOTA_GAP_SORT: SortAccessors<QuotaGapRow, QuotaGapSortKey> = {
+  equipment: (row) => row.eq.name,
+  hospital: (row) => row.eq.hospital_short_name ?? row.eq.hospital_name,
+  modality: (row) => row.eq.modality,
+  scheduled: (row) => row.scheduled,
+  gap: (row) => row.gap,
+};
 
 // Categórica (dataviz) para as barras de modalidade/hospital — atribuída por ordem fixa.
 const CATEGORICAL = ['#2a78d6', '#008300', '#e87ba4', '#eda100', '#1baf7a', '#eb6834', '#4a3aa7', '#e34948'];
@@ -104,6 +129,8 @@ function EmptyHint({ children }: { children: ReactNode }) {
 // Ano por omissão = ano de planeamento activo (Topbar); busca os eventos com o snapshot
 // puro (fetchYearEventsSnapshot) para não sobrepor os yearEvents do calendário/LoadMap.
 export function Overview() {
+  const t = useT();
+  const monthLabels = useMemo(() => MONTH_KEYS.map((key) => t(key)), [t]);
   const planningYear = useCalendarStore((state) => state.planningYear);
   const [year, setYear] = useState(planningYear);
   const [events, setEvents] = useState<PMEvent[]>([]);
@@ -261,16 +288,24 @@ export function Overview() {
 
   // Equipamentos com PMs agendadas abaixo do contratado (pm_per_year) — a lista de acção
   // do planeamento: o que ainda falta agendar neste ano.
-  const quotaGaps = useMemo(
+  const quotaGaps = useMemo<QuotaGapRow[]>(
     () =>
       activeEquipment
         .map((eq) => {
           const scheduled = countPmEventsForEquipmentInYear(eq.id, year, events);
           return { eq, scheduled, gap: eq.pm_per_year - scheduled };
         })
-        .filter((row) => row.gap > 0)
-        .sort((a, b) => b.gap - a.gap),
+        .filter((row) => row.gap > 0),
     [activeEquipment, events, year],
+  );
+
+  // Maior falha primeiro — é a lista de acção do planeamento, e o que falta mais é o
+  // que primeiro tem de ser agendado.
+  const { rows: sortedQuotaGaps, sortableProps: quotaGapSortableProps } = useTableSort(
+    quotaGaps,
+    QUOTA_GAP_SORT,
+    'gap',
+    'desc',
   );
 
   const yearOptions = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_YEAR + 2];
@@ -280,11 +315,11 @@ export function Overview() {
   return (
     <PageShell>
       <PageHeader
-        title="Painel de Indicadores"
-        description="Leitura agregada do plano de PMs do ano: volume, cumprimento de quota e carga por engenheiro e por zona."
+        title={t('overview.title')}
+        description={t('overview.description')}
         actions={
           <label className="flex items-center gap-2 text-sm text-gray-600">
-            Ano
+            {t('common.year')}
             <select className="pm-field" value={year} onChange={(event) => setYear(Number(event.target.value))}>
               {yearOptions.map((option) => (
                 <option key={option} value={option}>
@@ -298,43 +333,57 @@ export function Overview() {
 
       <div>
         {loading ? (
-          <EmptyState>A carregar indicadores…</EmptyState>
+          <EmptyState>{t('overview.loading')}</EmptyState>
         ) : (
           <div className="flex flex-col gap-4">
             {/* KPIs */}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <StatCard label="PMs planeadas" value={kpis.total} hint={`${kpis.pmDays} dias-PM no total`} />
               <StatCard
-                label="Taxa de conclusão"
+                label={t('overview.kpi.planned')}
+                value={kpis.total}
+                hint={t('overview.kpi.plannedHint', { count: kpis.pmDays })}
+              />
+              <StatCard
+                label={t('overview.kpi.completion')}
                 value={`${Math.round(kpis.completionRate * 100)}%`}
-                hint={`de ${kpis.total} PMs`}
+                hint={t('overview.kpi.completionHint', { count: kpis.total })}
                 accent="#0ca30c"
               />
               <StatCard
-                label="Por atribuir"
+                label={t('overview.kpi.unassigned')}
                 value={kpis.unassigned}
-                hint="PMs sem engenheiro"
+                hint={t('overview.kpi.unassignedHint')}
                 accent={kpis.unassigned > 0 ? '#ec835a' : undefined}
               />
               <StatCard
-                label="Cobertura de quota"
+                label={t('overview.kpi.quota')}
                 value={`${Math.round(kpis.quotaCoverage * 100)}%`}
-                hint={`${kpis.equipmentWithinQuota}/${activeEquipment.length} equipamentos`}
+                hint={t('overview.kpi.quotaHint', {
+                  within: kpis.equipmentWithinQuota,
+                  total: activeEquipment.length,
+                })}
                 accent={kpis.quotaCoverage < 1 ? '#eda100' : '#0ca30c'}
               />
-              <StatCard label="Equipamentos activos" value={activeEquipment.length} hint={`${equipment.length} no total`} />
               <StatCard
-                label="Engenheiros activos"
+                label={t('overview.kpi.activeEquipment')}
+                value={activeEquipment.length}
+                hint={t('overview.kpi.activeEquipmentHint', { count: equipment.length })}
+              />
+              <StatCard
+                label={t('overview.kpi.activeEngineers')}
                 value={engineers.filter((engineer) => engineer.active).length}
-                hint={`${hospitals.length} hospitais`}
+                hint={t('overview.kpi.activeEngineersHint', { count: hospitals.length })}
               />
             </div>
 
             {/* Estado + Mês */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <SectionCard title="Distribuição por estado" subtitle={`${statusTotal} PMs`}>
+              <SectionCard
+                title={t('overview.byStatus')}
+                subtitle={t('overview.byStatusSubtitle', { count: statusTotal })}
+              >
                 {statusTotal === 0 ? (
-                  <EmptyHint>Sem PMs neste ano.</EmptyHint>
+                  <EmptyHint>{t('overview.noPmsThisYear')}</EmptyHint>
                 ) : (
                   <div className="flex flex-col gap-2">
                     <div className="flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
@@ -342,16 +391,16 @@ export function Overview() {
                         <div
                           key={row.status}
                           className="h-full"
-                          style={{ width: `${(row.count / statusTotal) * 100}%`, backgroundColor: STATUS_META[row.status].color }}
-                          title={`${STATUS_META[row.status].label}: ${row.count}`}
+                          style={{ width: `${(row.count / statusTotal) * 100}%`, backgroundColor: PM_STATUS_COLORS[row.status] }}
+                          title={`${t(PM_STATUS_KEYS[row.status])}: ${row.count}`}
                         />
                       ))}
                     </div>
                     <div className="mt-1 flex flex-col gap-1">
                       {statusCounts.map((row) => (
                         <div key={row.status} className="flex items-center gap-2 text-sm">
-                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: STATUS_META[row.status].color }} />
-                          <span className="text-gray-600">{STATUS_META[row.status].label}</span>
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: PM_STATUS_COLORS[row.status] }} />
+                          <span className="text-gray-600">{t(PM_STATUS_KEYS[row.status])}</span>
                           <span className="ml-auto tabular-nums text-gray-500">
                             {row.count}
                             <span className="ml-1 text-xs text-gray-400">({Math.round((row.count / statusTotal) * 100)}%)</span>
@@ -363,9 +412,9 @@ export function Overview() {
                 )}
               </SectionCard>
 
-              <SectionCard title="PMs por mês" subtitle="Segmentado por modalidade">
+              <SectionCard title={t('overview.byMonth')} subtitle={t('overview.byMonthSubtitle')}>
                 {monthlyTotals.every((total) => total === 0) ? (
-                  <EmptyHint>Sem PMs neste ano.</EmptyHint>
+                  <EmptyHint>{t('overview.noPmsThisYear')}</EmptyHint>
                 ) : (
                   <div className="flex flex-col gap-3">
                     <div className="flex h-40 items-end gap-1.5">
@@ -392,13 +441,13 @@ export function Overview() {
                                         backgroundColor: modalityColor(modality),
                                         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.85)',
                                       }}
-                                      title={`${MONTH_LABELS[index]} · ${modality}: ${count}`}
+                                      title={`${monthLabels[index]} · ${modality}: ${count}`}
                                     />
                                   );
                                 })}
                               </div>
                             </div>
-                            <span className="mt-1 text-[10px] text-gray-400">{MONTH_LABELS[index]}</span>
+                            <span className="mt-1 text-[10px] text-gray-400">{monthLabels[index]}</span>
                           </div>
                         );
                       })}
@@ -418,9 +467,9 @@ export function Overview() {
 
             {/* Modalidade + Hospital */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <SectionCard title="PMs por modalidade">
+              <SectionCard title={t('overview.byModality')}>
                 {byModality.length === 0 ? (
-                  <EmptyHint>Sem dados.</EmptyHint>
+                  <EmptyHint>{t('overview.noData')}</EmptyHint>
                 ) : (
                   <div className="flex flex-col">
                     {byModality.map((row) => (
@@ -436,9 +485,9 @@ export function Overview() {
                 )}
               </SectionCard>
 
-              <SectionCard title="Top hospitais" subtitle="Por número de PMs (8 primeiros)">
+              <SectionCard title={t('overview.topHospitals')} subtitle={t('overview.topHospitalsSubtitle')}>
                 {byHospital.length === 0 ? (
-                  <EmptyHint>Sem dados.</EmptyHint>
+                  <EmptyHint>{t('overview.noData')}</EmptyHint>
                 ) : (
                   <div className="flex flex-col">
                     {byHospital.map((row) => (
@@ -451,12 +500,9 @@ export function Overview() {
 
             {/* Carga engenheiro + zona */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <SectionCard
-                title="Carga por engenheiro"
-                subtitle="Dias-PM atribuídos ÷ dias úteis do ano"
-              >
+              <SectionCard title={t('overview.engineerLoad')} subtitle={t('overview.engineerLoadSubtitle')}>
                 {engineerLoads.length === 0 ? (
-                  <EmptyHint>Sem engenheiros activos.</EmptyHint>
+                  <EmptyHint>{t('overview.noActiveEngineers')}</EmptyHint>
                 ) : (
                   <div className="flex max-h-64 flex-col overflow-y-auto">
                     {engineerLoads.map((row) => (
@@ -473,9 +519,9 @@ export function Overview() {
                 )}
               </SectionCard>
 
-              <SectionCard title="Carga por zona" subtitle="Dias-PM pedidos ÷ capacidade da zona">
+              <SectionCard title={t('overview.zoneLoad')} subtitle={t('overview.zoneLoadSubtitle')}>
                 {zoneLoads.length === 0 ? (
-                  <EmptyHint>Sem zonas com carga.</EmptyHint>
+                  <EmptyHint>{t('overview.noZoneLoad')}</EmptyHint>
                 ) : (
                   <div className="flex max-h-64 flex-col overflow-y-auto">
                     {zoneLoads.map((row) => (
@@ -496,28 +542,32 @@ export function Overview() {
             {/* Quota gaps */}
             <SectionCard
               padded={quotaGaps.length === 0}
-              title="Equipamentos abaixo da quota"
-              subtitle="PMs ainda por agendar para cumprir o contrato (PM/ano)"
+              title={t('overview.quotaGaps')}
+              subtitle={t('overview.quotaGapsSubtitle')}
             >
               {quotaGaps.length === 0 ? (
                 <div className="flex items-center gap-2 text-sm text-gray-600">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: '#0ca30c' }} />
-                  Todos os equipamentos activos têm as PMs do ano agendadas.
+                  {t('overview.quotaComplete')}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="pm-table">
                     <thead>
                       <tr>
-                        <th className="py-1.5 pr-2 font-medium">Equipamento</th>
-                        <th className="py-1.5 pr-2 font-medium">Hospital</th>
-                        <th className="py-1.5 pr-2 font-medium">Modalidade</th>
-                        <th className="py-1.5 pr-2 text-right font-medium">Agendadas</th>
-                        <th className="py-1.5 pr-2 text-right font-medium">Em falta</th>
+                        <SortableTh {...quotaGapSortableProps('equipment')}>{t('common.equipment')}</SortableTh>
+                        <SortableTh {...quotaGapSortableProps('hospital')}>{t('common.hospital')}</SortableTh>
+                        <SortableTh {...quotaGapSortableProps('modality')}>{t('common.modality')}</SortableTh>
+                        <SortableTh align="right" {...quotaGapSortableProps('scheduled')}>
+                          {t('overview.col.scheduled')}
+                        </SortableTh>
+                        <SortableTh align="right" {...quotaGapSortableProps('gap')}>
+                          {t('overview.col.missing')}
+                        </SortableTh>
                       </tr>
                     </thead>
                     <tbody>
-                      {quotaGaps.map(({ eq, scheduled, gap }) => (
+                      {sortedQuotaGaps.map(({ eq, scheduled, gap }) => (
                         <tr key={eq.id}>
                           <td className="py-1.5 pr-2 text-gray-800">{eq.name}</td>
                           <td className="py-1.5 pr-2 text-gray-600">{eq.hospital_short_name ?? eq.hospital_name}</td>

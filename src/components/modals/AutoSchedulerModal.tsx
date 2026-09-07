@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { pt } from 'date-fns/locale';
 import { useBulkAutoScheduler } from '../../hooks';
 import type { BulkSchedulerResult } from '../../hooks';
 import type { ProposedPMEvent } from '../../lib/autoScheduler';
@@ -15,6 +14,8 @@ import {
 } from '../../stores';
 import type { PMEvent, PMEventInsert } from '../../types';
 import { Badge, Button, Modal } from '../ui';
+import { useT, type TFunction } from '../../i18n';
+import { conflictMessage } from '../../i18n/labels';
 
 interface AutoSchedulerModalProps {
   defaultYear: number;
@@ -28,16 +29,20 @@ type Phase = 'setup' | 'generating' | 'review';
 // rascunho e podem ser substituídos por uma nova geração; cancelled é irrelevante.
 const LOCKED_STATUSES = new Set(['confirmed', 'in_progress', 'completed']);
 
+// DD/MM/AAAA é o formato em toda a app e é o mesmo nas duas línguas — o `locale` do
+// date-fns que aqui estava só influenciava nomes de mês/dia, que este formato não usa.
 function formatDate(date: Date) {
-  return format(date, 'dd/MM/yyyy', { locale: pt });
+  return format(date, 'dd/MM/yyyy');
 }
 
 // Linha individual de proposta PM (dentro do card de cada equipamento)
 function ProposalRow({
+  t,
   proposal,
   index,
   missingEngineer,
 }: {
+  t: TFunction;
   proposal: ProposedPMEvent;
   index: number;
   missingEngineer: boolean;
@@ -55,7 +60,9 @@ function ProposalRow({
             : 'border-green-100 bg-green-50'
       }`}
     >
-      <span className="mt-0.5 shrink-0 font-mono text-xs text-gray-500">PM {index + 1}</span>
+      <span className="mt-0.5 shrink-0 font-mono text-xs text-gray-500">
+        {t('scheduler.pmIndex', { index: index + 1 })}
+      </span>
       <div className="flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-gray-800">
@@ -64,16 +71,21 @@ function ProposalRow({
           {/* De onde saiu a data proposta, e o que precisa de atenção — tudo em Badge,
               com os mesmos tons do resto da app (antes eram cinco pastilhas à mão). */}
           {proposal.anchorSource === 'existing_current_year' && (
-            <Badge tone="accent">ancorado em PM já marcada</Badge>
+            <Badge tone="accent">{t('scheduler.anchorExisting')}</Badge>
           )}
-          {proposal.anchorSource === 'historical' && <Badge tone="brand">ancorado no histórico</Badge>}
-          {proposal.anchorSource === 'base_distribution' && <Badge tone="neutral">distribuição base</Badge>}
-          {missingEngineer && <Badge tone="neutral">sem engenheiro</Badge>}
-          {needsReview && <Badge tone="danger">revisão manual necessária</Badge>}
+          {proposal.anchorSource === 'historical' && <Badge tone="brand">{t('scheduler.anchorHistorical')}</Badge>}
+          {proposal.anchorSource === 'base_distribution' && (
+            <Badge tone="neutral">{t('scheduler.anchorBase')}</Badge>
+          )}
+          {missingEngineer && <Badge tone="neutral">{t('scheduler.noEngineerTag')}</Badge>}
+          {needsReview && <Badge tone="danger">{t('scheduler.needsReview')}</Badge>}
         </div>
         {proposal.previousActualDate && (
           <div className="mt-0.5 text-xs text-gray-500">
-            Anterior: {formatDate(proposal.previousActualDate)} · intervalo proposto: {proposal.intervalDays} dias
+            {t('scheduler.previousDate', {
+              date: formatDate(proposal.previousActualDate),
+              days: proposal.intervalDays,
+            })}
           </div>
         )}
         {proposal.adjustmentReason && (
@@ -81,7 +93,7 @@ function ProposalRow({
         )}
         {proposal.conflicts.map((c, ci) => (
           <div key={ci} className="mt-0.5 text-xs text-red-700">
-            {c.message}
+            {conflictMessage(c, t)}
           </div>
         ))}
       </div>
@@ -91,11 +103,13 @@ function ProposalRow({
 
 // Card de resultado por equipamento
 function EquipmentResultCard({
+  t,
   result,
   selected,
   onToggle,
   validEngineerIds,
 }: {
+  t: TFunction;
   result: BulkSchedulerResult;
   selected: boolean;
   onToggle: () => void;
@@ -124,19 +138,23 @@ function EquipmentResultCard({
           </div>
           {result.comparison && (
             <div className="mt-0.5 text-xs text-gray-500">
-              Coerência: {result.comparison.coherenceScore}% · intervalo médio proposto:{' '}
-              {result.comparison.proposedAverageIntervalDays} dias
+              {t('scheduler.coherence', {
+                score: result.comparison.coherenceScore,
+                days: result.comparison.proposedAverageIntervalDays,
+              })}
             </div>
           )}
         </div>
         <div className="shrink-0">
           {result.error ? (
-            <Badge tone="danger">Erro</Badge>
+            <Badge tone="danger">{t('common.error')}</Badge>
           ) : allOk ? (
-            <Badge tone="success">{result.proposals.length} PMs · sem conflitos</Badge>
+            <Badge tone="success">{t('scheduler.noConflicts', { count: result.proposals.length })}</Badge>
           ) : (
             <Badge tone="warning">
-              {result.proposals.filter((p) => p.requiresManualReview || p.conflicts.length > 0).length} com alertas
+              {t('scheduler.withAlerts', {
+                count: result.proposals.filter((p) => p.requiresManualReview || p.conflicts.length > 0).length,
+              })}
             </Badge>
           )}
         </div>
@@ -145,11 +163,12 @@ function EquipmentResultCard({
         {result.error ? (
           <p className="text-sm text-red-600">{result.error}</p>
         ) : result.proposals.length === 0 ? (
-          <p className="text-sm text-gray-400">Nenhuma proposta gerada.</p>
+          <p className="text-sm text-gray-400">{t('scheduler.noProposals')}</p>
         ) : (
           result.proposals.map((p, i) => (
             <ProposalRow
               key={i}
+              t={t}
               proposal={p}
               index={i}
               missingEngineer={!validEngineerIds.has(p.engineerId)}
@@ -162,6 +181,7 @@ function EquipmentResultCard({
 }
 
 export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalProps) {
+  const t = useT();
   const equipment = useEquipmentStore((state) => state.equipment);
   const engineers = useEngineerStore((state) => state.engineers);
   const zones = useZoneStore((state) => state.zones);
@@ -273,7 +293,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
     } catch (err) {
       pushToast({
         variant: 'error',
-        message: err instanceof Error ? err.message : 'Falha ao carregar os eventos do ano alvo.',
+        message: err instanceof Error ? err.message : t('scheduler.loadYearFailed'),
       });
       setPhase('setup');
     }
@@ -298,7 +318,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
     } catch (err) {
       pushToast({
         variant: 'error',
-        message: err instanceof Error ? err.message : 'Falha ao verificar PMs existentes.',
+        message: err instanceof Error ? err.message : t('scheduler.checkExistingFailed'),
       });
       return;
     }
@@ -306,8 +326,11 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
     if (replaceable.length > 0) {
       const affectedEquipment = new Set(replaceable.map((event) => event.equipment_id)).size;
       const confirmed = window.confirm(
-        `${affectedEquipment} equipamento(s) já têm ${replaceable.length} PM(s) planeada(s) para ${targetYear}. ` +
-          'Serão substituídas pelas novas propostas. Esta acção não pode ser desfeita. Continuar?',
+        t('scheduler.confirmReplace', {
+          equipment: affectedEquipment,
+          pms: replaceable.length,
+          year: targetYear,
+        }),
       );
       if (!confirmed) return;
     }
@@ -343,7 +366,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
       }
 
       if (toSave.length === 0) {
-        pushToast({ variant: 'warning', message: 'Nenhum evento seleccionado para guardar.' });
+        pushToast({ variant: 'warning', message: t('scheduler.nothingSelected') });
         return;
       }
 
@@ -351,7 +374,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
       // seguir, o utilizador fica com as PMs novas (e as antigas por remover à mão),
       // nunca com o equipamento sem nenhuma PM.
       await createBulkEvents(toSave);
-      const successMessage = `${toSave.length} PM(s) criada(s) com sucesso para o plano ${targetYear}.`;
+      const successMessage = t('scheduler.savedOk', { count: toSave.length, year: targetYear });
 
       if (replaceable.length > 0) {
         try {
@@ -359,7 +382,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
         } catch {
           pushToast({
             variant: 'warning',
-            message: 'PMs novas criadas, mas não foi possível remover as antigas — remove-as manualmente no calendário.',
+            message: t('scheduler.deleteOldFailed'),
           });
           onClose();
           return;
@@ -369,7 +392,10 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
       if (withoutEngineer > 0) {
         pushToast({
           variant: 'warning',
-          message: `${successMessage} (${withoutEngineer} sem engenheiro atribuído — atribui-os manualmente no calendário)`,
+          message: t('scheduler.savedWithoutEngineer', {
+            message: successMessage,
+            count: withoutEngineer,
+          }),
         });
       } else {
         pushToast({ variant: 'success', message: successMessage });
@@ -378,7 +404,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
     } catch (err) {
       pushToast({
         variant: 'error',
-        message: err instanceof Error ? err.message : 'Falha ao guardar os eventos.',
+        message: err instanceof Error ? err.message : t('scheduler.saveFailed'),
       });
     } finally {
       setSaving(false);
@@ -402,6 +428,8 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
         preview.push({
           id: `__preview__${result.equipmentId}_${i}`,
           equipment_id: proposal.equipmentId,
+          calendar_label: null,
+          client_description: null,
           engineer_id: validEngineerIds.has(proposal.engineerId) ? proposal.engineerId : null,
           start_date: format(proposal.proposedStartDate, 'yyyy-MM-dd'),
           end_date: format(proposal.proposedEndDate, 'yyyy-MM-dd'),
@@ -450,19 +478,18 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
         <div className="flex w-full max-w-3xl items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3 shadow-modal">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900">
-              Pré-visualização · Plano {targetYear}
+              {t('scheduler.previewTitle', { year: targetYear })}
             </p>
             <p className="truncate text-xs text-gray-500">
-              {savedCount} PM{savedCount !== 1 ? 's' : ''} proposta{savedCount !== 1 ? 's' : ''} a tracejado no
-              calendário. Confirma para guardar ou volta às propostas para ajustar.
+              {t('scheduler.previewHint', { count: savedCount })}
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
             <Button variant="secondary" onClick={exitPreview} disabled={saving}>
-              ← Voltar às propostas
+              {t('scheduler.backToProposals')}
             </Button>
             <Button onClick={handleSave} disabled={saving || savedCount === 0 || !canCreatePM}>
-              {saving ? 'A guardar…' : `Confirmar e guardar (${savedCount})`}
+              {saving ? t('common.saving') : t('scheduler.confirmSave', { count: savedCount })}
             </Button>
           </div>
         </div>
@@ -475,14 +502,17 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
       tall
       size="xl"
       onClose={onClose}
-      title={`Geração Automática · Plano ${targetYear}`}
+      title={t('scheduler.title', { year: targetYear })}
       description={
         phase === 'setup'
-          ? 'Selecciona os equipamentos e o ano para gerar propostas de PM com base no histórico real.'
+          ? t('scheduler.setupDescription')
           : phase === 'review'
-            ? `${totalProposals} propostas para ${targetYear} · ${
-                totalConflicts > 0 ? `${totalConflicts} com alertas · ` : ''
-              }${savedCount} seleccionadas para guardar`
+            ? t('scheduler.reviewDescription', {
+                proposals: totalProposals,
+                year: targetYear,
+                alerts: totalConflicts > 0 ? t('scheduler.reviewAlerts', { count: totalConflicts }) : '',
+                selected: savedCount,
+              })
             : undefined
       }
       footer={
@@ -490,26 +520,26 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
           <div>
             {phase === 'review' && (
               <Button variant="ghost" onClick={handleBack} disabled={saving}>
-                ← Voltar a seleccionar
+                {t('scheduler.backToSelection')}
               </Button>
             )}
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onClose} disabled={generating || saving}>
-              Cancelar
+              {t('common.cancel')}
             </Button>
             {phase === 'setup' && (
               <Button onClick={handleGenerate} disabled={selectedEquipmentIds.size === 0}>
-                Gerar propostas ({selectedEquipmentIds.size})
+                {t('scheduler.generate', { count: selectedEquipmentIds.size })}
               </Button>
             )}
             {phase === 'review' && (
               <>
                 <Button variant="secondary" onClick={enterPreview} disabled={saving || savedCount === 0}>
-                  Pré-visualizar no calendário
+                  {t('scheduler.previewInCalendar')}
                 </Button>
                 <Button onClick={handleSave} disabled={saving || savedCount === 0 || !canCreatePM}>
-                  {saving ? 'A guardar…' : `Confirmar e guardar (${savedCount} PM${savedCount !== 1 ? 's' : ''})`}
+                  {saving ? t('common.saving') : t('scheduler.confirmSavePms', { count: savedCount })}
                 </Button>
               </>
             )}
@@ -525,12 +555,12 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
             <div className="space-y-5">
               {/* Ano alvo */}
               <div className="flex items-center gap-3">
-                <label className="w-32 text-sm font-medium text-gray-700">Ano do plano</label>
+                <label className="w-32 text-sm font-medium text-gray-700">{t('scheduler.planYear')}</label>
                 {/* Mesmo selector segmentado do ano de planeamento na Topbar. */}
                 <div className="flex items-center rounded-md border border-gray-300 bg-white shadow-sm">
                   <button
                     type="button"
-                    aria-label="Ano anterior"
+                    aria-label={t('topbar.previousYear')}
                     className="h-8 rounded-l-md px-2.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
                     onClick={() => setTargetYear((y) => y - 1)}
                   >
@@ -541,7 +571,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
                   </span>
                   <button
                     type="button"
-                    aria-label="Ano seguinte"
+                    aria-label={t('topbar.nextYear')}
                     className="h-8 rounded-r-md px-2.5 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
                     onClick={() => setTargetYear((y) => y + 1)}
                   >
@@ -553,17 +583,17 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
               {/* Selecção de equipamentos */}
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">Equipamentos</span>
+                  <span className="text-sm font-medium text-gray-700">{t('scheduler.equipment')}</span>
                   <div className="flex gap-1">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => setSelectedEquipmentIds(new Set(activeEquipment.map((e) => e.id)))}
                     >
-                      Todos
+                      {t('scheduler.selectAll')}
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => setSelectedEquipmentIds(new Set())}>
-                      Nenhum
+                      {t('scheduler.selectNone')}
                     </Button>
                   </div>
                 </div>
@@ -606,7 +636,9 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
                                 style={{ backgroundColor: eq.color }}
                               />
                               <span className="truncate">{eq.name}</span>
-                              <span className="shrink-0 text-xs text-gray-400">({eq.pm_per_year}×/ano)</span>
+                              <span className="shrink-0 text-xs text-gray-400">
+                                {t('scheduler.pmPerYearTag', { count: eq.pm_per_year })}
+                              </span>
                             </label>
                           ))}
                         </div>
@@ -614,19 +646,15 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
                     );
                   })}
                   {activeEquipment.length === 0 && (
-                    <p className="py-4 text-center text-sm text-gray-400">Sem equipamentos activos.</p>
+                    <p className="py-4 text-center text-sm text-gray-400">{t('scheduler.noActiveEquipment')}</p>
                   )}
                 </div>
               </div>
 
               {/* Nota informativa */}
               <div className="rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-xs text-brand-800">
-                <strong>Como funciona:</strong> Se o hospital já tiver alguma PM marcada em {targetYear}, o
-                plano ancora-se nessa data e as PMs seguintes mantêm o mesmo dia da semana, espaçadas ~3
-                meses (13 semanas para 4 PMs/ano). Caso
-                contrário, ancora nas datas <em>reais</em> de execução de {targetYear - 1} (Regra 6) e, sem
-                histórico, usa a distribuição base (Jan/Abr/Jul/Out para 4 PMs). Nunca gera conflitos de
-                engenheiro (R1), feriados (R2) ou fins-de-semana não contratualizados (R5).
+                <strong>{t('scheduler.howItWorksTitle')}</strong>{' '}
+                {t('scheduler.howItWorks', { year: targetYear, previousYear: targetYear - 1 })}
               </div>
             </div>
           )}
@@ -636,7 +664,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
             <div className="flex flex-col items-center justify-center gap-4 py-16">
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand-600 border-t-transparent" />
               <p className="text-sm font-medium text-gray-700">
-                A processar {progress.current} de {progress.total} equipamento(s)…
+                {t('scheduler.progress', { current: progress.current, total: progress.total })}
               </p>
               <div className="w-64 rounded-full bg-gray-200">
                 <div
@@ -653,21 +681,23 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
               {lockedEquipment.length > 0 && (
                 <div className="rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-800">
                   <strong>
-                    {lockedEquipment.length} equipamento(s) já têm manutenção confirmada pelo cliente para{' '}
-                    {targetYear}
+                    {t('scheduler.lockedEquipment', { count: lockedEquipment.length, year: targetYear })}
                   </strong>{' '}
-                  — não é necessário gerar novamente: {lockedEquipment.map((e) => e.name).join(', ')}.
+                  {t('scheduler.lockedEquipmentHint', {
+                    names: lockedEquipment.map((e) => e.name).join(', '),
+                  })}
                 </div>
               )}
               {totalConflicts > 0 && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  <strong>{totalConflicts} proposta(s) com alertas</strong> — marcadas a laranja/vermelho abaixo.
-                  Podes guardar na mesma (ficam com status <em>planned</em>) e corrigir manualmente no calendário.
+                  <strong>{t('scheduler.alertsTitle', { count: totalConflicts })}</strong>{' '}
+                  {t('scheduler.alertsHint')}
                 </div>
               )}
               {results.map((result) => (
                 <EquipmentResultCard
                   key={result.equipmentId}
+                  t={t}
                   result={result}
                   validEngineerIds={validEngineerIds}
                   selected={selectedResults.has(result.equipmentId)}

@@ -3,6 +3,7 @@ import type FullCalendar from '@fullcalendar/react';
 import { useCalendarStore, useUiStore } from '../../stores';
 import type { CalendarViewName, EventLineDensity } from '../../stores';
 import { SegmentedGroup, SegmentedOption } from '../ui';
+import { useT, type TranslationKey } from '../../i18n';
 
 interface CalendarToolbarProps {
   calendarRef: RefObject<FullCalendar>;
@@ -10,21 +11,22 @@ interface CalendarToolbarProps {
   rightSlot?: ReactNode;
 }
 
-const VIEW_LABELS: { view: CalendarViewName; label: string }[] = [
-  { view: 'multiMonthYear', label: 'Ano' },
-  { view: 'multiMonthQuarter', label: 'Trimestre' },
-  { view: 'dayGridMonth', label: 'Mês' },
-  { view: 'timeGridWeek', label: 'Semana' },
+const VIEW_LABELS: { view: CalendarViewName; labelKey: TranslationKey }[] = [
+  { view: 'multiMonthYear', labelKey: 'calendar.view.year' },
+  { view: 'multiMonthQuarter', labelKey: 'calendar.view.quarter' },
+  { view: 'dayGridMonth', labelKey: 'calendar.view.month' },
+  { view: 'timeGridWeek', labelKey: 'calendar.view.week' },
 ];
 
-const DENSITY_OPTIONS: { density: EventLineDensity; label: string; title: string }[] = [
-  { density: 1, label: '1 linha', title: 'PMs compactas — cabem mais sobrepostas no mesmo dia' },
-  { density: 2, label: '2 linhas', title: 'PMs detalhadas — equipamento + hospital' },
+const DENSITY_OPTIONS: { density: EventLineDensity; labelKey: TranslationKey; titleKey: TranslationKey }[] = [
+  { density: 1, labelKey: 'calendar.density.one', titleKey: 'calendar.density.oneTitle' },
+  { density: 2, labelKey: 'calendar.density.two', titleKey: 'calendar.density.twoTitle' },
 ];
 
 // Barra de controlos e vistas — substitui o headerToolbar nativo do FullCalendar para
 // não depender de mais nenhum plugin além dos Standard (MIT).
 export function CalendarToolbar({ calendarRef, rightSlot }: CalendarToolbarProps) {
+  const t = useT();
   const activeView = useCalendarStore((state) => state.activeView);
   const setActiveView = useCalendarStore((state) => state.setActiveView);
   const visibleTitle = useCalendarStore((state) => state.visibleTitle);
@@ -40,7 +42,7 @@ export function CalendarToolbar({ calendarRef, rightSlot }: CalendarToolbarProps
           <button
             type="button"
             onClick={() => calendarRef.current?.getApi().prev()}
-            aria-label="Período anterior"
+            aria-label={t('calendar.previousPeriod')}
             className="h-8 rounded-l-md px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
           >
             ‹
@@ -50,12 +52,12 @@ export function CalendarToolbar({ calendarRef, rightSlot }: CalendarToolbarProps
             onClick={() => calendarRef.current?.getApi().today()}
             className="h-8 border-x border-gray-200 px-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
           >
-            Hoje
+            {t('calendar.today')}
           </button>
           <button
             type="button"
             onClick={() => calendarRef.current?.getApi().next()}
-            aria-label="Período seguinte"
+            aria-label={t('calendar.nextPeriod')}
             className="h-8 rounded-r-md px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
           >
             ›
@@ -66,9 +68,9 @@ export function CalendarToolbar({ calendarRef, rightSlot }: CalendarToolbarProps
 
       <div className="flex items-center gap-2">
         <SegmentedGroup>
-          {VIEW_LABELS.map(({ view, label }) => (
+          {VIEW_LABELS.map(({ view, labelKey }) => (
             <SegmentedOption key={view} active={activeView === view} onClick={() => setActiveView(view)}>
-              {label}
+              {t(labelKey)}
             </SegmentedOption>
           ))}
         </SegmentedGroup>
@@ -76,14 +78,14 @@ export function CalendarToolbar({ calendarRef, rightSlot }: CalendarToolbarProps
            (uiStore), não muda por vista: útil sobretudo em Ano/Trimestre, onde o
            FullCalendar não deixa desligar o limite "mais +N" por outra via. */}
         <SegmentedGroup>
-          {DENSITY_OPTIONS.map(({ density, label, title }) => (
+          {DENSITY_OPTIONS.map(({ density, labelKey, titleKey }) => (
             <SegmentedOption
               key={density}
               active={eventLineDensity === density}
               onClick={() => setEventLineDensity(density)}
-              title={title}
+              title={t(titleKey)}
             >
-              {label}
+              {t(labelKey)}
             </SegmentedOption>
           ))}
         </SegmentedGroup>

@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { APPROVAL_TRACKS, APPROVAL_TRACK_LABELS } from '../../lib/approvalTrack';
+import { APPROVAL_TRACKS } from '../../lib/approvalTrack';
 import { useEquipmentStore, useModalityStore, useUiStore } from '../../stores';
 import type { ApprovalTrack } from '../../types';
 import { Button, EmptyState, Modal } from '../ui';
+import { useT } from '../../i18n';
+import { APPROVAL_TRACK_KEYS } from '../../i18n/labels';
 
 /** Valor-sentinela usado como opção "Editar modalidades…" dentro dos dropdowns de
  *  modalidade — ao ser seleccionado abre este modal em vez de gravar como valor. */
@@ -16,6 +18,7 @@ interface ModalityManagerModalProps {
 // atómica rename_modality, que propaga o novo nome a equipment.modality na BD; a seguir
 // recarrega os equipamentos para a alteração ficar visível de imediato.
 export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
+  const t = useT();
   const modalities = useModalityStore((state) => state.modalities);
   const createModality = useModalityStore((state) => state.createModality);
   const renameModality = useModalityStore((state) => state.renameModality);
@@ -37,7 +40,7 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
       await createModality(name);
       setNewName('');
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao adicionar modalidade.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('modality.addFailed') });
     } finally {
       setBusy(false);
     }
@@ -54,10 +57,10 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
       await renameModality(oldName, name);
       // Propaga o novo nome aos equipamentos já carregados (a coluna modality é texto livre).
       await fetchEquipment();
-      pushToast({ variant: 'success', message: `Modalidade renomeada para "${name}".` });
+      pushToast({ variant: 'success', message: t('modality.renamed', { name }) });
       setEditingId(null);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao renomear modalidade.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('modality.renameFailed') });
     } finally {
       setBusy(false);
     }
@@ -69,10 +72,10 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
       await setApprovalTrack(id, track);
       pushToast({
         variant: 'success',
-        message: `"${name}" passa a ser aprovada na via ${APPROVAL_TRACK_LABELS[track]}.`,
+        message: t('modality.trackChanged', { name, track: t(APPROVAL_TRACK_KEYS[track]) }),
       });
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao mudar a via.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('modality.trackFailed') });
     } finally {
       setBusy(false);
     }
@@ -83,7 +86,7 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
     try {
       await deleteModality(id, name);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao remover modalidade.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('modality.removeFailed') });
     } finally {
       setBusy(false);
     }
@@ -91,24 +94,18 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
 
   return (
     <Modal
-      title="Gerir modalidades"
+      title={t('modality.manageTitle')}
       size="md"
       onClose={onClose}
-      description={
-        <>
-          Renomear propaga automaticamente aos equipamentos que a usam. Não é possível remover uma modalidade em uso.
-          A <strong>via</strong> decide em que processo de aprovação entram os equipamentos: a via “Braquiterapia”
-          gera uma proposta separada da geral, com validação do engenheiro, aprovação do cliente e carta próprias.
-        </>
-      }
+      description={t('modality.manageHelp')}
       footer={
         <Button onClick={onClose} disabled={busy}>
-          Fechar
+          {t('common.close')}
         </Button>
       }
     >
       <div className="mb-3 max-h-72 overflow-y-auto rounded-lg border border-gray-200">
-        {modalities.length === 0 && <EmptyState size="compact">Sem modalidades registadas.</EmptyState>}
+        {modalities.length === 0 && <EmptyState size="compact">{t('modality.empty')}</EmptyState>}
         {modalities.map((modality) => (
           <div key={modality.id} className="flex items-center gap-1.5 border-b border-gray-100 px-3 py-2 last:border-0">
             {editingId === modality.id ? (
@@ -124,10 +121,10 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
                   }}
                 />
                 <Button variant="secondary" size="sm" onClick={() => setEditingId(null)} disabled={busy}>
-                  Cancelar
+                  {t('common.cancel')}
                 </Button>
                 <Button size="sm" onClick={() => handleRename(modality.name)} disabled={busy}>
-                  Guardar
+                  {t('common.save')}
                 </Button>
               </>
             ) : (
@@ -139,14 +136,14 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
                   className="pm-field px-1.5 py-1 text-xs"
                   value={modality.approval_track}
                   disabled={busy}
-                  title="Via de aprovação dos equipamentos desta modalidade."
+                  title={t('modality.trackTitle')}
                   onChange={(event) =>
                     handleTrackChange(modality.id, modality.name, event.target.value as ApprovalTrack)
                   }
                 >
                   {APPROVAL_TRACKS.map((track) => (
                     <option key={track} value={track}>
-                      {APPROVAL_TRACK_LABELS[track]}
+                      {t(APPROVAL_TRACK_KEYS[track])}
                     </option>
                   ))}
                 </select>
@@ -159,7 +156,7 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
                   }}
                   disabled={busy}
                 >
-                  Renomear
+                  {t('modality.rename')}
                 </Button>
                 <Button
                   variant="dangerGhost"
@@ -167,7 +164,7 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
                   onClick={() => handleDelete(modality.id, modality.name)}
                   disabled={busy}
                 >
-                  Remover
+                  {t('common.remove')}
                 </Button>
               </>
             )}
@@ -177,14 +174,14 @@ export function ModalityManagerModal({ onClose }: ModalityManagerModalProps) {
 
       <div className="flex gap-2">
         <input
-          placeholder="Nova modalidade"
+          placeholder={t('modality.newPlaceholder')}
           className="pm-field flex-1"
           value={newName}
           onChange={(event) => setNewName(event.target.value)}
           onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
         />
         <Button onClick={handleAdd} disabled={busy || !newName.trim()}>
-          Adicionar
+          {t('common.add')}
         </Button>
       </div>
     </Modal>

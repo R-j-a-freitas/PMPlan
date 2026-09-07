@@ -5,3 +5,4 @@ export * from './useDragDrop';
 export * from './useHolidays';
 export * from './useOutlookSync';
 export * from './useSourceChanges';
+export * from './useTableSort';

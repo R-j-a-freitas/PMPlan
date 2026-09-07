@@ -30,6 +30,9 @@ import type {
   HolidayRuleInsert,
   HolidayRuleUpdate,
   Hospital,
+  HospitalContact,
+  HospitalContactInsert,
+  HospitalContactUpdate,
   HospitalInsert,
   HospitalUpdate,
   HospitalWithZone,
@@ -61,6 +64,12 @@ export type Database = {
         Row: Hospital;
         Insert: HospitalInsert;
         Update: HospitalUpdate;
+        Relationships: [];
+      };
+      hospital_contacts: {
+        Row: HospitalContact;
+        Insert: HospitalContactInsert;
+        Update: HospitalContactUpdate;
         Relationships: [];
       };
       engineers: {

@@ -16,7 +16,7 @@ export function buildProposalEmailTableHtml(data: ProposalLetterData): string {
     .flatMap((group) =>
       group.dates.map(
         (date) =>
-          `<tr><td style="${cell}">${data.hospitalName}</td><td style="${cell}">${group.model}</td><td style="${cell}">${group.serialNumber}</td><td style="${cell}">${group.taskLabel}</td><td style="${cell}">${date}</td></tr>`,
+          `<tr><td style="${cell}">${data.hospitalName}</td><td style="${cell}">${group.model}</td><td style="${cell}">${group.serialNumber}</td><td style="${cell}">${date.taskLabel}</td><td style="${cell}">${date.date}</td></tr>`,
       ),
     )
     .join('');

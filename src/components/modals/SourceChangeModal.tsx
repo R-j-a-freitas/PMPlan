@@ -3,6 +3,7 @@ import { useSourceChanges } from '../../hooks';
 import { useEquipmentStore, useUiStore } from '../../stores';
 import { Button, DateInput, EmptyState, Modal } from '../ui';
 import { toDisplayDate } from '../../lib/dateFormat';
+import { useT } from '../../i18n';
 
 interface SourceChangeModalProps {
   equipmentId: string;
@@ -11,6 +12,7 @@ interface SourceChangeModalProps {
 
 // Troca de fonte radioactiva — específico de equipamentos de Braquiterapia (secção 1).
 export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalProps) {
+  const t = useT();
   const equipment = useEquipmentStore((state) => state.equipment.find((item) => item.id === equipmentId));
   const { sourceChanges, createSourceChange, loading } = useSourceChanges(equipmentId);
   const pushToast = useUiStore((state) => state.pushToast);
@@ -25,7 +27,7 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
 
   async function handleSave() {
     if (!plannedDate) {
-      pushToast({ variant: 'error', message: 'Indique a data planeada.' });
+      pushToast({ variant: 'error', message: t('source.dateRequired') });
       return;
     }
     setSaving(true);
@@ -47,7 +49,7 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
       setManufacturer('');
       setNotes('');
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao gravar.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('pm.saveFailed') });
     } finally {
       setSaving(false);
     }
@@ -55,23 +57,23 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
 
   return (
     <Modal
-      title={`Trocas de fonte — ${equipment?.name ?? 'Equipamento'}`}
+      title={t('source.title', { equipment: equipment?.name ?? t('common.equipment') })}
       size="md"
       onClose={onClose}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Fechar
+            {t('common.close')}
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'A guardar…' : 'Adicionar'}
+            {saving ? t('common.saving') : t('common.add')}
           </Button>
         </>
       }
     >
       <div className="mb-4 max-h-40 overflow-y-auto rounded-lg border border-gray-200">
-        {loading && <EmptyState size="compact">A carregar…</EmptyState>}
-        {!loading && sourceChanges.length === 0 && <EmptyState size="compact">Sem trocas registadas.</EmptyState>}
+        {loading && <EmptyState size="compact">{t('common.loading')}</EmptyState>}
+        {!loading && sourceChanges.length === 0 && <EmptyState size="compact">{t('source.empty')}</EmptyState>}
         {sourceChanges.map((change) => (
           <div key={change.id} className="border-b border-gray-100 px-3 py-2 text-sm last:border-0">
             <span className="font-medium text-gray-800">{toDisplayDate(change.planned_date)}</span> —{' '}
@@ -83,7 +85,7 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
 
       <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-sm">
-            Tipo de fonte
+            {t('source.type')}
             <input
               className="pm-field"
               value={sourceType}
@@ -91,7 +93,7 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            Actividade inicial (GBq)
+            {t('source.initialActivity')}
             <input
               type="number"
               className="pm-field"
@@ -100,11 +102,11 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            Data planeada
+            {t('source.plannedDate')}
             <DateInput value={plannedDate} onChange={setPlannedDate} />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            Nº de série
+            {t('common.serialNumber')}
             <input
               className="pm-field"
               value={serialNumber}
@@ -112,7 +114,7 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
             />
           </label>
           <label className="col-span-2 flex flex-col gap-1 text-sm">
-            Fabricante
+            {t('source.manufacturer')}
             <input
               className="pm-field"
               value={manufacturer}
@@ -120,7 +122,7 @@ export function SourceChangeModal({ equipmentId, onClose }: SourceChangeModalPro
             />
           </label>
           <label className="col-span-2 flex flex-col gap-1 text-sm">
-            Notas
+            {t('common.notes')}
             <textarea
               className="pm-field"
               rows={2}

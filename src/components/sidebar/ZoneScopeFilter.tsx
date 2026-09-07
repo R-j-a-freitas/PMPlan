@@ -3,6 +3,7 @@ import { useEquipmentStore, useZoneStore } from '../../stores';
 import { expandZoneSelection } from '../../lib/zoneTree';
 import type { Zone } from '../../types';
 import { SIDEBAR_INDENT_PX, SidebarSection } from './SidebarSection';
+import { useT } from '../../i18n';
 
 interface ZoneRowProps {
   zone: Zone;
@@ -23,6 +24,7 @@ function ZoneRow({
   collapsedZoneIds,
   onToggleCollapse,
 }: ZoneRowProps) {
+  const t = useT();
   const children = allZones.filter((candidate) => candidate.parent_zone_id === zone.id);
   const hasChildren = children.length > 0;
   const collapsed = collapsedZoneIds.has(zone.id);
@@ -37,7 +39,11 @@ function ZoneRow({
           <button
             type="button"
             onClick={() => onToggleCollapse(zone.id)}
-            aria-label={collapsed ? `Expandir ${zone.name}` : `Colapsar ${zone.name}`}
+            aria-label={
+              collapsed
+                ? t('sidebar.expandSection', { name: zone.name })
+                : t('sidebar.collapseSection', { name: zone.name })
+            }
             className="pm-sidebar-caret"
           >
             {collapsed ? '▸' : '▾'}
@@ -76,6 +82,7 @@ function ZoneRow({
 // Também filtra o calendário directamente em OR com engenheiros/equipamentos marcados
 // (ver MainCalendar) — restringe ao mesmo tempo o que aparece nas listas seleccionáveis.
 export function ZoneScopeFilter() {
+  const t = useT();
   const zones = useZoneStore((state) => state.zones);
   const selectedZoneIds = useZoneStore((state) => state.selectedZoneIds);
   const toggleZoneSelection = useZoneStore((state) => state.toggleZoneSelection);
@@ -108,7 +115,7 @@ export function ZoneScopeFilter() {
   if (topLevelZones.length === 0) return null;
 
   return (
-    <SidebarSection title="Zonas">
+    <SidebarSection title={t('sidebar.zones')}>
       <div className="flex flex-col">
         {topLevelZones.map((zone) => (
           <ZoneRow

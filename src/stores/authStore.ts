@@ -3,6 +3,7 @@ import { devtools } from 'zustand/middleware';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { getPermissions } from '../lib/permissions';
+import { useLanguageStore } from './languageStore';
 import type { Permissions, UserProfile } from '../types';
 
 interface AuthState {
@@ -36,10 +37,14 @@ export const useAuthStore = create<AuthState>()(
     // era detectado.
     supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
+        useLanguageStore.getState().reset();
         set({ session: null, profile: null, loading: false, permissions: getPermissions('readonly') });
         return;
       }
       loadProfile(session).then(({ profile, error }) => {
+        // O idioma da interface segue o perfil (migração 0019); sem idioma gravado o
+        // RequireAuth desvia para o ecrã de escolha antes de mostrar a aplicação.
+        useLanguageStore.getState().syncFromProfile(profile?.language ?? null, session.user.id);
         set({
           session,
           profile,

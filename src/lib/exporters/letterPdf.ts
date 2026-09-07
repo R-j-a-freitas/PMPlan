@@ -2,15 +2,25 @@ import { jsPDF } from 'jspdf';
 import { eachDayOfInterval } from 'date-fns';
 import type { ApprovalTrack, Country, EquipmentFull, PMEvent } from '../../types';
 
+/** Um dia de intervencao com o texto que o descreve. O texto e por DIA e nao por
+ *  equipamento: a mesma maquina pode levar so a troca de fonte numa visita e a troca de
+ *  fonte mais o OTP na seguinte. */
+export interface LetterDate {
+  date: string;
+  taskLabel: string;
+}
+
 export interface LetterEquipmentGroup {
   serialNumber: string;
   /** Modelo do equipamento (ex.: "Versa HD"), mostrado ao lado do N/S para o destinatário
    *  identificar o equipamento sem ter de decorar o número de série. Vazio se desconhecido. */
   model: string;
+  /** Texto por omissao, derivado da modalidade — usado nos dias em que a PM nao traz
+   *  descricao propria. */
   taskLabel: string;
   /** Uma entrada por dia (não por intervalo) — mesma convenção das cartas de referência
    *  (DOCS/), que listam cada dia de uma intervenção em linhas separadas. */
-  dates: string[];
+  dates: LetterDate[];
 }
 
 export interface ProposalLetterData {
@@ -54,15 +64,18 @@ export function buildProposalLetterData(
 ): ProposalLetterData {
   const equipmentGroups = equipmentList
     .map((equipment): LetterEquipmentGroup => {
+      const fallback = taskLabel(equipment.modality, country);
       const dates = pmEvents
         .filter((event) => event.equipment_id === equipment.id && event.status !== 'cancelled')
-        .flatMap((event) => eachDayOfInterval({ start: new Date(event.start_date), end: new Date(event.end_date) }))
-        .sort((a, b) => a.getTime() - b.getTime())
-        .map(formatDateDDMMYYYY);
+        .flatMap((event) =>
+          eachDayOfInterval({ start: new Date(event.start_date), end: new Date(event.end_date) })
+            .map((day) => ({ day, taskLabel: event.client_description || fallback })))
+        .sort((a, b) => a.day.getTime() - b.day.getTime())
+        .map(({ day, taskLabel: label }) => ({ date: formatDateDDMMYYYY(day), taskLabel: label }));
       return {
         serialNumber: equipment.serial_number ?? equipment.name,
         model: equipment.model ?? '',
-        taskLabel: taskLabel(equipment.modality, country),
+        taskLabel: fallback,
         dates,
       };
     })
@@ -284,8 +297,8 @@ export async function generateProposalLetterPdf(data: ProposalLetterData): Promi
   const multipleEquipment = data.equipmentGroups.length > 1;
   for (const group of data.equipmentGroups) {
     if (multipleEquipment) tableRow([group.serialNumber, '', '', '', ''], true);
-    for (const date of group.dates) {
-      tableRow([data.hospitalName, group.model, group.serialNumber, group.taskLabel, date]);
+    for (const entry of group.dates) {
+      tableRow([data.hospitalName, group.model, group.serialNumber, entry.taskLabel, entry.date]);
     }
   }
   y += 8;

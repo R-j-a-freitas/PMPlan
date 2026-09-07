@@ -59,7 +59,8 @@ export function useOutlookSync(): UseOutlookSyncResult {
       return {
         hasConflict: true,
         type: 'engineer_unavailable',
-        message: `Engenheiro indisponível no Outlook entre ${busy.start} e ${busy.end}.`,
+        messageKey: 'conflict.engineerUnavailable',
+        messageParams: { start: busy.start, end: busy.end },
       };
     },
     [],

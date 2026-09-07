@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PageShell } from '../app/PageShell';
 import { EmailRecipientsEditor, TemplateEditor } from '../components/approvals';
-import { Badge, Button, Card, EmptyState, FilterChip, Modal, PageHeader, Tabs } from '../components/ui';
+import { Badge, Button, Card, EmptyState, FilterChip, Modal, PageHeader, SortableTh, Tabs } from '../components/ui';
+import { useTableSort } from '../hooks';
+import type { SortAccessors } from '../hooks';
 import { buildProposalLetterData, generateProposalLetterPdf } from '../lib/exporters/letterPdf';
 import type { ProposalLetterData } from '../lib/exporters/letterPdf';
 import { buildProposalIcs, downloadIcs } from '../lib/exporters/proposalIcs';
@@ -16,16 +18,18 @@ import type { EmailAttachment } from '../lib/proposalEmail';
 import {
   APPROVAL_TRACKS,
   APPROVAL_TRACK_COLORS,
-  APPROVAL_TRACK_LABELS,
   resolveApprovalTrack,
   templateKeyFor,
 } from '../lib/approvalTrack';
+import { useT, type TFunction, type TranslationKey } from '../i18n';
+import { APPROVAL_TRACK_KEYS } from '../i18n/labels';
 import { resolveZoneTeamLeaderId } from '../lib/zoneTree';
 import {
   SETTING_INCLUDE_TEAM_LEADERS,
   useAppSettingsStore,
   useAuthStore,
   useCalendarStore,
+  useContactStore,
   useEmailRecipientStore,
   useEngineerStore,
   useEquipmentStore,
@@ -90,27 +94,63 @@ function trackFileTag(track: ApprovalTrack): string {
 
 /** Nome do hospital com a via, para as mensagens de erro/sucesso. Sem a via, duas linhas
  *  do mesmo hospital dariam avisos indistinguíveis. */
-function bundleLabel(bundle: HospitalBundle): string {
+function bundleLabel(bundle: HospitalBundle, t: TFunction): string {
   return bundle.track === 'standard'
     ? bundle.hospital.name
-    : `${bundle.hospital.name} (${APPROVAL_TRACK_LABELS[bundle.track]})`;
+    : t('approvals.bundleLabelWithTrack', {
+        hospital: bundle.hospital.name,
+        track: t(APPROVAL_TRACK_KEYS[bundle.track]),
+      });
 }
 
-const TRACK_COLUMN_TITLES: Record<ApprovalTrack, string> = {
-  standard: 'Processo geral do hospital — todos os equipamentos que não são de uma via própria.',
-  brachytherapy:
-    'Processo independente: validação, aprovação, carta e assinatura próprias dos equipamentos de Braquiterapia.',
+const TRACK_COLUMN_TITLE_KEYS: Record<ApprovalTrack, TranslationKey> = {
+  standard: 'approvals.trackTitle.standard',
+  brachytherapy: 'approvals.trackTitle.brachytherapy',
 };
 
-const STAGE_LABELS: Record<ProposalStage, string> = {
-  draft: 'Por enviar',
-  pending_engineer: 'Aguarda engenheiro',
-  engineer_approved: 'Aprovado (engenheiro)',
-  pending_client: 'Aguarda cliente',
-  client_approved: 'Aprovado (cliente)',
-  letter_sent: 'Carta enviada',
-  signed: 'Assinado',
-  rejected: 'Rejeitado',
+/** Ordem por que o processo avança — a ordenação da coluna "Estado" segue-a. */
+const STAGE_ORDER: ProposalStage[] = [
+  'draft',
+  'pending_engineer',
+  'engineer_approved',
+  'pending_client',
+  'client_approved',
+  'letter_sent',
+  'signed',
+  'rejected',
+];
+
+const STAGE_LABEL_KEYS: Record<ProposalStage, TranslationKey> = {
+  draft: 'stage.draft',
+  pending_engineer: 'stage.pending_engineer',
+  engineer_approved: 'stage.engineer_approved',
+  pending_client: 'stage.pending_client',
+  client_approved: 'stage.client_approved',
+  letter_sent: 'stage.letter_sent',
+  signed: 'stage.signed',
+  rejected: 'stage.rejected',
+};
+
+type BundleSortKey =
+  | 'hospital'
+  | 'track'
+  | 'country'
+  | 'teamLeader'
+  | 'equipmentCount'
+  | 'pmDays'
+  | 'stage';
+
+// "Estado" ordena pela fase do processo (a ordem por que ele avança, de "Por enviar" a
+// "Assinado") e não pelo rótulo — é a coluna que responde a "o que falta fazer". "Via"
+// segue a ordem de APPROVAL_TRACKS, a mesma que o resto da app usa.
+const BUNDLE_SORT: SortAccessors<HospitalBundle, BundleSortKey> = {
+  hospital: (bundle) => bundle.hospital.name,
+  track: (bundle) => APPROVAL_TRACKS.indexOf(bundle.track),
+  country: (bundle) => bundle.hospital.country,
+  teamLeader: (bundle) => bundle.teamLeader?.name ?? null,
+  equipmentCount: (bundle) => bundle.equipmentList.length,
+  pmDays: (bundle) => bundle.events.length,
+  stage: (bundle) => STAGE_ORDER.indexOf(bundle.proposal?.stage ?? 'draft'),
 };
 
 const STAGE_COLORS: Record<ProposalStage, string> = {
@@ -143,35 +183,35 @@ type ActionKey =
 // podem mudar (pedido do cliente ou nosso) já depois de a carta ter ido — e nesse caso a
 // carta assinada deixa de corresponder ao plano. A carta é sempre regerada a partir das
 // PMs actuais no momento do envio, por isso reenviar produz o PDF actualizado.
-function resendAction(stage: ProposalStage): { key: ActionKey; label: string } | null {
+function resendAction(stage: ProposalStage): { key: ActionKey; labelKey: TranslationKey } | null {
   switch (stage) {
     case 'pending_engineer':
-      return { key: 'resend_engineer', label: 'Reenviar a engenheiro' };
+      return { key: 'resend_engineer', labelKey: 'approvals.action.resend_engineer' };
     case 'pending_client':
-      return { key: 'resend_client', label: 'Reenviar a cliente' };
+      return { key: 'resend_client', labelKey: 'approvals.action.resend_client' };
     case 'letter_sent':
-      return { key: 'resend_letter', label: 'Reenviar carta' };
+      return { key: 'resend_letter', labelKey: 'approvals.action.resend_letter' };
     case 'signed':
-      return { key: 'resend_letter', label: 'Reenviar carta actualizada' };
+      return { key: 'resend_letter', labelKey: 'approvals.action.resend_letter_updated' };
     default:
       return null;
   }
 }
 
-function nextAction(stage: ProposalStage): { key: ActionKey; label: string } | null {
+function nextAction(stage: ProposalStage): { key: ActionKey; labelKey: TranslationKey } | null {
   switch (stage) {
     case 'draft':
-      return { key: 'send_engineer', label: 'Enviar a engenheiro' };
+      return { key: 'send_engineer', labelKey: 'approvals.action.send_engineer' };
     case 'pending_engineer':
-      return { key: 'confirm_engineer', label: 'Marcar aprovado (engenheiro)' };
+      return { key: 'confirm_engineer', labelKey: 'approvals.action.confirm_engineer' };
     case 'engineer_approved':
-      return { key: 'send_client', label: 'Enviar a cliente' };
+      return { key: 'send_client', labelKey: 'approvals.action.send_client' };
     case 'pending_client':
-      return { key: 'confirm_client', label: 'Marcar aprovado (cliente)' };
+      return { key: 'confirm_client', labelKey: 'approvals.action.confirm_client' };
     case 'client_approved':
-      return { key: 'send_letter', label: 'Enviar carta de assinatura' };
+      return { key: 'send_letter', labelKey: 'approvals.action.send_letter' };
     case 'letter_sent':
-      return { key: 'confirm_signed', label: 'Marcar como assinado' };
+      return { key: 'confirm_signed', labelKey: 'approvals.action.confirm_signed' };
     case 'signed':
     case 'rejected':
       return null;
@@ -184,6 +224,7 @@ function nextAction(stage: ProposalStage): { key: ActionKey; label: string } | n
 // envio/aprovação. Os equipamentos de braquiterapia formam uma via própria (migração 0017),
 // que corre a mesma sequência em paralelo e sem dependência da via geral.
 export function Approvals() {
+  const t = useT();
   const canAct = useAuthStore((state) => state.permissions.canApproveSchedule || state.permissions.canSendEmails);
   const profile = useAuthStore((state) => state.profile);
   const planningYear = useCalendarStore((state) => state.planningYear);
@@ -191,6 +232,10 @@ export function Approvals() {
   const fetchYearEvents = useCalendarStore((state) => state.fetchYearEvents);
   const hospitals = useHospitalStore((state) => state.hospitals);
   const fetchHospitals = useHospitalStore((state) => state.fetchHospitals);
+  // Contactos do cliente: são os destinatários da proposta e da carta, e cada um responde
+  // a uma via (ou às duas) — ver a montagem de clientEmails mais abaixo.
+  const contacts = useContactStore((state) => state.contacts);
+  const fetchContacts = useContactStore((state) => state.fetchContacts);
   const equipment = useEquipmentStore((state) => state.equipment);
   const fetchEquipment = useEquipmentStore((state) => state.fetchEquipment);
   const engineers = useEngineerStore((state) => state.engineers);
@@ -238,6 +283,7 @@ export function Approvals() {
 
   useEffect(() => {
     fetchHospitals();
+    fetchContacts();
     fetchEquipment();
     fetchEngineers();
     fetchTemplates();
@@ -249,6 +295,7 @@ export function Approvals() {
     fetchAppSettings();
   }, [
     fetchHospitals,
+    fetchContacts,
     fetchEquipment,
     fetchEngineers,
     fetchTemplates,
@@ -294,9 +341,25 @@ export function Approvals() {
           ];
           const engineerNames = bundleEngineers.map((engineer) => engineer.name);
           const engineerEmails = [...new Set(bundleEngineers.map((engineer) => engineer.email).filter(Boolean))];
-          const clientEmails = hospital.contacts
-            .map((contact) => contact.email)
-            .filter((email): email is string => !!email);
+          // Destinatários do cliente PARA ESTA VIA. Um contacto sem via (o caso normal)
+          // serve as duas; um contacto com via só entra na sua — em 13 hospitais da lista
+          // do cliente quem valida a braquiterapia não é quem valida os aceleradores, e
+          // antes da migração 0021 não havia onde guardar essa diferença: a carta da
+          // braquiterapia seguia para o físico dos aceleradores e vice-versa. Contactos
+          // desactivados ficam de fora sem serem apagados (ver hospital_contacts.active).
+          const clientEmails = [
+            ...new Set(
+              contacts
+                .filter(
+                  (contact) =>
+                    contact.hospital_id === hospital.id &&
+                    contact.active &&
+                    (contact.approval_track === null || contact.approval_track === track),
+                )
+                .map((contact) => contact.email)
+                .filter((email): email is string => !!email),
+            ),
+          ];
           // TL da zona do hospital, ou o da zona-mãe mais próxima que tenha um (só é preciso
           // configurá-lo nas zonas de topo — ver resolveZoneTeamLeaderId).
           const teamLeaderId = resolveZoneTeamLeaderId(hospital.zone_id, zones);
@@ -321,16 +384,18 @@ export function Approvals() {
           a.hospital.name.localeCompare(b.hospital.name) ||
           APPROVAL_TRACKS.indexOf(a.track) - APPROVAL_TRACKS.indexOf(b.track),
       );
-  }, [hospitals, equipment, modalities, yearEvents, proposals, engineers, zones]);
+  }, [hospitals, contacts, equipment, modalities, yearEvents, proposals, engineers, zones]);
 
-  const visibleBundles = useMemo(
+  const filteredBundles = useMemo(
     () => (trackFilter === 'all' ? bundles : bundles.filter((bundle) => bundle.track === trackFilter)),
     [bundles, trackFilter],
   );
 
+  const { rows: visibleBundles, sortableProps } = useTableSort(filteredBundles, BUNDLE_SORT, 'hospital');
+
   const trackFilterOptions: { key: ApprovalTrack | 'all'; label: string }[] = [
-    { key: 'all', label: 'Todas' },
-    ...APPROVAL_TRACKS.map((track) => ({ key: track, label: APPROVAL_TRACK_LABELS[track] })),
+    { key: 'all', label: t('approvals.allTracks') },
+    ...APPROVAL_TRACKS.map((track) => ({ key: track, label: t(APPROVAL_TRACK_KEYS[track]) })),
   ];
 
   function letterDataFor(bundle: HospitalBundle): ProposalLetterData {
@@ -360,7 +425,9 @@ export function Approvals() {
     // ou ES conforme o cliente").
     const templateKey = templateKeyFor(bundle.track, step);
     const template = templates.find((item) => item.key === templateKey && item.country === bundle.hospital.country);
-    if (!template) throw new Error(`Template "${templateKey}" (${bundle.hospital.country}) não encontrado.`);
+    if (!template) {
+      throw new Error(t('approvals.templateMissing', { key: templateKey, country: bundle.hospital.country }));
+    }
     const tableHtml = buildProposalEmailTableHtml(letterDataFor(bundle));
     // {{engenheiro}} usa o(s) nome(s) real(is) atribuído(s) às PMs deste hospital; só cai
     // no genérico ("Equipa técnica"/"Equipo técnico") quando nenhuma PM tem engenheiro.
@@ -446,7 +513,7 @@ export function Approvals() {
   // é o que faz o reenvio levar o plano actualizado.
   async function sendSignatureLetter(bundle: HospitalBundle) {
     if (bundle.clientEmails.length === 0) {
-      throw new Error(`Sem contactos de email para ${bundle.hospital.name} — adiciona em Hospitais → Contactos.`);
+      throw new Error(t('approvals.noClientEmail', { hospital: bundle.hospital.name }));
     }
     const doc = await generateProposalLetterPdf(letterDataFor(bundle));
     const pdfBase64 = doc.output('datauristring').split(',')[1] ?? '';
@@ -473,7 +540,7 @@ export function Approvals() {
       switch (action) {
         case 'send_engineer': {
           if (bundle.engineerEmails.length === 0) {
-            throw new Error(`Sem email de engenheiro associado às PMs de ${bundleLabel(bundle)}.`);
+            throw new Error(t('approvals.noEngineerEmail', { bundle: bundleLabel(bundle, t) }));
           }
           const proposal = await sendTemplateEmail(bundle, 'engineer_approval', bundle.engineerEmails);
           await updateProposal(proposal.id, { stage: 'pending_engineer' });
@@ -481,7 +548,7 @@ export function Approvals() {
         }
         case 'resend_engineer': {
           if (bundle.engineerEmails.length === 0) {
-            throw new Error(`Sem email de engenheiro associado às PMs de ${bundleLabel(bundle)}.`);
+            throw new Error(t('approvals.noEngineerEmail', { bundle: bundleLabel(bundle, t) }));
           }
           await sendTemplateEmail(bundle, 'engineer_approval', bundle.engineerEmails);
           break;
@@ -497,7 +564,7 @@ export function Approvals() {
         }
         case 'send_client': {
           if (bundle.clientEmails.length === 0) {
-            throw new Error(`Sem contactos de email para ${bundle.hospital.name} — adiciona em Hospitais → Contactos.`);
+            throw new Error(t('approvals.noClientEmail', { hospital: bundle.hospital.name }));
           }
           const proposal = await sendTemplateEmail(bundle, 'client_proposal', bundle.clientEmails);
           await updateProposal(proposal.id, { stage: 'pending_client' });
@@ -505,7 +572,7 @@ export function Approvals() {
         }
         case 'resend_client': {
           if (bundle.clientEmails.length === 0) {
-            throw new Error(`Sem contactos de email para ${bundle.hospital.name} — adiciona em Hospitais → Contactos.`);
+            throw new Error(t('approvals.noClientEmail', { hospital: bundle.hospital.name }));
           }
           await sendTemplateEmail(bundle, 'client_proposal', bundle.clientEmails);
           break;
@@ -558,10 +625,12 @@ export function Approvals() {
       const isSendAction = action.startsWith('send_') || action.startsWith('resend_');
       pushToast({
         variant: 'success',
-        message: isSendAction ? `${bundleLabel(bundle)}: email enviado.` : `${bundleLabel(bundle)}: estado actualizado.`,
+        message: isSendAction
+          ? t('approvals.emailSent', { bundle: bundleLabel(bundle, t) })
+          : t('approvals.stageUpdated', { bundle: bundleLabel(bundle, t) }),
       });
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha na acção.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('approvals.actionFailed') });
     } finally {
       setBusyKey(null);
     }
@@ -613,9 +682,9 @@ export function Approvals() {
         signed_by: null,
         rejected_reason: null,
       });
-      pushToast({ variant: 'success', message: `${bundleLabel(bundle)}: workflow reiniciado.` });
+      pushToast({ variant: 'success', message: t('approvals.resetDone', { bundle: bundleLabel(bundle, t) }) });
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao reiniciar.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('approvals.resetFailed') });
     } finally {
       setBusyKey(null);
       setResetTarget(null);
@@ -642,15 +711,8 @@ export function Approvals() {
   return (
     <PageShell wide>
       <PageHeader
-        title="Aprovações — Envio de Propostas a Clientes"
-        description={
-          <>
-            Ano de planeamento {planningYear}. Cada linha é um processo independente — confirma com o engenheiro,
-            envia a proposta ao cliente e, depois de aprovada, envia a carta de assinatura. Os equipamentos de{' '}
-            <strong>Braquiterapia</strong> têm a sua própria linha: são validados, aprovados e assinados à parte do
-            resto do hospital. A via de cada modalidade define-se em Equipamentos → Editar modalidades.
-          </>
-        }
+        title={t('approvals.title')}
+        description={t('approvals.description', { year: planningYear })}
       />
 
       <div>
@@ -661,29 +723,29 @@ export function Approvals() {
           active={activeTab}
           onChange={setActiveTab}
           tabs={[
-            { key: 'approvals', label: 'Aprovações' },
-            { key: 'templates', label: 'Templates das aprovações' },
-            { key: 'recipients', label: 'Destinatários em CC' },
+            { key: 'approvals', label: t('approvals.tab.workflow') },
+            { key: 'templates', label: t('approvals.tab.templates') },
+            { key: 'recipients', label: t('approvals.tab.recipients') },
           ]}
         />
 
         {activeTab === 'templates' && canAct && <TemplateEditor />}
         {activeTab === 'templates' && !canAct && (
           <Card>
-            <EmptyState>Sem permissões para editar templates.</EmptyState>
+            <EmptyState>{t('approvals.noTemplatePermission')}</EmptyState>
           </Card>
         )}
 
         {activeTab === 'recipients' && canAct && <EmailRecipientsEditor />}
         {activeTab === 'recipients' && !canAct && (
           <Card>
-            <EmptyState>Sem permissões para gerir destinatários.</EmptyState>
+            <EmptyState>{t('approvals.noRecipientPermission')}</EmptyState>
           </Card>
         )}
 
         {activeTab === 'approvals' && bundles.length === 0 && (
           <Card>
-            <EmptyState>Sem PMs agendadas para {planningYear}.</EmptyState>
+            <EmptyState>{t('approvals.noPms', { year: planningYear })}</EmptyState>
           </Card>
         )}
 
@@ -692,7 +754,7 @@ export function Approvals() {
             {/* Filtro de via + acção em lote numa barra só: são os dois controlos que
                 actuam sobre a lista inteira, e pertencem juntos por cima dela. */}
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="text-sm text-gray-600">Via:</span>
+              <span className="text-sm text-gray-600">{t('approvals.trackFilter')}</span>
               {trackFilterOptions.map((option) => {
                 const count =
                   option.key === 'all' ? bundles.length : bundles.filter((bundle) => bundle.track === option.key).length;
@@ -716,9 +778,11 @@ export function Approvals() {
 
               {canAct && (
                 <div className="ml-auto flex items-center gap-2">
-                  <span className="text-sm text-gray-500">{selectedIds.size} seleccionado(s)</span>
+                  <span className="text-sm text-gray-500">
+                    {t('approvals.selectedCount', { count: selectedIds.size })}
+                  </span>
                   <Button onClick={runBulkAction} disabled={selectedIds.size === 0 || busyKey !== null}>
-                    Avançar seleccionados
+                    {t('approvals.advanceSelected')}
                   </Button>
                 </div>
               )}
@@ -726,7 +790,7 @@ export function Approvals() {
 
             {visibleBundles.length === 0 && (
               <Card>
-                <EmptyState>Sem PMs agendadas nesta via para {planningYear}.</EmptyState>
+                <EmptyState>{t('approvals.noPmsInTrack', { year: planningYear })}</EmptyState>
               </Card>
             )}
 
@@ -745,13 +809,13 @@ export function Approvals() {
                         />
                       </th>
                     )}
-                    <th className="py-1.5 pr-2">Hospital</th>
-                    <th className="py-1.5 pr-2">Via</th>
-                    <th className="py-1.5 pr-2">País</th>
-                    <th className="py-1.5 pr-2">Team Leader</th>
-                    <th className="py-1.5 pr-2">Equipamentos</th>
-                    <th className="py-1.5 pr-2">Dias-PM</th>
-                    <th className="py-1.5 pr-2">Estado</th>
+                    <SortableTh {...sortableProps('hospital')}>{t('common.hospital')}</SortableTh>
+                    <SortableTh {...sortableProps('track')}>{t('approvals.col.track')}</SortableTh>
+                    <SortableTh {...sortableProps('country')}>{t('common.country')}</SortableTh>
+                    <SortableTh {...sortableProps('teamLeader')}>{t('approvals.col.teamLeader')}</SortableTh>
+                    <SortableTh {...sortableProps('equipmentCount')}>{t('common.equipmentPlural')}</SortableTh>
+                    <SortableTh {...sortableProps('pmDays')}>{t('approvals.col.pmDays')}</SortableTh>
+                    <SortableTh {...sortableProps('stage')}>{t('common.status')}</SortableTh>
                     <th className="py-1.5 pr-2" />
                   </tr>
                 </thead>
@@ -759,6 +823,7 @@ export function Approvals() {
                   {visibleBundles.map((bundle) => (
                     <ApprovalRow
                       key={bundle.key}
+                      t={t}
                       bundle={bundle}
                       canAct={canAct}
                       selected={selectedIds.has(bundle.key)}
@@ -783,7 +848,7 @@ export function Approvals() {
 
       {resendLetterTarget && (
         <Modal
-          title="Reenviar carta para assinatura"
+          title={t('approvals.resendLetterTitle')}
           onClose={() => setResendLetterTarget(null)}
           footer={
             <>
@@ -792,7 +857,7 @@ export function Approvals() {
                 onClick={() => setResendLetterTarget(null)}
                 disabled={busyKey === resendLetterTarget.key}
               >
-                Cancelar
+                {t('common.cancel')}
               </Button>
               <Button
                 onClick={async () => {
@@ -802,39 +867,34 @@ export function Approvals() {
                 }}
                 disabled={busyKey === resendLetterTarget.key}
               >
-                Reenviar carta
+                {t('approvals.resendLetterConfirm')}
               </Button>
             </>
           }
         >
           <p className="text-sm text-gray-600">
-            Vai ser enviada a <strong>{bundleLabel(resendLetterTarget)}</strong> uma nova carta, gerada com as datas
-            de PM que estão neste momento no calendário. Como a proposta já estava assinada, o estado volta a
-            “Carta enviada” e <strong>a assinatura registada é apagada</strong> — a que existia refere-se ao plano
-            anterior, e passa a ser preciso obter a assinatura da versão nova.
+            {t('approvals.resendLetterBody', { bundle: bundleLabel(resendLetterTarget, t) })}
           </p>
         </Modal>
       )}
 
       {resetTarget && (
         <Modal
-          title="Reiniciar workflow de aprovações"
+          title={t('approvals.resetTitle')}
           onClose={() => setResetTarget(null)}
           footer={
             <>
               <Button variant="secondary" onClick={() => setResetTarget(null)} disabled={busyKey === resetTarget.key}>
-                Cancelar
+                {t('common.cancel')}
               </Button>
               <Button variant="danger" onClick={() => runReset(resetTarget)} disabled={busyKey === resetTarget.key}>
-                Sim, reiniciar
+                {t('approvals.resetConfirm')}
               </Button>
             </>
           }
         >
           <p className="text-sm text-gray-600">
-            Quer mesmo reiniciar o processo de <strong>{bundleLabel(resetTarget)}</strong>? O estado volta a “Por
-            enviar” e todas as confirmações já registadas (engenheiro, cliente, carta e assinatura) são apagadas —
-            implica <strong>revalidar de novo com o engenheiro e com o cliente</strong>.
+            {t('approvals.resetBody', { bundle: bundleLabel(resetTarget, t) })}
           </p>
         </Modal>
       )}
@@ -843,6 +903,7 @@ export function Approvals() {
 }
 
 interface ApprovalRowProps {
+  t: TFunction;
   bundle: HospitalBundle;
   canAct: boolean;
   selected: boolean;
@@ -862,6 +923,7 @@ interface ApprovalRowProps {
 // suficiente para o esbuild rebentar a stack ao compilá-lo — mais um nível bastava para o
 // `vite build` deixar de correr. Extrair a linha resolve as duas.
 function ApprovalRow({
+  t,
   bundle,
   canAct,
   selected,
@@ -889,8 +951,8 @@ function ApprovalRow({
       {/* A via é a coluna que explica porque é que o mesmo hospital aparece duas vezes,
           em fases diferentes. */}
       <td className="py-1.5 pr-2">
-        <span title={TRACK_COLUMN_TITLES[bundle.track]}>
-          <Badge color={APPROVAL_TRACK_COLORS[bundle.track]}>{APPROVAL_TRACK_LABELS[bundle.track]}</Badge>
+        <span title={t(TRACK_COLUMN_TITLE_KEYS[bundle.track])}>
+          <Badge color={APPROVAL_TRACK_COLORS[bundle.track]}>{t(APPROVAL_TRACK_KEYS[bundle.track])}</Badge>
         </span>
       </td>
       <td className="py-1.5 pr-2">{bundle.hospital.country}</td>
@@ -906,7 +968,7 @@ function ApprovalRow({
             title={
               includeTeamLeaders
                 ? bundle.teamLeader.email
-                : `${bundle.teamLeader.email} — desligado em "Destinatários em CC"; não entra em cópia.`
+                : t('approvals.teamLeaderOff', { email: bundle.teamLeader.email })
             }
           >
             {bundle.teamLeader.name}
@@ -914,16 +976,16 @@ function ApprovalRow({
         ) : (
           <span
             className="text-red-600"
-            title={`A zona "${bundle.hospital.zone_name}" não tem Team Leader — define-o em Configurações → Zonas.`}
+            title={t('approvals.noTeamLeaderTitle', { zone: bundle.hospital.zone_name })}
           >
-            Sem TL
+            {t('approvals.noTeamLeader')}
           </span>
         )}
       </td>
       <td className="py-1.5 pr-2">{bundle.equipmentList.length}</td>
       <td className="py-1.5 pr-2">{bundle.events.length}</td>
       <td className="py-1.5 pr-2">
-        <Badge color={STAGE_COLORS[stage]}>{STAGE_LABELS[stage]}</Badge>
+        <Badge color={STAGE_COLORS[stage]}>{t(STAGE_LABEL_KEYS[stage])}</Badge>
       </td>
       <td className="py-1.5 pr-2 text-right">
         {/* Cinco acções na mesma linha: as consultivas em ghost (não são o trabalho, são
@@ -931,10 +993,10 @@ function ApprovalRow({
             recomeço em vermelho discreto no fim. É a política de botões aplicada ao caso
             mais denso da app. */}
         <div className="flex justify-end gap-1">
-          <Button variant="ghost" size="sm" onClick={onPreviewPdf} title="Ver a carta como o cliente a vai receber">
+          <Button variant="ghost" size="sm" onClick={onPreviewPdf} title={t('approvals.previewPdfTitle')}>
             PDF
           </Button>
-          <Button variant="ghost" size="sm" onClick={onDownloadCalendar} title="Descarregar as PMs em .ics">
+          <Button variant="ghost" size="sm" onClick={onDownloadCalendar} title={t('approvals.downloadIcsTitle')}>
             .ics
           </Button>
           {/* Reenviar a carta a um hospital já assinado passa primeiro pela confirmação —
@@ -947,19 +1009,19 @@ function ApprovalRow({
               onClick={() => (stage === 'signed' ? onConfirmResendLetter() : onRunAction(resend.key))}
               disabled={busy}
             >
-              {resend.label}
+              {t(resend.labelKey)}
             </Button>
           )}
           {canAct && action && (
             <Button size="sm" onClick={() => onRunAction(action.key)} disabled={busy}>
-              {busy ? 'A processar…' : action.label}
+              {busy ? t('approvals.processing') : t(action.labelKey)}
             </Button>
           )}
           {/* Reiniciar só faz sentido depois de o workflow ter arrancado (stage !== draft)
               — antes disso não há nada para revalidar. */}
           {canAct && stage !== 'draft' && (
             <Button variant="dangerGhost" size="sm" onClick={onReset} disabled={busy}>
-              Recomeçar
+              {t('approvals.restart')}
             </Button>
           )}
         </div>

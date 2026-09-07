@@ -41,6 +41,9 @@ interface CalendarState {
   createEvent: (event: PMEventInsert) => Promise<PMEvent>;
   createBulkEvents: (events: PMEventInsert[]) => Promise<PMEvent[]>;
   updateEvent: (id: string, patch: PMEventUpdate) => Promise<void>;
+  /** Aplica o mesmo patch a vários eventos numa só ida à BD (ex: reatribuir o
+   *  engenheiro a todas as PMs de um equipamento). Devolve as linhas gravadas. */
+  updateEvents: (ids: string[], patch: PMEventUpdate) => Promise<PMEvent[]>;
   deleteEvent: (id: string) => Promise<void>;
   deleteEvents: (ids: string[]) => Promise<void>;
   setActiveView: (view: CalendarViewName) => void;
@@ -147,6 +150,26 @@ export const useCalendarStore = create<CalendarState>()(
           events: get().events.map((event) => (event.id === id ? data : event)),
           yearEvents: get().yearEvents.map((event) => (event.id === id ? data : event)),
         });
+      },
+
+      // Mesma precaução do deleteEvents: o estado local é reconstruído a partir das linhas
+      // devolvidas pelo update (e não dos ids pedidos) — se a RLS filtrar alguma, o
+      // calendário não fica a mostrar uma alteração que a base de dados não aceitou.
+      updateEvents: async (ids, patch) => {
+        if (ids.length === 0) return [];
+        const { data, error } = await supabase
+          .from('pm_events')
+          .update({ ...patch, updated_at: new Date().toISOString() })
+          .in('id', ids)
+          .select();
+        if (error) {
+          set({ error: error.message });
+          throw error;
+        }
+        const saved = new Map((data ?? []).map((event) => [event.id, event]));
+        const merge = (list: PMEvent[]) => list.map((event) => saved.get(event.id) ?? event);
+        set({ events: merge(get().events), yearEvents: merge(get().yearEvents) });
+        return data ?? [];
       },
 
       deleteEvent: async (id) => {

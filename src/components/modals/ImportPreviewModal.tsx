@@ -3,6 +3,7 @@ import type { ParsedImportRow, RefKind } from '../../lib/spreadsheet';
 import type { ImportAliases } from '../../lib/importers/importHelpers';
 import { aliasKey } from '../../lib/importers/importHelpers';
 import { Badge, Button, Modal, SegmentedGroup, SegmentedOption } from '../ui';
+import { useT, type TranslationKey } from '../../i18n';
 
 /** Registo existente que pode ser escolhido como correspondência. */
 export interface RefOption {
@@ -10,7 +11,11 @@ export interface RefOption {
   name: string;
 }
 
-const REF_NOUN: Record<RefKind, string> = { zone: 'zona', hospital: 'hospital', engineer: 'engenheiro' };
+const REF_NOUN_KEYS: Record<RefKind, TranslationKey> = {
+  zone: 'import.ref.zone',
+  hospital: 'import.ref.hospital',
+  engineer: 'import.ref.engineer',
+};
 
 /** Uma correspondência: um valor do ficheiro, todas as colunas e linhas onde aparece, e o
  *  registo a que vai ficar ligado. */
@@ -57,6 +62,7 @@ export function ImportPreviewModal<T>({
   onConfirm,
   onClose,
 }: ImportPreviewModalProps<T>) {
+  const t = useT();
   const validCount = rows.filter((row) => row.data !== null).length;
   const errorCount = rows.length - validCount;
 
@@ -101,19 +107,17 @@ export function ImportPreviewModal<T>({
       onClose={onClose}
       description={
         <>
-          {validCount} linha{validCount === 1 ? '' : 's'} válida{validCount === 1 ? '' : 's'}
-          {errorCount > 0 &&
-            `, ${errorCount} com erro (não ${errorCount === 1 ? 'será' : 'serão'} importada${errorCount === 1 ? '' : 's'})`}
-          .
+          {t('import.validRows', { count: validCount })}
+          {errorCount > 0 && t('import.errorRows', { count: errorCount })}.
         </>
       }
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={importing}>
-            Cancelar
+            {t('common.cancel')}
           </Button>
           <Button onClick={onConfirm} disabled={importing || validCount === 0}>
-            {importing ? 'A importar…' : `Importar ${validCount}`}
+            {importing ? t('import.importing') : t('import.confirm', { count: validCount })}
           </Button>
         </>
       }
@@ -126,21 +130,19 @@ export function ImportPreviewModal<T>({
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className={`text-sm font-medium ${pending.length > 0 ? 'text-amber-900' : 'text-gray-700'}`}>
-              Correspondências
+              {t('import.matches')}
             </p>
             <SegmentedGroup>
               <SegmentedOption active={activeTab === 'pending'} onClick={() => setTab('pending')}>
-                A precisar de atenção ({pending.length})
+                {t('import.needsAttention', { count: pending.length })}
               </SegmentedOption>
               <SegmentedOption active={activeTab === 'all'} onClick={() => setTab('all')}>
-                Todas ({matches.length})
+                {t('import.allMatches', { count: matches.length })}
               </SegmentedOption>
             </SegmentedGroup>
           </div>
           <p className={`mt-1 text-xs ${pending.length > 0 ? 'text-amber-800' : 'text-gray-500'}`}>
-            {activeTab === 'pending'
-              ? 'Estes valores do ficheiro não existem na aplicação. Escolha o registo correspondente e todas as linhas que os usam ficam válidas — o ficheiro não é alterado.'
-              : 'Todas as ligações que o ficheiro faz pelo nome. As que já casaram sozinhas também se podem trocar aqui, se apontarem ao registo errado.'}
+            {activeTab === 'pending' ? t('import.pendingHelp') : t('import.allHelp')}
           </p>
 
           <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
@@ -148,20 +150,18 @@ export function ImportPreviewModal<T>({
               <li key={match.key} className="flex flex-wrap items-center gap-2">
                 <span className="min-w-0 flex-1 text-sm text-gray-700">
                   <span className="text-gray-500">{match.columns.join(', ')}:</span>{' '}
-                  <span className="font-medium">{match.value || '(vazio)'}</span>{' '}
-                  <span className="text-xs text-gray-500">
-                    · {match.rowCount} linha{match.rowCount === 1 ? '' : 's'}
-                  </span>{' '}
-                  {aliases[match.key] && <Badge tone="brand">à mão</Badge>}
-                  {!match.resolvedId && <Badge tone="warning">por resolver</Badge>}
+                  <span className="font-medium">{match.value || t('import.emptyValue')}</span>{' '}
+                  <span className="text-xs text-gray-500">{t('import.rowsUsing', { count: match.rowCount })}</span>{' '}
+                  {aliases[match.key] && <Badge tone="brand">{t('import.manual')}</Badge>}
+                  {!match.resolvedId && <Badge tone="warning">{t('import.unresolved')}</Badge>}
                 </span>
                 <select
                   className="pm-field w-64"
                   value={match.resolvedId ?? ''}
                   onChange={(event) => onAliasChange?.(match.key, event.target.value)}
-                  aria-label={`Corresponder ${match.columns[0]} "${match.value}"`}
+                  aria-label={t('import.matchAria', { column: match.columns[0] ?? '', value: match.value })}
                 >
-                  <option value="">Escolher {REF_NOUN[match.kind]}…</option>
+                  <option value="">{t('import.chooseRef', { noun: t(REF_NOUN_KEYS[match.kind]) })}</option>
                   {(refOptions?.[match.kind] ?? []).map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.name}
@@ -178,9 +178,9 @@ export function ImportPreviewModal<T>({
         <table className="pm-table">
           <thead className="sticky top-0">
             <tr>
-              <th>Linha</th>
-              <th>Resumo</th>
-              <th>Estado</th>
+              <th>{t('import.col.row')}</th>
+              <th>{t('import.col.summary')}</th>
+              <th>{t('common.status')}</th>
             </tr>
           </thead>
           <tbody>

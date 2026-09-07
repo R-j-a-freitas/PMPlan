@@ -5,10 +5,12 @@ import { EngineerFilter } from './EngineerFilter';
 import { ModalityFilter } from './ModalityFilter';
 import { ZoneScopeFilter } from './ZoneScopeFilter';
 import { LoadMap } from './LoadMap';
+import { useT } from '../../i18n';
 
 // Container recolhível/redimensionável (secção 10): a largura anima na própria <aside>
 // (para o calendário reflectir o espaço libertado) e o conteúdo desliza com translateX.
 export function Sidebar() {
+  const t = useT();
   const collapsed = useUiStore((state) => state.sidebarCollapsed);
   const width = useUiStore((state) => state.sidebarWidth);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
@@ -48,7 +50,9 @@ export function Sidebar() {
               botões de 32px), e são as duas únicas linhas horizontais no topo do ecrã —
               desalinhá-las por 4px nota-se mais do que os 12px que se poupavam aqui. */}
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 px-3">
-            <h2 className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Planeamento</h2>
+            <h2 className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+              {t('sidebar.title')}
+            </h2>
           </div>
           <div className="flex-1 overflow-y-auto">
             <ZoneScopeFilter />
@@ -69,7 +73,7 @@ export function Sidebar() {
       <button
         type="button"
         onClick={toggleSidebar}
-        aria-label={collapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
+        aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
         // top-3 centra o botão de 24px nos 48px do cabeçalho da coluna.
         className="absolute top-3 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white text-xs text-gray-500 shadow-sm transition-[left] duration-200 hover:border-gray-400 hover:text-gray-900"
         style={{ left: (collapsed ? 0 : width) - 12 }}

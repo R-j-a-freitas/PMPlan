@@ -1,5 +1,6 @@
 import type { EventContentArg } from '@fullcalendar/core';
 import type { EventLineDensity } from '../../stores/uiStore';
+import type { TFunction } from '../../i18n';
 
 interface PMEventExtendedProps {
   hospitalName?: string;
@@ -13,7 +14,7 @@ interface PMEventExtendedProps {
 // v6.1.20), por isso density=1 é o que permite 2+ PMs sobrepostas no mesmo dia caberem
 // sem colapsar em "mais +N". Em density=1 o hospital só fica acessível no tooltip nativo
 // (atributo title, definido em MainCalendar.eventDidMount).
-export function renderEventContent(arg: EventContentArg, density: EventLineDensity) {
+export function renderEventContent(arg: EventContentArg, density: EventLineDensity, t: TFunction) {
   if (arg.event.display === 'background') return null;
 
   const { hospitalName, status } = arg.event.extendedProps as PMEventExtendedProps;
@@ -31,7 +32,9 @@ export function renderEventContent(arg: EventContentArg, density: EventLineDensi
     <div className="overflow-hidden px-1 py-0.5 text-[11px] leading-tight text-white">
       <div className="truncate font-semibold">{arg.event.title}</div>
       {hospitalName && <div className="truncate opacity-90">{hospitalName}</div>}
-      {status === 'delayed' && <div className="truncate font-semibold text-red-100">Atrasado</div>}
+      {status === 'delayed' && (
+        <div className="truncate font-semibold text-red-100">{t('calendar.eventDelayed')}</div>
+      )}
     </div>
   );
 }

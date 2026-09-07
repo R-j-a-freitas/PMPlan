@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { useT } from '../../i18n';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
 
@@ -29,6 +30,8 @@ const SIZE_CLASSES: Record<ModalSize, string> = {
 // comportamentos que se esperam de um modal e que faltavam em metade deles: Escape fecha
 // e clicar fora fecha.
 export function Modal({ title, description, size = 'sm', tall = false, footer, onClose, children }: ModalProps) {
+  const t = useT();
+
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose();
@@ -61,7 +64,7 @@ export function Modal({ title, description, size = 'sm', tall = false, footer, o
           <button
             type="button"
             onClick={onClose}
-            aria-label="Fechar"
+            aria-label={t('common.close')}
             className="-mr-1 -mt-0.5 shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
           >
             ✕

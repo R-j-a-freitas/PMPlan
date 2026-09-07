@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { PageShell } from '../app/PageShell';
 import { buildHospitalExportRows, parseHospitalImportRows } from '../lib/importers/hospitalImportExport';
+import type { HospitalImportRow } from '../lib/importers/hospitalImportExport';
 import type { ImportAliases } from '../lib/importers/importHelpers';
 import { SPANISH_REGIONS, spanishRegionName } from '../lib/spanishRegions';
 import { exportRowsToSpreadsheet, readSpreadsheetFile } from '../lib/spreadsheet';
@@ -8,17 +9,20 @@ import type { ParsedImportRow } from '../lib/spreadsheet';
 import { getLeafZones } from '../lib/zoneTree';
 import {
   useAuthStore,
+  useContactStore,
   useHolidayRuleStore,
   useHospitalStore,
   useSignedDocumentStore,
   useUiStore,
   useZoneStore,
 } from '../stores';
-import type { Country, HospitalInsert, Zone } from '../types';
+import type { Country, HospitalContact, HospitalWithZone, Zone } from '../types';
 import { HospitalContactsModal } from '../components/modals/HospitalContactsModal';
 import { ImportPreviewModal } from '../components/modals/ImportPreviewModal';
 import { HospitalSignedDocuments, UnmatchedSignedDocuments } from '../components/documents';
 import { matchesSearch } from '../lib/searchText';
+import { useTableSort } from '../hooks';
+import type { SortAccessors } from '../hooks';
 import {
   Badge,
   Button,
@@ -28,9 +32,67 @@ import {
   ImportExportButtons,
   PageHeader,
   SearchInput,
+  SortableTh,
 } from '../components/ui';
+import { useT, type TFunction, type TranslationKey } from '../i18n';
 
 const EMPTY_FORM = { name: '', shortName: '', country: 'PT' as Country, locality: '', city: '', zoneId: '' };
+
+const COUNTRY_LABEL_KEYS: Record<Country, TranslationKey> = { PT: 'country.PT', ES: 'country.ES' };
+
+type HospitalSortKey = 'name' | 'shortName' | 'country' | 'locality' | 'city' | 'zone' | 'contacts';
+
+/** Localidade como a coluna a mostra: o concelho em PT, o nome da Comunidade Autónoma
+ *  em ES ("Galiza" e não "ES-GA", que é o código que a Nager.Date usa). */
+function localityLabel(hospital: HospitalWithZone): string | null {
+  if (!hospital.locality) return null;
+  return hospital.country === 'ES' ? spanishRegionName(hospital.locality) : hospital.locality;
+}
+
+/** Nomes dos contactos de um hospital, como a coluna os mostra. */
+function contactNames(contacts: HospitalContact[]): string {
+  return contacts.map((contact) => contact.name).join(', ');
+}
+
+// Ordenação pelo que a célula mostra, e não pelo que está guardado. Os contactos deixaram
+// de vir dentro do hospital (migração 0021, tabela hospital_contacts), por isso a coluna
+// que os mostra ordena-se por um mapa construído a partir da store dos contactos.
+function hospitalSortAccessors(
+  contactsByHospital: Map<string, HospitalContact[]>,
+): SortAccessors<HospitalWithZone, HospitalSortKey> {
+  return {
+    name: (hospital) => hospital.name,
+    shortName: (hospital) => hospital.short_name,
+    country: (hospital) => hospital.country,
+    locality: localityLabel,
+    city: (hospital) => hospital.city,
+    zone: (hospital) => hospital.zone_code,
+    contacts: (hospital) => contactNames(contactsByHospital.get(hospital.id) ?? []),
+  };
+}
+
+// Procura sobre tudo o que a linha mostra, mais o que está por trás do que mostra: o
+// país também pelo nome por extenso ("Portugal" encontra as linhas com "PT"), a zona
+// também pelo nome (a coluna só tem o código) e os contactos por inteiro — na tabela
+// aparecem só os nomes, mas quem procura por um email ou por um cargo quer chegar ao
+// hospital onde essa pessoa está registada.
+function hospitalSearchFields(
+  hospital: HospitalWithZone,
+  contacts: HospitalContact[],
+  t: TFunction,
+): (string | null)[] {
+  return [
+    hospital.name,
+    hospital.short_name,
+    hospital.country,
+    t(COUNTRY_LABEL_KEYS[hospital.country]),
+    localityLabel(hospital),
+    hospital.city,
+    hospital.zone_code,
+    hospital.zone_name,
+    ...contacts.flatMap((contact) => [contact.name, contact.role, contact.email, contact.phone]),
+  ];
+}
 
 // PT: concelho em texto livre, sugerido por datalist a partir dos concelhos com regra de
 // feriado municipal já conhecida (holiday_rules) — escolher um destes garante que o
@@ -38,10 +100,12 @@ const EMPTY_FORM = { name: '', shortName: '', country: 'PT' as Country, locality
 // Autónoma por selector — o código tem de bater certo com o que a Nager.Date usa em
 // "counties" para os feriados regionais casarem automaticamente.
 function LocalityField({
+  t,
   country,
   value,
   onChange,
 }: {
+  t: TFunction;
   country: Country;
   value: string;
   onChange: (value: string) => void;
@@ -53,7 +117,7 @@ function LocalityField({
     return (
       <input
         list="pt-concelhos"
-        placeholder="Concelho (ex: Braga)"
+        placeholder={t('hospitals.field.ptLocality')}
         className="pm-field"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -66,7 +130,7 @@ function LocalityField({
       value={value}
       onChange={(event) => onChange(event.target.value)}
     >
-      <option value="">Comunidade Autónoma…</option>
+      <option value="">{t('hospitals.field.esRegion')}</option>
       {SPANISH_REGIONS.map((region) => (
         <option key={region.code} value={region.code}>
           {region.name}
@@ -137,12 +201,14 @@ type HospitalForm = typeof EMPTY_FORM;
 // para baixo por um formulário que só se usa de vez em quando. Estado próprio: como só é
 // montado enquanto está aberto, cada abertura começa com os campos limpos.
 function HospitalFormModal({
+  t,
   leafZones,
   zones,
   saving,
   onCancel,
   onSubmit,
 }: {
+  t: TFunction;
   leafZones: Zone[];
   zones: Zone[];
   saving: boolean;
@@ -153,7 +219,7 @@ function HospitalFormModal({
 
   return (
     <FormModal
-      title="Novo hospital"
+      title={t('hospitals.new')}
       saving={saving}
       canSubmit={Boolean(form.name.trim() && form.zoneId)}
       onCancel={onCancel}
@@ -161,13 +227,13 @@ function HospitalFormModal({
     >
       <input
         autoFocus
-        placeholder="Nome"
+        placeholder={t('common.name')}
         className="col-span-2 pm-field"
         value={form.name}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
       />
       <input
-        placeholder="Nome curto (ex: IPO Porto)"
+        placeholder={t('hospitals.field.shortName')}
         className="pm-field"
         value={form.shortName}
         onChange={(event) => setForm({ ...form, shortName: event.target.value })}
@@ -177,17 +243,18 @@ function HospitalFormModal({
         value={form.country}
         onChange={(event) => setForm({ ...form, country: event.target.value as Country, locality: '', city: '' })}
       >
-        <option value="PT">Portugal</option>
-        <option value="ES">Espanha</option>
+        <option value="PT">{t('country.PT')}</option>
+        <option value="ES">{t('country.ES')}</option>
       </select>
       <LocalityField
+        t={t}
         country={form.country}
         value={form.locality}
         onChange={(locality) => setForm({ ...form, locality })}
       />
       {form.country === 'ES' && (
         <input
-          placeholder="Cidade (ex: Vigo)"
+          placeholder={t('hospitals.field.city')}
           className="pm-field"
           value={form.city}
           onChange={(event) => setForm({ ...form, city: event.target.value })}
@@ -198,7 +265,7 @@ function HospitalFormModal({
         onChange={(zoneId) => setForm({ ...form, zoneId })}
         leafZones={leafZones}
         zones={zones}
-        placeholder="Zona… (obrigatório)"
+        placeholder={t('hospitals.field.zoneRequired')}
       />
     </FormModal>
   );
@@ -208,18 +275,21 @@ function HospitalFormModal({
 // hierarquia; equipment.zone_id deriva sempre de hospitals.zone_id). País fica aqui (não
 // na zona): a mesma zona pode agrupar hospitais de PT e de ES. Gestão exclusiva do admin.
 export function Clients() {
+  const t = useT();
   const canManageZones = useAuthStore((state) => state.permissions.canManageZones);
   const hospitals = useHospitalStore((state) => state.hospitals);
   const fetchHospitals = useHospitalStore((state) => state.fetchHospitals);
   const createHospital = useHospitalStore((state) => state.createHospital);
   const updateHospital = useHospitalStore((state) => state.updateHospital);
   const deleteHospital = useHospitalStore((state) => state.deleteHospital);
-  const bulkCreateHospital = useHospitalStore((state) => state.bulkCreateHospital);
+  const bulkImportHospitals = useHospitalStore((state) => state.bulkImportHospitals);
   const zones = useZoneStore((state) => state.zones);
   const fetchZones = useZoneStore((state) => state.fetchZones);
   const pushToast = useUiStore((state) => state.pushToast);
   const holidayRules = useHolidayRuleStore((state) => state.rules);
   const fetchHolidayRules = useHolidayRuleStore((state) => state.fetchRules);
+  const contacts = useContactStore((state) => state.contacts);
+  const fetchContacts = useContactStore((state) => state.fetchContacts);
   const signedDocuments = useSignedDocumentStore((state) => state.documents);
   const fetchSignedDocuments = useSignedDocumentStore((state) => state.fetchSignedDocuments);
 
@@ -240,8 +310,8 @@ export function Clients() {
   const leafZones = useMemo(() => getLeafZones(zones), [zones]);
 
   const importRows = useMemo(
-    () => (importRaw ? parseHospitalImportRows(importRaw, leafZones, importAliases) : null),
-    [importRaw, leafZones, importAliases],
+    () => (importRaw ? parseHospitalImportRows(importRaw, leafZones, hospitals, importAliases) : null),
+    [importRaw, leafZones, hospitals, importAliases],
   );
 
   const ptLocalities = useMemo(
@@ -252,21 +322,41 @@ export function Clients() {
     [holidayRules],
   );
 
-  // Filtro de texto sobre a lista — nome e nome curto, que é por onde se procura um
-  // hospital (o mesmo hospital tanto é "ULS Braga E.P.E." como "Braga").
+  // Contactos agrupados por hospital — servem a coluna, a ordenação e a procura.
+  const contactsByHospital = useMemo(() => {
+    const byHospital = new Map<string, HospitalContact[]>();
+    for (const contact of contacts) {
+      const list = byHospital.get(contact.hospital_id);
+      if (list) list.push(contact);
+      else byHospital.set(contact.hospital_id, [contact]);
+    }
+    return byHospital;
+  }, [contacts]);
+
+  // Filtro de texto sobre a lista, campo a campo (ver hospitalSearchFields).
   const filteredHospitals = useMemo(
-    () => hospitals.filter((hospital) => matchesSearch(searchText, [hospital.name, hospital.short_name])),
-    [hospitals, searchText],
+    () =>
+      hospitals.filter((hospital) =>
+        matchesSearch(searchText, hospitalSearchFields(hospital, contactsByHospital.get(hospital.id) ?? [], t)),
+      ),
+    [hospitals, contactsByHospital, searchText, t],
   );
+
+  const hospitalSort = useMemo(() => hospitalSortAccessors(contactsByHospital), [contactsByHospital]);
+
+  // A lista chega da BD por nome — é essa a ordenação inicial, para a coluna activa
+  // dizer a verdade sobre o que se está a ver logo à entrada.
+  const { rows: visibleHospitals, sortableProps } = useTableSort(filteredHospitals, hospitalSort, 'name');
 
   useEffect(() => {
     fetchHospitals();
+    fetchContacts();
     fetchZones();
     fetchHolidayRules();
     // Documentos assinados devolvidos pelos clientes — arquivados a partir das respostas
     // à carta de assinatura (Edge Function inbound-signed-document).
     fetchSignedDocuments();
-  }, [fetchHospitals, fetchZones, fetchHolidayRules, fetchSignedDocuments]);
+  }, [fetchHospitals, fetchContacts, fetchZones, fetchHolidayRules, fetchSignedDocuments]);
 
   async function handleCreate(form: HospitalForm) {
     if (!form.name || !form.zoneId) return;
@@ -285,7 +375,7 @@ export function Clients() {
       });
       setCreating(false);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao criar hospital.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('hospitals.createFailed') });
     } finally {
       setSaving(false);
     }
@@ -301,7 +391,7 @@ export function Clients() {
       setImportAliases({});
       setImportRaw(raw);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao ler o ficheiro.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('import.readFileFailed') });
     }
   }
 
@@ -313,18 +403,28 @@ export function Clients() {
   async function handleConfirmImport() {
     if (!importRows) return;
     const validRows = importRows
-      .filter((row): row is ParsedImportRow<HospitalInsert> & { data: HospitalInsert } => row.data !== null)
-      .map((row) => ({ rowNumber: row.rowNumber, data: row.data }));
+      .filter((row): row is ParsedImportRow<HospitalImportRow> & { data: HospitalImportRow } => row.data !== null)
+      .map((row) => ({
+        rowNumber: row.rowNumber,
+        existingId: row.data.existingId,
+        insert: row.data.insert,
+        update: row.data.update,
+      }));
 
     setImporting(true);
     try {
-      const { success, errors } = await bulkCreateHospital(validRows);
+      const { created, updated, errors } = await bulkImportHospitals(validRows);
       pushToast({
         variant: errors.length > 0 ? 'warning' : 'success',
         message:
           errors.length > 0
-            ? `${success} hospital(is) importado(s), ${errors.length} falharam: ${errors.map((e) => `linha ${e.rowNumber}`).join(', ')}.`
-            : `${success} hospital(is) importado(s) com sucesso.`,
+            ? t('hospitals.importedWithErrors', {
+                created,
+                updated,
+                failed: errors.length,
+                rows: errors.map((e) => t('import.rowNumber', { row: e.rowNumber })).join(', '),
+              })
+            : t('hospitals.imported', { created, updated }),
       });
       closeImport();
     } finally {
@@ -366,7 +466,7 @@ export function Clients() {
       });
       setEditingId(null);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao actualizar hospital.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('hospitals.updateFailed') });
     } finally {
       setSaving(false);
     }
@@ -381,13 +481,13 @@ export function Clients() {
       </datalist>
 
       <PageHeader
-        title="Hospitais"
-        description="Cada hospital pertence sempre a uma zona — é dela que os equipamentos herdam a sua."
+        title={t('hospitals.title')}
+        description={t('hospitals.description')}
         actions={
           canManageZones && (
             <>
               <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
-              <Button onClick={() => setCreating(true)}>Adicionar hospital</Button>
+              <Button onClick={() => setCreating(true)}>{t('hospitals.add')}</Button>
             </>
           )
         }
@@ -400,12 +500,12 @@ export function Clients() {
 
       <Card
         padded={false}
-        title={`${filteredHospitals.length} hospital(is)`}
+        title={t('hospitals.count', { count: filteredHospitals.length })}
         actions={
           <SearchInput
             value={searchText}
             onChange={setSearchText}
-            placeholder="Procurar por nome ou nome curto…"
+            placeholder={t('contacts.searchPlaceholder')}
             className="w-72"
           />
         }
@@ -414,18 +514,18 @@ export function Clients() {
         <table className="pm-table">
           <thead>
             <tr>
-              <th className="py-1.5 pr-2">Nome</th>
-              <th className="py-1.5 pr-2">Nome curto</th>
-              <th className="py-1.5 pr-2">País</th>
-              <th className="py-1.5 pr-2">Localidade</th>
-              <th className="py-1.5 pr-2">Cidade</th>
-              <th className="py-1.5 pr-2">Zona</th>
-              <th className="py-1.5 pr-2">Contactos</th>
+              <SortableTh {...sortableProps('name')}>{t('common.name')}</SortableTh>
+              <SortableTh {...sortableProps('shortName')}>{t('hospitals.col.shortName')}</SortableTh>
+              <SortableTh {...sortableProps('country')}>{t('common.country')}</SortableTh>
+              <SortableTh {...sortableProps('locality')}>{t('common.locality')}</SortableTh>
+              <SortableTh {...sortableProps('city')}>{t('common.city')}</SortableTh>
+              <SortableTh {...sortableProps('zone')}>{t('common.zone')}</SortableTh>
+              <SortableTh {...sortableProps('contacts')}>{t('common.contacts')}</SortableTh>
               <th className="py-1.5 pr-2" />
             </tr>
           </thead>
           <tbody>
-            {filteredHospitals.map((hospital) => {
+            {visibleHospitals.map((hospital) => {
               const editing = editingId === hospital.id;
               const documentsOpen = documentsHospitalId === hospital.id;
               const documentCount = signedDocuments.filter(
@@ -463,12 +563,13 @@ export function Clients() {
                             })
                           }
                         >
-                          <option value="PT">Portugal</option>
-                          <option value="ES">Espanha</option>
+                          <option value="PT">{t('country.PT')}</option>
+                          <option value="ES">{t('country.ES')}</option>
                         </select>
                       </td>
                       <td className="py-1.5 pr-2">
                         <LocalityField
+                          t={t}
                           country={editForm.country}
                           value={editForm.locality}
                           onChange={(locality) => setEditForm({ ...editForm, locality })}
@@ -477,7 +578,7 @@ export function Clients() {
                       <td className="py-1.5 pr-2">
                         {editForm.country === 'ES' && (
                           <input
-                            placeholder="Cidade"
+                            placeholder={t('common.city')}
                             className="pm-field w-full"
                             value={editForm.city}
                             onChange={(event) => setEditForm({ ...editForm, city: event.target.value })}
@@ -493,15 +594,15 @@ export function Clients() {
                         />
                       </td>
                       <td className="py-1.5 pr-2 text-xs text-gray-400">
-                        {hospital.contacts.length > 0 ? hospital.contacts.map((c) => c.name).join(', ') : '—'}
+                        {contactNames(contactsByHospital.get(hospital.id) ?? []) || '—'}
                       </td>
                       <td className="py-1.5 pr-2 text-right">
                         <div className="flex justify-end gap-1.5">
                           <Button variant="secondary" size="sm" onClick={() => setEditingId(null)} disabled={saving}>
-                            Cancelar
+                            {t('common.cancel')}
                           </Button>
                           <Button size="sm" onClick={() => handleSaveEdit(hospital.id)} disabled={saving}>
-                            Guardar
+                            {t('common.save')}
                           </Button>
                         </div>
                       </td>
@@ -523,7 +624,7 @@ export function Clients() {
                         <Badge variant="neutral">{hospital.zone_code}</Badge>
                       </td>
                       <td className="py-1.5 pr-2">
-                        {hospital.contacts.length > 0 ? hospital.contacts.map((c) => c.name).join(', ') : '—'}
+                        {contactNames(contactsByHospital.get(hospital.id) ?? []) || '—'}
                       </td>
                       <td className="py-1.5 pr-2 text-right">
                         <div className="flex justify-end gap-1">
@@ -534,18 +635,19 @@ export function Clients() {
                             size="sm"
                             onClick={() => setDocumentsHospitalId(documentsOpen ? null : hospital.id)}
                           >
-                            Documentos{documentCount > 0 ? ` (${documentCount})` : ''}
+                            {t('hospitals.documents')}
+                            {documentCount > 0 ? ` (${documentCount})` : ''}
                           </Button>
                           {canManageZones && (
                             <>
                               <Button variant="ghost" size="sm" onClick={() => setContactsHospitalId(hospital.id)}>
-                                Contactos
+                                {t('common.contacts')}
                               </Button>
                               <Button variant="secondary" size="sm" onClick={() => startEdit(hospital)}>
-                                Editar
+                                {t('common.edit')}
                               </Button>
                               <Button variant="dangerGhost" size="sm" onClick={() => deleteHospital(hospital.id)}>
-                                Eliminar
+                                {t('common.delete')}
                               </Button>
                             </>
                           )}
@@ -572,17 +674,18 @@ export function Clients() {
           <EmptyState
             action={
               hospitals.length === 0 && canManageZones ? (
-                <Button onClick={() => setCreating(true)}>Adicionar hospital</Button>
+                <Button onClick={() => setCreating(true)}>{t('hospitals.add')}</Button>
               ) : undefined
             }
           >
-            {hospitals.length === 0 ? 'Ainda não há hospitais registados.' : 'Nenhum hospital corresponde à pesquisa.'}
+            {hospitals.length === 0 ? t('hospitals.empty') : t('hospitals.noMatch')}
           </EmptyState>
         )}
       </Card>
 
       {creating && (
         <HospitalFormModal
+          t={t}
           leafZones={leafZones}
           zones={zones}
           saving={saving}
@@ -593,9 +696,16 @@ export function Clients() {
 
       {importRows && (
         <ImportPreviewModal
-          title="Importar hospitais"
+          title={t('hospitals.importTitle')}
           rows={importRows}
-          renderPreview={(data) => data.name}
+          // Distinguir criação de actualização é o essencial da pré-visualização: uma
+          // linha que casa com um hospital existente vai alterá-lo, e isso tem de se ver
+          // antes de confirmar.
+          renderPreview={(data) =>
+            data.existingId
+              ? t('hospitals.importUpdate', { name: data.existingName ?? '' })
+              : t('hospitals.importNew', { name: data.insert?.name ?? '' })
+          }
           importing={importing}
           refOptions={{ zone: leafZones }}
           aliases={importAliases}
@@ -609,7 +719,6 @@ export function Clients() {
         <HospitalContactsModal
           hospitalId={contactsHospitalId}
           hospitalName={hospitals.find((hospital) => hospital.id === contactsHospitalId)?.name ?? ''}
-          contacts={hospitals.find((hospital) => hospital.id === contactsHospitalId)?.contacts ?? []}
           onClose={() => setContactsHospitalId(null)}
         />
       )}

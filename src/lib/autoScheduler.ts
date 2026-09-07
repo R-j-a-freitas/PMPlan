@@ -349,6 +349,8 @@ export function proposalToVirtualEvent(p: ProposedPMEvent): PMEvent {
     engineer_id: p.engineerId || null,
     start_date: format(p.proposedStartDate, 'yyyy-MM-dd'),
     end_date: format(p.proposedEndDate, 'yyyy-MM-dd'),
+    calendar_label: null,
+    client_description: null,
     actual_start_date: null,
     actual_end_date: null,
     completed_at: null,

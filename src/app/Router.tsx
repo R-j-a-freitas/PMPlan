@@ -1,12 +1,13 @@
 import { lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../stores';
+import { useAuthStore, useLanguageStore } from '../stores';
+import { useT } from '../i18n';
 
 const LAST_ROUTE_KEY = 'pmplan:last-route';
 const SESSION_FLAG_KEY = 'pmplan:session-active';
 // Rotas de autenticação nunca são guardadas nem restauradas — não são um "sítio" onde o
 // utilizador estava a trabalhar (o RequireAuth trata de lá voltar quando é preciso).
-const EXCLUDED_ROUTES = new Set(['/login', '/set-password']);
+const EXCLUDED_ROUTES = new Set(['/login', '/set-password', '/language']);
 
 // Persistência da rota entre relançamentos da PWA. Numa PWA standalone (start_url '/'),
 // sair para outra app (ex.: Google Maps) e voltar pode fazer o sistema operativo MATAR e
@@ -46,6 +47,7 @@ function RoutePersistence() {
 // Lazy loading de páginas (secção 12 — requisito de performance).
 const Login = lazy(() => import('../pages/Login').then((m) => ({ default: m.Login })));
 const SetPassword = lazy(() => import('../pages/SetPassword').then((m) => ({ default: m.SetPassword })));
+const ChooseLanguage = lazy(() => import('../pages/ChooseLanguage').then((m) => ({ default: m.ChooseLanguage })));
 const Dashboard = lazy(() => import('../pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Overview = lazy(() => import('../pages/Overview').then((m) => ({ default: m.Overview })));
 const Equipment = lazy(() => import('../pages/Equipment').then((m) => ({ default: m.Equipment })));
@@ -60,25 +62,32 @@ const Approvals = lazy(() => import('../pages/Approvals').then((m) => ({ default
 const SystemHealth = lazy(() => import('../pages/SystemHealth').then((m) => ({ default: m.SystemHealth })));
 
 function RouteFallback() {
+  const t = useT();
   return (
     <div className="flex h-screen w-screen flex-col items-center justify-center gap-3 bg-gray-50">
       <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-brand-600 border-t-transparent" />
-      <p className="text-sm text-gray-500">A carregar…</p>
+      <p className="text-sm text-gray-500">{t('common.loading')}</p>
     </div>
   );
 }
 
 // Sem sessão → /login. Conta com palavra-passe temporária (must_change_password,
-// criada por um admin) → /set-password antes de mais nada. Autorização fina por
-// role fica a cargo do RLS + permissions (lib/permissions.ts), não deste guard.
+// criada por um admin) → /set-password antes de mais nada. Perfil ainda sem idioma
+// escolhido → /language. Autorização fina por role fica a cargo do RLS + permissions
+// (lib/permissions.ts), não deste guard.
 function RequireAuth({ children }: { children: ReactNode }) {
   const session = useAuthStore((state) => state.session);
   const profile = useAuthStore((state) => state.profile);
   const loading = useAuthStore((state) => state.loading);
+  const langChosen = useLanguageStore((state) => state.chosen);
 
   if (loading) return <RouteFallback />;
   if (!session) return <Navigate to="/login" replace />;
   if (profile?.must_change_password) return <Navigate to="/set-password" replace />;
+  // A seguir à palavra-passe e antes de tudo o resto: a aplicação por trás deste guard
+  // está toda escrita num dos dois idiomas, e não faz sentido mostrá-la antes de saber
+  // em qual. Só afecta quem nunca escolheu (coluna language a nulo, migração 0019).
+  if (!langChosen) return <Navigate to="/language" replace />;
   return <>{children}</>;
 }
 
@@ -90,6 +99,7 @@ export function Router() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/set-password" element={<SetPassword />} />
+          <Route path="/language" element={<ChooseLanguage />} />
           <Route
             path="/"
             element={

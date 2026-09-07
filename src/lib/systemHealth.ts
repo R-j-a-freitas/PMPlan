@@ -6,6 +6,7 @@ import type {
   SystemBackup,
   SystemHeartbeat,
 } from '../types';
+import type { TFunction } from '../i18n';
 
 /** Limiares do semáforo, em horas (secção da Fase 5 do plano de continuidade).
  *  36h dá margem para uma execução diária falhar uma vez sem alarmar; 72h significa que
@@ -108,11 +109,14 @@ export function latestAutomaticBackup(backups: SystemBackup[]): SystemBackup | n
   );
 }
 
-export function formatAge(ageHours: number | null): string {
+/** Idade por extenso, na unidade que se lê melhor. Recebe o tradutor porque "dias" muda
+ *  de idioma — os minutos e as horas não, mas passam pelo mesmo caminho para a unidade
+ *  ficar toda definida no mesmo sítio. */
+export function formatAge(ageHours: number | null, t: TFunction): string {
   if (ageHours === null) return '—';
-  if (ageHours < 1) return `${Math.round(ageHours * 60)} min`;
-  if (ageHours < 48) return `${ageHours.toFixed(1)} h`;
-  return `${Math.floor(ageHours / 24)} dias`;
+  if (ageHours < 1) return t('health.age.minutes', { value: Math.round(ageHours * 60) });
+  if (ageHours < 48) return t('health.age.hours', { value: ageHours.toFixed(1) });
+  return t('health.age.days', { value: Math.floor(ageHours / 24) });
 }
 
 export function formatBytes(bytes: number): string {
@@ -134,9 +138,4 @@ export const LEVEL_COLORS: Record<HealthLevel, string> = {
   unknown: '#6B7280',
 };
 
-export const LEVEL_LABELS: Record<HealthLevel, string> = {
-  ok: 'OK',
-  warning: 'Aviso',
-  critical: 'Crítico',
-  unknown: 'Sem dados',
-};
+

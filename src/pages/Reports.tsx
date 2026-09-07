@@ -3,10 +3,14 @@ import { PageShell } from '../app/PageShell';
 import { exportPMEventsToExcel, exportPMEventsToPdf } from '../lib/exporters';
 import type { PMReportRow } from '../lib/exporters';
 import { useCalendarStore, useEngineerStore, useEquipmentStore } from '../stores';
-import { Badge, Button, Card, EmptyState, PageHeader } from '../components/ui';
+import { Badge, Button, Card, EmptyState, PageHeader, SortableTh } from '../components/ui';
+import { useTableSort } from '../hooks';
+import type { SortAccessors } from '../hooks';
 import { toDisplayDate } from '../lib/dateFormat';
-import { PM_STATUS_META } from '../lib/pmStatus';
+import { PM_STATUS_COLORS } from '../lib/pmStatus';
 import type { PMStatus } from '../types';
+import { useT, type TFunction, type TranslationKey } from '../i18n';
+import { PM_STATUS_KEYS } from '../i18n/labels';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1];
@@ -30,26 +34,36 @@ type SortKey =
   | 'startDate'
   | 'endDate'
   | 'status';
-type SortDir = 'asc' | 'desc';
 
-const COLUMNS: { key: SortKey; label: string }[] = [
-  { key: 'equipmentName', label: 'Equipamento' },
-  { key: 'modality', label: 'Modalidade' },
-  { key: 'hospitalName', label: 'Hospital' },
-  { key: 'engineerName', label: 'Engenheiro' },
-  { key: 'startDate', label: 'Início' },
-  { key: 'endDate', label: 'Fim' },
-  { key: 'status', label: 'Estado' },
+const COLUMNS: { key: SortKey; labelKey: TranslationKey }[] = [
+  { key: 'equipmentName', labelKey: 'common.equipment' },
+  { key: 'modality', labelKey: 'common.modality' },
+  { key: 'hospitalName', labelKey: 'common.hospital' },
+  { key: 'engineerName', labelKey: 'common.engineer' },
+  { key: 'startDate', labelKey: 'common.start' },
+  { key: 'endDate', labelKey: 'common.end' },
+  { key: 'status', labelKey: 'common.status' },
 ];
 
-function compareRows(a: ReportRow, b: ReportRow, key: SortKey): number {
-  if (key === 'startDate') return a.startDateIso.localeCompare(b.startDateIso);
-  if (key === 'endDate') return a.endDateIso.localeCompare(b.endDateIso);
-  return a[key].localeCompare(b[key]);
+// As datas ordenam pela versão ISO — ordenar pelas strings DD/MM/AAAA que a coluna
+// mostra daria uma ordem alfabética, não cronológica. O estado ordena pelo rótulo
+// traduzido (o que se lê na pastilha), por isso os extractores dependem do idioma
+// activo e vivem num useMemo dentro da página, e não numa constante de módulo.
+function buildReportSort(t: TFunction): SortAccessors<ReportRow, SortKey> {
+  return {
+    equipmentName: (row) => row.equipmentName,
+    modality: (row) => row.modality,
+    hospitalName: (row) => row.hospitalName,
+    engineerName: (row) => row.engineerName,
+    startDate: (row) => row.startDateIso,
+    endDate: (row) => row.endDateIso,
+    status: (row) => t(PM_STATUS_KEYS[row.status]),
+  };
 }
 
 // Relatórios e exportação (secção 3) — Excel via SheetJS, PDF via jsPDF (secção 2, sem plugins extra).
 export function Reports() {
+  const t = useT();
   const [year, setYear] = useState(CURRENT_YEAR);
   const events = useCalendarStore((state) => state.events);
   const fetchEvents = useCalendarStore((state) => state.fetchEvents);
@@ -61,8 +75,6 @@ export function Reports() {
   const [modalityFilter, setModalityFilter] = useState('');
   const [hospitalFilter, setHospitalFilter] = useState('');
   const [engineerFilter, setEngineerFilter] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('startDate');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   useEffect(() => {
     fetchEquipment();
@@ -109,31 +121,25 @@ export function Reports() {
     [allRows],
   );
 
-  const rows = useMemo(() => {
-    const filtered = allRows.filter(
-      (row) =>
-        (!modalityFilter || row.modality === modalityFilter) &&
-        (!hospitalFilter || row.hospitalName === hospitalFilter) &&
-        (!engineerFilter || row.engineerName === engineerFilter),
-    );
-    const sorted = [...filtered].sort((a, b) => compareRows(a, b, sortKey));
-    return sortDir === 'asc' ? sorted : sorted.reverse();
-  }, [allRows, modalityFilter, hospitalFilter, engineerFilter, sortKey, sortDir]);
+  const filteredRows = useMemo(
+    () =>
+      allRows.filter(
+        (row) =>
+          (!modalityFilter || row.modality === modalityFilter) &&
+          (!hospitalFilter || row.hospitalName === hospitalFilter) &&
+          (!engineerFilter || row.engineerName === engineerFilter),
+      ),
+    [allRows, modalityFilter, hospitalFilter, engineerFilter],
+  );
 
-  function handleSort(key: SortKey) {
-    if (key === sortKey) {
-      setSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir('asc');
-    }
-  }
+  const reportSort = useMemo(() => buildReportSort(t), [t]);
+  const { rows, sortableProps } = useTableSort(filteredRows, reportSort, 'startDate');
 
   return (
     <PageShell>
       <PageHeader
-        title="Relatórios"
-        description="As PMs do ano, filtradas e ordenadas à medida — prontas a exportar para Excel ou PDF."
+        title={t('reports.title')}
+        description={t('reports.description')}
         actions={
           <>
             <Button
@@ -141,10 +147,10 @@ export function Reports() {
               onClick={() => exportPMEventsToPdf(rows, `pmplan-${year}.pdf`)}
               disabled={rows.length === 0}
             >
-              Exportar PDF
+              {t('reports.exportPdf')}
             </Button>
             <Button onClick={() => exportPMEventsToExcel(rows, `pmplan-${year}.xlsx`)} disabled={rows.length === 0}>
-              Exportar Excel
+              {t('reports.exportExcel')}
             </Button>
           </>
         }
@@ -153,7 +159,7 @@ export function Reports() {
       <Card className="mb-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm text-gray-600">
-            Ano
+            {t('common.year')}
             <select
               className="pm-field"
               value={year}
@@ -168,13 +174,13 @@ export function Reports() {
           </label>
 
           <label className="flex flex-col gap-1 text-sm text-gray-600">
-            Modalidade
+            {t('common.modality')}
             <select
               className="pm-field"
               value={modalityFilter}
               onChange={(event) => setModalityFilter(event.target.value)}
             >
-              <option value="">Todas</option>
+              <option value="">{t('reports.allFem')}</option>
               {modalityOptions.map((modality) => (
                 <option key={modality} value={modality}>
                   {modality}
@@ -184,13 +190,13 @@ export function Reports() {
           </label>
 
           <label className="flex flex-col gap-1 text-sm text-gray-600">
-            Hospital
+            {t('common.hospital')}
             <select
               className="pm-field"
               value={hospitalFilter}
               onChange={(event) => setHospitalFilter(event.target.value)}
             >
-              <option value="">Todos</option>
+              <option value="">{t('reports.allMasc')}</option>
               {hospitalOptions.map((hospitalName) => (
                 <option key={hospitalName} value={hospitalName}>
                   {hospitalName}
@@ -200,13 +206,13 @@ export function Reports() {
           </label>
 
           <label className="flex flex-col gap-1 text-sm text-gray-600">
-            Engenheiro
+            {t('common.engineer')}
             <select
               className="pm-field"
               value={engineerFilter}
               onChange={(event) => setEngineerFilter(event.target.value)}
             >
-              <option value="">Todos</option>
+              <option value="">{t('reports.allMasc')}</option>
               {engineerOptions.map((engineerName) => (
                 <option key={engineerName} value={engineerName}>
                   {engineerName}
@@ -217,31 +223,18 @@ export function Reports() {
         </div>
       </Card>
 
-      <Card padded={false} title={`${rows.length} PM(s) em ${year}`}>
+      <Card padded={false} title={t('reports.count', { count: rows.length, year })}>
         {rows.length === 0 ? (
-          <EmptyState>Sem PMs para os filtros escolhidos.</EmptyState>
+          <EmptyState>{t('reports.empty')}</EmptyState>
         ) : (
           <div className="overflow-x-auto">
             <table className="pm-table">
               <thead>
                 <tr>
                   {COLUMNS.map((column) => (
-                    <th key={column.key} className="py-1.5 pr-2">
-                      {/* Coluna ordenável: a seta só aparece na coluna activa, e o
-                          cabeçalho inteiro é a área de clique. */}
-                      <button
-                        type="button"
-                        onClick={() => handleSort(column.key)}
-                        className={`flex items-center gap-1 text-xs font-semibold uppercase tracking-wide transition-colors ${
-                          sortKey === column.key ? 'text-brand-700' : 'text-gray-500 hover:text-gray-800'
-                        }`}
-                      >
-                        {column.label}
-                        <span aria-hidden="true" className={sortKey === column.key ? '' : 'invisible'}>
-                          {sortDir === 'asc' ? '▲' : '▼'}
-                        </span>
-                      </button>
-                    </th>
+                    <SortableTh key={column.key} {...sortableProps(column.key)}>
+                      {t(column.labelKey)}
+                    </SortableTh>
                   ))}
                 </tr>
               </thead>
@@ -255,7 +248,7 @@ export function Reports() {
                     <td className="py-1.5 pr-2 tabular-nums">{row.startDate}</td>
                     <td className="py-1.5 pr-2 tabular-nums">{row.endDate}</td>
                     <td className="py-1.5 pr-2">
-                      <Badge color={PM_STATUS_META[row.status].color}>{PM_STATUS_META[row.status].label}</Badge>
+                      <Badge color={PM_STATUS_COLORS[row.status]}>{t(PM_STATUS_KEYS[row.status])}</Badge>
                     </td>
                   </tr>
                 ))}

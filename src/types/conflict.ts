@@ -1,3 +1,5 @@
+import type { TranslationKey } from '../i18n';
+
 export type ConflictType =
   | 'engineer_overlap' // Engenheiro com dois eventos em simultâneo
   | 'holiday_block' // PM colocada em feriado
@@ -23,7 +25,11 @@ export type ConflictType =
 export type ConflictResult = {
   hasConflict: boolean;
   type?: ConflictType;
-  message?: string;
+  /** Chave de tradução da explicação, com os parâmetros já resolvidos (datas formatadas,
+   *  nomes, contagens). O texto é composto na interface — ver conflictMessage em
+   *  src/i18n/labels.ts — para as regras não terem de conhecer o idioma de quem as vê. */
+  messageKey?: TranslationKey;
+  messageParams?: Record<string, string | number>;
   /** Próxima data disponível sugerida automaticamente. */
   suggestedDate?: Date;
 };

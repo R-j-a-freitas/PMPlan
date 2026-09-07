@@ -1,0 +1,52 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@supabase/supabase-js@2": "2.112.2"
+  },
+  "jsr": {
+    "@supabase/supabase-js@2.112.2": {
+      "integrity": "6462b34553f02db1534f534318b0abf46a4d20994e93725233dab75ebbf78b7f"
+    }
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@azure/msal-browser@^3.27.0",
+        "npm:@azure/msal-react@^2.0.21",
+        "npm:@eslint/js@^9.15.0",
+        "npm:@fullcalendar/core@^6.1.15",
+        "npm:@fullcalendar/daygrid@^6.1.15",
+        "npm:@fullcalendar/interaction@^6.1.15",
+        "npm:@fullcalendar/list@^6.1.15",
+        "npm:@fullcalendar/multimonth@^6.1.15",
+        "npm:@fullcalendar/react@^6.1.15",
+        "npm:@fullcalendar/timegrid@^6.1.15",
+        "npm:@supabase/supabase-js@^2.45.4",
+        "npm:@types/node@^22.10.1",
+        "npm:@types/react-dom@^18.3.1",
+        "npm:@types/react@^18.3.12",
+        "npm:@vitejs/plugin-react@^4.3.4",
+        "npm:autoprefixer@^10.4.20",
+        "npm:date-fns@^3.6.0",
+        "npm:eslint-plugin-react-hooks@5",
+        "npm:eslint-plugin-react-refresh@~0.4.14",
+        "npm:eslint@^9.15.0",
+        "npm:globals@^15.12.0",
+        "npm:jspdf@^4.2.1",
+        "npm:postcss@^8.4.49",
+        "npm:react-dom@^18.3.1",
+        "npm:react-router-dom@^6.28.0",
+        "npm:react@^18.3.1",
+        "npm:tailwindcss@^3.4.15",
+        "npm:typescript-eslint@^8.15.0",
+        "npm:typescript@~5.6.2",
+        "npm:vite-plugin-pwa@~0.20.5",
+        "npm:vite@^5.4.11",
+        "npm:zustand@^4.5.5"
+      ],
+      "overrides": {
+        "esbuild": "^0.28.1"
+      }
+    }
+  }
+}

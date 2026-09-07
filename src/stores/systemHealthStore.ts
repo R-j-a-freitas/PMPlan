@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { backupFilename, buildBackupFile, downloadBackupFile } from '../lib/backupExport';
 import { supabase } from '../lib/supabase';
+import type { TFunction } from '../i18n';
 import type {
   ManualBackupResult,
   SystemBackup,
@@ -34,8 +35,10 @@ interface SystemHealthState {
   fetchedAt: Date | null;
 
   fetchHealth: () => Promise<void>;
-  runSystemCheck: () => Promise<ActionResult<SystemCheckResult>>;
-  runManualBackup: () => Promise<ActionResult<ManualBackupResult>>;
+  /** Recebem o tradutor de quem as chama: a mensagem devolvida vai directa para um toast
+   *  no ecrã de saúde, que existe em português e espanhol. */
+  runSystemCheck: (t: TFunction) => Promise<ActionResult<SystemCheckResult>>;
+  runManualBackup: (t: TFunction) => Promise<ActionResult<ManualBackupResult>>;
 }
 
 // A retenção é de 90 registos em ambas as tabelas (0010 e 0013), por isso não há aqui
@@ -85,7 +88,7 @@ export const useSystemHealthStore = create<SystemHealthState>()(
       // ('manual'), conta as PMs e purga (migração 0018). Serve dois momentos concretos —
       // confirmar que a base de dados responde antes de fechar o portátil para férias, e
       // adiar a contagem dos 7 dias quando se sabe que a VPS está em baixo.
-      runSystemCheck: async () => {
+      runSystemCheck: async (t) => {
         set({ checking: true });
         try {
           const { data, error } = await supabase.rpc('run_system_check');
@@ -96,7 +99,7 @@ export const useSystemHealthStore = create<SystemHealthState>()(
           await get().fetchHealth();
           return { ok: true as const, data };
         } catch (err) {
-          return failure(err, 'Falha ao verificar o estado do sistema.');
+          return failure(err, t('health.checkFailed'));
         } finally {
           set({ checking: false });
         }
@@ -105,7 +108,7 @@ export const useSystemHealthStore = create<SystemHealthState>()(
       // Exporta os dados, grava o ficheiro no computador de quem carregou, e só depois
       // regista a cópia no histórico. A ordem é essa de propósito: registar primeiro
       // deixava no ecrã a marca de uma cópia que a gravação pode não ter produzido.
-      runManualBackup: async () => {
+      runManualBackup: async (t) => {
         set({ backingUp: true });
         try {
           const { data, error } = await supabase.rpc('admin_backup_export');
@@ -125,7 +128,7 @@ export const useSystemHealthStore = create<SystemHealthState>()(
           if (recordError) {
             return {
               ok: false as const,
-              message: `Cópia gravada em ${filename}, mas não foi possível registá-la no histórico: ${recordError.message}`,
+              message: t('health.backupNotRecorded', { filename, detail: recordError.message }),
             };
           }
 
@@ -141,7 +144,7 @@ export const useSystemHealthStore = create<SystemHealthState>()(
             },
           };
         } catch (err) {
-          return failure(err, 'Falha ao exportar a base de dados.');
+          return failure(err, t('health.exportFailed'));
         } finally {
           set({ backingUp: false });
         }

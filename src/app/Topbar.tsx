@@ -1,24 +1,25 @@
 import { NavLink } from 'react-router-dom';
 import { useAuthStore, useCalendarStore } from '../stores';
-import { Button } from '../components/ui';
+import { Button, LanguageSwitcher } from '../components/ui';
+import { useT, type TranslationKey } from '../i18n';
 
-const NAV_LINKS = [
-  { to: '/', label: 'Calendário', end: true },
-  { to: '/painel', label: 'Painel' },
-  { to: '/equipment', label: 'Equipamentos' },
-  { to: '/engineers', label: 'Engenheiros' },
-  { to: '/clients', label: 'Hospitais' },
-  { to: '/contacts', label: 'Contactos' },
-  { to: '/holidays', label: 'Feriados' },
-  { to: '/reports', label: 'Relatórios' },
-  { to: '/settings', label: 'Configurações' },
+const NAV_LINKS: { to: string; labelKey: TranslationKey; end?: boolean }[] = [
+  { to: '/', labelKey: 'nav.calendar', end: true },
+  { to: '/painel', labelKey: 'nav.overview' },
+  { to: '/equipment', labelKey: 'nav.equipment' },
+  { to: '/engineers', labelKey: 'nav.engineers' },
+  { to: '/clients', labelKey: 'nav.clients' },
+  { to: '/contacts', labelKey: 'nav.contacts' },
+  { to: '/holidays', labelKey: 'nav.holidays' },
+  { to: '/reports', labelKey: 'nav.reports' },
+  { to: '/settings', labelKey: 'nav.settings' },
 ];
 
-const ROLE_LABELS: Record<string, string> = {
-  admin: 'Administrador',
-  planner: 'Planeador',
-  engineer: 'Engenheiro',
-  readonly: 'Consulta',
+const ROLE_LABEL_KEYS: Record<string, TranslationKey> = {
+  admin: 'role.admin',
+  planner: 'role.planner',
+  engineer: 'role.engineer',
+  readonly: 'role.readonly',
 };
 
 // Iniciais para o avatar do perfil — duas letras chegam para identificar quem está
@@ -30,9 +31,11 @@ function initials(name: string): string {
   return (first + last).toUpperCase() || '?';
 }
 
-// TOPBAR: Logo | navegação | Ano de planeamento | Perfil (secção 10). Notificações/
-// filtros globais ficam para as Fases 3/4 (secção 14) — ainda sem requisitos definidos.
+// TOPBAR: Logo | navegação | Ano de planeamento | Idioma | Perfil (secção 10).
+// Notificações/filtros globais ficam para as Fases 3/4 (secção 14) — ainda sem
+// requisitos definidos.
 export function Topbar() {
+  const t = useT();
   const profile = useAuthStore((state) => state.profile);
   const canManageUsers = useAuthStore((state) => state.permissions.canManageUsers);
   const canApprove = useAuthStore(
@@ -44,11 +47,14 @@ export function Topbar() {
   const setPlanningYear = useCalendarStore((state) => state.setPlanningYear);
 
   let navLinks = NAV_LINKS;
-  if (canApprove) navLinks = [...navLinks, { to: '/approvals', label: 'Aprovações' }];
-  if (canManageUsers) navLinks = [...navLinks, { to: '/users', label: 'Utilizadores' }];
-  if (canViewSystemHealth) navLinks = [...navLinks, { to: '/system', label: 'Sistema' }];
+  if (canApprove) navLinks = [...navLinks, { to: '/approvals', labelKey: 'nav.approvals' }];
+  if (canManageUsers) navLinks = [...navLinks, { to: '/users', labelKey: 'nav.users' }];
+  if (canViewSystemHealth) navLinks = [...navLinks, { to: '/system', labelKey: 'nav.system' }];
 
-  const profileName = profile?.name ?? 'Utilizador';
+  const profileName = profile?.name ?? t('topbar.user');
+  // Um role fora dos quatro conhecidos (BD adulterada) mostra-se cru, em vez de partir.
+  const roleKey = profile ? ROLE_LABEL_KEYS[profile.role] : undefined;
+  const roleLabel = roleKey ? t(roleKey) : (profile?.role ?? '');
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-4 border-b border-gray-200 bg-white px-4 shadow-sm">
@@ -66,7 +72,7 @@ export function Topbar() {
               }`
             }
           >
-            {link.label}
+            {t(link.labelKey)}
           </NavLink>
         ))}
       </nav>
@@ -75,28 +81,30 @@ export function Topbar() {
           é um selector de valor, e tem de se ler como tal. */}
       <div
         className="flex shrink-0 items-center rounded-md border border-gray-300 bg-white shadow-sm"
-        title="Ano de planeamento"
+        title={t('topbar.planningYear')}
       >
         <button
           type="button"
           onClick={() => setPlanningYear(planningYear - 1)}
-          aria-label="Ano anterior"
+          aria-label={t('topbar.previousYear')}
           className="h-8 rounded-l-md px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
         >
           ‹
         </button>
         <span className="min-w-[5.5rem] border-x border-gray-200 px-2 text-center text-sm font-semibold tabular-nums text-gray-700">
-          Plano {planningYear}
+          {t('topbar.plan', { year: planningYear })}
         </span>
         <button
           type="button"
           onClick={() => setPlanningYear(planningYear + 1)}
-          aria-label="Ano seguinte"
+          aria-label={t('topbar.nextYear')}
           className="h-8 rounded-r-md px-2 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
         >
           ›
         </button>
       </div>
+
+      <LanguageSwitcher />
 
       {profile && (
         <div className="flex shrink-0 items-center gap-2 border-l border-gray-200 pl-3">
@@ -108,10 +116,10 @@ export function Topbar() {
           </span>
           <div className="hidden leading-tight lg:block">
             <div className="text-sm font-medium text-gray-800">{profileName}</div>
-            <div className="text-xs text-gray-500">{ROLE_LABELS[profile.role] ?? profile.role}</div>
+            <div className="text-xs text-gray-500">{roleLabel}</div>
           </div>
           <Button variant="ghost" size="sm" onClick={signOut}>
-            Sair
+            {t('topbar.signOut')}
           </Button>
         </div>
       )}

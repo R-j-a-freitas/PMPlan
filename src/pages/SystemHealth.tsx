@@ -6,7 +6,6 @@ import {
   BACKUP_SOURCE_LABELS,
   CRITICAL_AFTER_HOURS,
   LEVEL_COLORS,
-  LEVEL_LABELS,
   SOURCE_LABELS,
   WARNING_AFTER_HOURS,
   formatAge,
@@ -18,11 +17,14 @@ import {
   summariseHeartbeats,
 } from '../lib/systemHealth';
 import type { HealthLevel } from '../types';
+import { useLang, useT } from '../i18n';
+import { HEALTH_LEVEL_KEYS } from '../i18n/labels';
 
 // ─── Peças ───────────────────────────────────────────────────────────────────
 
 function StatusBadge({ level }: { level: HealthLevel }) {
-  return <Badge color={LEVEL_COLORS[level]}>{LEVEL_LABELS[level]}</Badge>;
+  const t = useT();
+  return <Badge color={LEVEL_COLORS[level]}>{t(HEALTH_LEVEL_KEYS[level])}</Badge>;
 }
 
 function Empty({ children }: { children: ReactNode }) {
@@ -39,6 +41,11 @@ function Empty({ children }: { children: ReactNode }) {
 // próprias (ver DOCS/KEEP_ALIVE_VPS.md). As duas acções manuais desta página são a
 // excepção, e passam pelas funções da migração 0018 — nunca por um INSERT do browser.
 export function SystemHealth() {
+  const t = useT();
+  const lang = useLang();
+  // Datas e horas seguem o idioma da interface: 'pt-PT' fixo dava um formato português
+  // a quem escolheu espanhol, no meio de um ecrã todo em espanhol.
+  const locale = lang === 'es' ? 'es-ES' : 'pt-PT';
   const canView = useAuthStore((state) => state.permissions.canViewSystemHealth);
   const heartbeats = useSystemHealthStore((state) => state.heartbeats);
   const backups = useSystemHealthStore((state) => state.backups);
@@ -70,19 +77,19 @@ export function SystemHealth() {
     lastBackup?.status === 'failed' ? 'critical' : levelForAge(backupAge);
 
   async function handleCheck() {
-    const result = await runSystemCheck();
+    const result = await runSystemCheck(t);
     if (!result.ok) {
       pushToast({ variant: 'error', message: result.message });
       return;
     }
     pushToast({
       variant: 'success',
-      message: `Base de dados a responder: escrita registada e ${result.data.pm_events} PMs contadas.`,
+      message: t('health.checkSuccess', { count: result.data.pm_events }),
     });
   }
 
   async function handleBackup() {
-    const result = await runManualBackup();
+    const result = await runManualBackup(t);
     if (!result.ok) {
       pushToast({ variant: 'error', message: result.message });
       return;
@@ -93,17 +100,21 @@ export function SystemHealth() {
       // quem o guardar tem de saber que restaurar por ele deixa toda a gente sem entrar.
       variant: includesAccounts ? 'success' : 'warning',
       message:
-        `${filename} — ${rowCount} linhas de ${tableCount} tabelas (${formatBytes(sizeBytes)}).` +
-        (includesAccounts ? '' : ' Sem a lista de contas: a base de dados não a deixou ler.'),
+        t('health.backupSummary', {
+          filename,
+          rows: rowCount,
+          tables: tableCount,
+          size: formatBytes(sizeBytes),
+        }) + (includesAccounts ? '' : t('health.backupNoAccounts')),
     });
   }
 
   if (!canView) {
     return (
       <PageShell>
-        <PageHeader title="Saúde do sistema" />
+        <PageHeader title={t('health.title')} />
         <Card>
-          <EmptyState>Sem permissão para ver a saúde do sistema.</EmptyState>
+          <EmptyState>{t('health.restricted')}</EmptyState>
         </Card>
       </PageShell>
     );
@@ -112,15 +123,17 @@ export function SystemHealth() {
   return (
     <PageShell>
       <PageHeader
-        title="Saúde do sistema"
-        description="O que impede a base de dados de ser pausada, e o que a protege de ser perdida."
+        title={t('health.title')}
+        description={t('health.description')}
         actions={
           <>
             {fetchedAt && (
-              <span className="text-xs text-gray-400">lido às {fetchedAt.toLocaleTimeString('pt-PT')}</span>
+              <span className="text-xs text-gray-400">
+                {t('health.readAt', { time: fetchedAt.toLocaleTimeString(locale) })}
+              </span>
             )}
             <Button variant="secondary" onClick={fetchHealth} disabled={loading}>
-              {loading ? 'A carregar…' : '↻ Actualizar'}
+              {loading ? t('common.loading') : t('health.refresh')}
             </Button>
           </>
         }
@@ -132,38 +145,35 @@ export function SystemHealth() {
             precisamente esse. */}
         {error && (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
-            <strong>Não foi possível ler o estado do sistema.</strong> {error}
+            <strong>{t('health.readFailed')}</strong> {error}
             <br />
-            Se o erro persistir, confirme no dashboard da Supabase se o projecto está activo
-            — este ecrã lê da mesma base de dados que está a diagnosticar.
+            {t('health.readFailedHint')}
           </div>
         )}
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card
-            title="Keep-alive — impede a pausa por inactividade"
+            title={t('health.keepAlive')}
             actions={
               <Button variant="secondary" onClick={handleCheck} disabled={checking}>
-                {checking ? 'A verificar…' : 'Verificar agora'}
+                {checking ? t('health.checking') : t('health.checkNow')}
               </Button>
             }
           >
             <div className="mb-3 flex items-center gap-2">
               <StatusBadge level={overall} />
               <span className="text-sm text-gray-600">
-                {overall === 'unknown'
-                  ? 'Nenhuma origem automática alguma vez escreveu.'
-                  : 'Estado global (a origem automática mais recente).'}
+                {overall === 'unknown' ? t('health.neverWrote') : t('health.overall')}
               </span>
             </div>
 
             <table className="pm-table">
               <thead>
                 <tr>
-                  <th className="pb-1 font-medium">Origem</th>
-                  <th className="pb-1 font-medium">Último sinal</th>
-                  <th className="pb-1 text-right font-medium">Idade</th>
-                  <th className="pb-1 text-right font-medium">Estado</th>
+                  <th className="pb-1 font-medium">{t('health.col.source')}</th>
+                  <th className="pb-1 font-medium">{t('health.col.lastPing')}</th>
+                  <th className="pb-1 text-right font-medium">{t('health.col.age')}</th>
+                  <th className="pb-1 text-right font-medium">{t('common.status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -172,11 +182,11 @@ export function SystemHealth() {
                     <td className="py-1.5 text-gray-700">{SOURCE_LABELS[source.source]}</td>
                     <td className="py-1.5 text-gray-500">
                       {source.lastPing
-                        ? new Date(source.lastPing).toLocaleString('pt-PT')
-                        : 'nunca — por instalar'}
+                        ? new Date(source.lastPing).toLocaleString(locale)
+                        : t('health.neverInstalled')}
                     </td>
                     <td className="py-1.5 text-right tabular-nums text-gray-700">
-                      {formatAge(source.ageHours)}
+                      {formatAge(source.ageHours, t)}
                     </td>
                     <td className="py-1.5 text-right">
                       {/* A origem manual não leva semáforo: mede quando alguém carregou no
@@ -184,7 +194,7 @@ export function SystemHealth() {
                       {source.expected ? (
                         <StatusBadge level={source.level} />
                       ) : (
-                        <span className="text-xs text-gray-400">informativo</span>
+                        <span className="text-xs text-gray-400">{t('health.informative')}</span>
                       )}
                     </td>
                   </tr>
@@ -193,18 +203,16 @@ export function SystemHealth() {
             </table>
 
             <p className="mt-3 text-xs text-gray-400">
-              Aviso acima de {WARNING_AFTER_HOURS} h, crítico acima de {CRITICAL_AFTER_HOURS} h,
-              contados só sobre as origens automáticas. O projecto é pausado ao fim de 7 dias
-              sem actividade. <strong>Verificar agora</strong> escreve na base de dados e conta
-              as PMs — adia a contagem dos 7 dias, mas não substitui as origens automáticas.
+              {t('health.thresholds', { warning: WARNING_AFTER_HOURS, critical: CRITICAL_AFTER_HOURS })}{' '}
+              <strong>{t('health.checkNow')}</strong> {t('health.checkNowHint')}
             </p>
           </Card>
 
           <Card
-            title="Backup — protege do que apaga os dados"
+            title={t('health.backup')}
             actions={
               <Button onClick={handleBackup} disabled={backingUp}>
-                {backingUp ? 'A exportar…' : 'Descarregar cópia'}
+                {backingUp ? t('health.exporting') : t('health.downloadBackup')}
               </Button>
             }
           >
@@ -212,16 +220,18 @@ export function SystemHealth() {
                 razão para este cartão dizer que a protecção automática está de pé — mas
                 aparece na tabela abaixo, porque a cópia existe mesmo. */}
             {lastBackup === null ? (
-              <Empty>
-                Nenhum backup automático registado. O backup ainda não foi instalado na VPS.
-              </Empty>
+              <Empty>{t('health.noAutomaticBackup')}</Empty>
             ) : (
               <>
                 <div className="mb-3 flex items-center gap-2">
                   <StatusBadge level={backupLevel} />
                   <span className="text-sm text-gray-600">
-                    Último automático há {formatAge(backupAge)} · {formatBytes(lastBackup.size_bytes)}
-                    {lastBackup.object_count !== null && ` · ${lastBackup.object_count} objectos`}
+                    {t('health.lastAutomatic', {
+                      age: formatAge(backupAge, t),
+                      size: formatBytes(lastBackup.size_bytes),
+                    })}
+                    {lastBackup.object_count !== null &&
+                      t('health.objectCount', { count: lastBackup.object_count })}
                   </span>
                 </div>
                 {lastBackup.note && (
@@ -236,17 +246,17 @@ export function SystemHealth() {
               <table className="pm-table">
                 <thead>
                   <tr>
-                    <th className="pb-1 font-medium">Quando</th>
-                    <th className="pb-1 font-medium">Origem</th>
-                    <th className="pb-1 text-right font-medium">Dimensão</th>
-                    <th className="pb-1 text-right font-medium">Estado</th>
+                    <th className="pb-1 font-medium">{t('health.col.when')}</th>
+                    <th className="pb-1 font-medium">{t('health.col.source')}</th>
+                    <th className="pb-1 text-right font-medium">{t('health.col.size')}</th>
+                    <th className="pb-1 text-right font-medium">{t('common.status')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {backups.slice(0, 10).map((backup) => (
                     <tr key={backup.id}>
                       <td className="py-1.5 text-gray-700">
-                        {new Date(backup.ran_at).toLocaleString('pt-PT')}
+                        {new Date(backup.ran_at).toLocaleString(locale)}
                       </td>
                       <td className="py-1.5 text-gray-500">
                         {BACKUP_SOURCE_LABELS[backup.source]}
@@ -272,14 +282,9 @@ export function SystemHealth() {
             )}
 
             <p className="mt-3 text-xs text-gray-400">
-              Retenção dos automáticos: 7 diários, 4 semanais, 3 mensais, em
-              /var/backups/pmplan na VPS. Procedimento de restauro em
-              DOCS/DISASTER_RECOVERY.md.
+              {t('health.retention')}
               <br />
-              <strong>Descarregar cópia</strong> exporta os dados em JSON para este
-              computador. Leva as linhas de todas as tabelas e a lista de contas; não leva
-              schema, políticas nem palavras-passe — serve de última linha de defesa, não de
-              substituto do backup da VPS.
+              <strong>{t('health.downloadBackup')}</strong> {t('health.downloadHint')}
             </p>
           </Card>
         </div>

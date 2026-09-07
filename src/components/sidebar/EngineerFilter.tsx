@@ -3,6 +3,7 @@ import { useEngineerStore, useZoneStore } from '../../stores';
 import { expandZoneSelection } from '../../lib/zoneTree';
 import type { EngineerWithZones, Zone } from '../../types';
 import { SIDEBAR_INDENT_PX, SidebarSection } from './SidebarSection';
+import { useT } from '../../i18n';
 
 interface EngineerZoneNodeProps {
   zone: Zone;
@@ -27,6 +28,8 @@ function EngineerZoneNode({
   collapsedZoneIds,
   onToggleCollapse,
 }: EngineerZoneNodeProps) {
+  const t = useT();
+
   if (!zoneHasContent(zone.id)) return null;
 
   const children = allZones.filter((candidate) => candidate.parent_zone_id === zone.id);
@@ -42,7 +45,11 @@ function EngineerZoneNode({
         <button
           type="button"
           onClick={() => onToggleCollapse(zone.id)}
-          aria-label={collapsed ? `Expandir ${zone.name}` : `Colapsar ${zone.name}`}
+          aria-label={
+            collapsed
+              ? t('sidebar.expandSection', { name: zone.name })
+              : t('sidebar.collapseSection', { name: zone.name })
+          }
           className="pm-sidebar-caret"
         >
           {collapsed ? '▸' : '▾'}
@@ -93,6 +100,7 @@ function EngineerZoneNode({
 // calendário vazio, não "mostra todos". A lista é restringida pelas zonas marcadas em
 // ZoneScopeFilter (mostra só engenheiros das zonas em âmbito).
 export function EngineerFilter() {
+  const t = useT();
   const engineers = useEngineerStore((state) => state.engineers);
   const selectedEngineerIds = useEngineerStore((state) => state.selectedEngineerIds);
   const toggleEngineerSelection = useEngineerStore((state) => state.toggleEngineerSelection);
@@ -169,11 +177,11 @@ export function EngineerFilter() {
   }
 
   return (
-    <SidebarSection title="Engenheiros">
+    <SidebarSection title={t('sidebar.engineers')}>
       <div className="flex flex-col">
         <label className="pm-sidebar-row hover:bg-gray-50">
           <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-          <span>Todos</span>
+          <span>{t('sidebar.allMasc')}</span>
         </label>
         {topLevelZones.map((zone) => (
           <EngineerZoneNode
@@ -193,7 +201,7 @@ export function EngineerFilter() {
           <>
             <div className="pm-sidebar-row">
               <span className="w-3.5 shrink-0" />
-              <span className="pm-sidebar-group">Sem zona</span>
+              <span className="pm-sidebar-group">{t('sidebar.noZone')}</span>
             </div>
             {unassignedEngineers.map((engineer) => (
               <label

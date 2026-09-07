@@ -4,6 +4,8 @@ import { KNOWN_MODALITIES } from '../../types';
 import type { EquipmentFull, PmPerYear, WeekendWork } from '../../types';
 import { MODALITY_MANAGE_VALUE } from '../modals/ModalityManagerModal';
 import { Badge, Button } from '../ui';
+import { useT } from '../../i18n';
+import { WEEKEND_WORK_KEYS, WEEKEND_WORK_LONG_KEYS } from '../../i18n/labels';
 
 interface EquipmentRowProps {
   item: EquipmentFull;
@@ -11,12 +13,6 @@ interface EquipmentRowProps {
   /** Abre o modal de gestão de modalidades (a opção "Editar modalidades…" do dropdown). */
   onManageModalities: () => void;
 }
-
-const WEEKEND_WORK_LABELS: Record<string, string> = {
-  none: 'Só úteis',
-  saturday: 'Sáb',
-  both: 'Sáb+Dom',
-};
 
 function buildForm(item: EquipmentFull) {
   return {
@@ -40,6 +36,7 @@ function buildForm(item: EquipmentFull) {
 // Equipment.tsx e do export/import (secção: "tudo o que o admin criar, também tem de
 // editar"). Fabricante fica de fora (sempre a mesma marca, não vale a pena por linha).
 export function EquipmentRow({ item, canManageEquipment, onManageModalities }: EquipmentRowProps) {
+  const t = useT();
   const hospitals = useHospitalStore((state) => state.hospitals);
   const engineers = useEngineerStore((state) => state.engineers);
   const modalities = useModalityStore((state) => state.modalities);
@@ -79,7 +76,7 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
       });
       setEditing(false);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao actualizar equipamento.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('equipment.updateFailed') });
     } finally {
       setSaving(false);
     }
@@ -103,21 +100,25 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
         <td className="py-1.5 pr-2">{item.modality}</td>
         <td className="py-1.5 pr-2">{item.pm_per_year}</td>
         <td className="py-1.5 pr-2">{item.pm_duration_days}</td>
-        <td className="py-1.5 pr-2">{item.needs_shutdown ? 'Sim' : 'Não'}</td>
-        <td className="py-1.5 pr-2">{WEEKEND_WORK_LABELS[item.weekend_work] ?? '—'}</td>
+        <td className="py-1.5 pr-2">{item.needs_shutdown ? t('common.yes') : t('common.no')}</td>
+        <td className="py-1.5 pr-2">
+          {WEEKEND_WORK_KEYS[item.weekend_work] ? t(WEEKEND_WORK_KEYS[item.weekend_work]) : '—'}
+        </td>
         <td className="py-1.5 pr-2">{engineerPrimary?.name ?? '—'}</td>
         <td className="py-1.5 pr-2">{engineerSecondary?.name ?? '—'}</td>
         <td className="py-1.5 pr-2">
-          <Badge tone={item.active ? 'success' : 'neutral'}>{item.active ? 'Activo' : 'Inactivo'}</Badge>
+          <Badge tone={item.active ? 'success' : 'neutral'}>
+            {item.active ? t('equipment.state.active') : t('equipment.state.inactive')}
+          </Badge>
         </td>
         <td className="py-1.5 pr-2 text-right">
           {canManageEquipment && (
             <div className="flex justify-end gap-1">
               <Button variant="secondary" size="sm" onClick={startEdit}>
-                Editar
+                {t('common.edit')}
               </Button>
               <Button variant="dangerGhost" size="sm" onClick={() => deleteEquipment(item.id)}>
-                Eliminar
+                {t('common.delete')}
               </Button>
             </div>
           )}
@@ -198,7 +199,7 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
             </option>
           ))}
           <option disabled>──────────</option>
-          <option value={MODALITY_MANAGE_VALUE}>✏️ Editar modalidades…</option>
+          <option value={MODALITY_MANAGE_VALUE}>{t('modality.manage')}</option>
         </select>
       </td>
       <td className="py-1.5 pr-2">
@@ -209,7 +210,7 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
         >
           {[1, 2, 3, 4].map((n) => (
             <option key={n} value={n}>
-              {n}x/ano
+              {t('equipment.field.pmPerYearShort', { count: n })}
             </option>
           ))}
         </select>
@@ -236,9 +237,9 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
           value={form.weekendWork}
           onChange={(event) => setForm({ ...form, weekendWork: event.target.value as WeekendWork })}
         >
-          <option value="none">Só úteis</option>
-          <option value="saturday">Inclui sáb</option>
-          <option value="both">Sáb+Dom</option>
+          <option value="none">{t(WEEKEND_WORK_LONG_KEYS.none)}</option>
+          <option value="saturday">{t(WEEKEND_WORK_LONG_KEYS.saturday)}</option>
+          <option value="both">{t(WEEKEND_WORK_LONG_KEYS.both)}</option>
         </select>
       </td>
       <td className="py-1.5 pr-2">
@@ -279,10 +280,10 @@ export function EquipmentRow({ item, canManageEquipment, onManageModalities }: E
       <td className="py-1.5 pr-2 text-right">
         <div className="flex justify-end gap-1.5">
           <Button variant="secondary" size="sm" onClick={() => setEditing(false)} disabled={saving}>
-            Cancelar
+            {t('common.cancel')}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saving}>
-            Guardar
+            {t('common.save')}
           </Button>
         </div>
       </td>

@@ -4,6 +4,8 @@ import type { EventDropArg } from '@fullcalendar/core';
 import type { EventResizeDoneArg } from '@fullcalendar/interaction';
 import { useConflictEngine } from './useConflictEngine';
 import { useCalendarStore, useUiStore } from '../stores';
+import { useT } from '../i18n';
+import { conflictMessage } from '../i18n/labels';
 
 interface DragDropResult {
   handleEventDrop: (info: EventDropArg) => Promise<void>;
@@ -35,6 +37,7 @@ function toInclusiveEndDate(event: { start: Date | null; end: Date | null }): Da
 // Comportamento de drag-and-drop com conflito (secção 5):
 // feriado / sobreposição de engenheiro → bloqueia e reverte; carga de zona → avisa mas permite.
 export function useDragDrop(): DragDropResult {
+  const t = useT();
   const { validate } = useConflictEngine();
   const updateEvent = useCalendarStore((state) => state.updateEvent);
   const pushToast = useUiStore((state) => state.pushToast);
@@ -59,13 +62,13 @@ export function useDragDrop(): DragDropResult {
       const blocking = results.find((result) => result.hasConflict && result.type !== 'zone_overload');
       if (blocking) {
         params.revert();
-        pushToast({ variant: 'error', message: blocking.message ?? 'Conflito ao agendar PM.' });
+        pushToast({ variant: 'error', message: conflictMessage(blocking, t) ?? t('pm.conflict') });
         return;
       }
 
       const warning = results.find((result) => result.hasConflict && result.type === 'zone_overload');
       if (warning) {
-        pushToast({ variant: 'warning', message: warning.message ?? 'Zona com carga elevada.' });
+        pushToast({ variant: 'warning', message: conflictMessage(warning, t) ?? t('pm.zoneOverload') });
       }
 
       try {
@@ -77,11 +80,11 @@ export function useDragDrop(): DragDropResult {
         params.revert();
         pushToast({
           variant: 'error',
-          message: err instanceof Error ? err.message : 'Falha ao gravar a PM.',
+          message: err instanceof Error ? err.message : t('pm.dragSaveFailed'),
         });
       }
     },
-    [validate, updateEvent, pushToast],
+    [validate, updateEvent, pushToast, t],
   );
 
   const handleEventDrop = useCallback(

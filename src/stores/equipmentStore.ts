@@ -5,11 +5,14 @@ import type { EquipmentFull, EquipmentInsert, EquipmentUpdate } from '../types';
 
 export interface EquipmentFilters {
   zoneIds: string[];
-  modalities: string[];
+  /** Modalidades marcadas na sidebar, como chaves `zonaId::modalidade` (ver
+   *  lib/modalityScope) — a mesma modalidade em zonas-mãe diferentes é marcável
+   *  independentemente, por isso o nome sozinho não chega para identificar a linha. */
+  modalityKeys: string[];
   searchText: string;
 }
 
-const EMPTY_FILTERS: EquipmentFilters = { zoneIds: [], modalities: [], searchText: '' };
+const EMPTY_FILTERS: EquipmentFilters = { zoneIds: [], modalityKeys: [], searchText: '' };
 
 interface EquipmentState {
   equipment: EquipmentFull[];
@@ -34,7 +37,7 @@ interface EquipmentState {
   updateEquipment: (id: string, patch: EquipmentUpdate) => Promise<void>;
   deleteEquipment: (id: string) => Promise<void>;
   setZoneFilter: (zoneIds: string[]) => void;
-  setModalityFilter: (modalities: string[]) => void;
+  setModalityFilter: (modalityKeys: string[]) => void;
   setSearchText: (text: string) => void;
   resetFilters: () => void;
   setSelectedEquipmentId: (id: string | null) => void;
@@ -106,8 +109,8 @@ export const useEquipmentStore = create<EquipmentState>()(
       },
 
       setZoneFilter: (zoneIds) => set((state) => ({ filters: { ...state.filters, zoneIds } })),
-      setModalityFilter: (modalities) =>
-        set((state) => ({ filters: { ...state.filters, modalities } })),
+      setModalityFilter: (modalityKeys) =>
+        set((state) => ({ filters: { ...state.filters, modalityKeys } })),
       setSearchText: (searchText) => set((state) => ({ filters: { ...state.filters, searchText } })),
       resetFilters: () => set({ filters: EMPTY_FILTERS }),
       setSelectedEquipmentId: (selectedEquipmentId) => set({ selectedEquipmentId }),

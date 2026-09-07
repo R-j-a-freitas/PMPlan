@@ -1,8 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Draggable } from '@fullcalendar/interaction';
-import { useAuthStore, useEquipmentStore } from '../../stores';
+import { useAuthStore, useEquipmentStore, useZoneStore } from '../../stores';
+import { buildModalityScopeMatcher } from '../../lib/modalityScope';
 import type { EquipmentFull } from '../../types';
 import { Badge } from '../ui';
+import { useT } from '../../i18n';
 
 // Pesquisa dinâmica por TODOS os campos visíveis/relevantes da lista, não só o nome —
 // equipamento, fabricante, modelo, modalidade, nº de série, hospital e zona.
@@ -36,6 +38,7 @@ function matchesSearch(item: EquipmentFull, searchText: string): boolean {
 // Só fica draggable/armável para quem tem canCreatePM (engineer/readonly só consultam) —
 // a checkbox de filtragem fica sempre disponível, mesmo em modo só-consulta.
 export function EquipmentList() {
+  const t = useT();
   const canCreatePM = useAuthStore((state) => state.permissions.canCreatePM);
   const equipment = useEquipmentStore((state) => state.equipment);
   const filters = useEquipmentStore((state) => state.filters);
@@ -45,7 +48,15 @@ export function EquipmentList() {
   const selectedEquipmentIds = useEquipmentStore((state) => state.selectedEquipmentIds);
   const toggleEquipmentSelection = useEquipmentStore((state) => state.toggleEquipmentSelection);
   const setSelectedEquipmentIds = useEquipmentStore((state) => state.setSelectedEquipmentIds);
+  const zones = useZoneStore((state) => state.zones);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // O filtro de modalidades é por par (zona-mãe, modalidade): a chave marcada na sidebar
+  // traz a zona-mãe e o equipamento está numa zona-folha, daí o matcher em vez de um includes.
+  const matchesModality = useMemo(
+    () => buildModalityScopeMatcher(filters.modalityKeys, zones),
+    [filters.modalityKeys, zones],
+  );
 
   useEffect(() => {
     if (!containerRef.current || !canCreatePM) return;
@@ -67,7 +78,7 @@ export function EquipmentList() {
 
   const filtered = equipment.filter((item) => {
     if (filters.zoneIds.length > 0 && !filters.zoneIds.includes(item.zone_id)) return false;
-    if (filters.modalities.length > 0 && !filters.modalities.includes(item.modality)) return false;
+    if (filters.modalityKeys.length > 0 && !matchesModality(item.zone_id, item.modality)) return false;
     if (filters.searchText && !matchesSearch(item, filters.searchText)) return false;
     return true;
   });
@@ -91,7 +102,7 @@ export function EquipmentList() {
           depois da camada de componentes no CSS gerado. */}
       <input
         type="search"
-        placeholder="Procurar equipamento…"
+        placeholder={t('sidebar.searchEquipment')}
         className="pm-field mb-1.5 w-full py-1 text-xs"
         value={filters.searchText}
         onChange={(event) => setSearchText(event.target.value)}
@@ -99,7 +110,7 @@ export function EquipmentList() {
       {filtered.length > 0 && (
         <label className="pm-sidebar-row mb-0.5 text-[11px] text-gray-500">
           <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-          Mostrar todos no calendário
+          {t('sidebar.showAllInCalendar')}
         </label>
       )}
       <div ref={containerRef} className="flex flex-col gap-0.5">

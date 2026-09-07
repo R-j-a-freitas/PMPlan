@@ -1,13 +1,10 @@
 import { useState } from 'react';
-import {
-  APPROVAL_TRACKS,
-  APPROVAL_TRACK_COLORS,
-  APPROVAL_TRACK_LABELS,
-  templateKeyFor,
-} from '../../lib/approvalTrack';
+import { APPROVAL_TRACKS, APPROVAL_TRACK_COLORS, templateKeyFor } from '../../lib/approvalTrack';
 import { useAuthStore, useTemplateStore, useUiStore } from '../../stores';
 import type { ApprovalTrack, Country, EmailTemplateKey, EmailTemplateStep } from '../../types';
 import { Card, FormModal, SegmentedGroup, SegmentedOption } from '../ui';
+import { useT, type TranslationKey } from '../../i18n';
+import { APPROVAL_TRACK_KEYS } from '../../i18n/labels';
 
 // As três etapas com email, iguais em todas as vias. A chave concreta do template sai de
 // templateKeyFor(via, etapa) — a via de braquiterapia tem os seus (`brachy_*`, migração
@@ -15,16 +12,18 @@ import { Card, FormModal, SegmentedGroup, SegmentedOption } from '../ui';
 //
 // Cada etapa leva o destinatário à parte do nome: quem está a rever os textos quer saber,
 // antes de abrir, se aquele email vai para dentro (engenheiro) ou para o cliente.
-const STEP_LABELS: Record<EmailTemplateStep, { title: string; audience: string }> = {
-  engineer_approval: { title: 'Aprovação', audience: 'Engenheiro' },
-  client_proposal: { title: 'Proposta', audience: 'Cliente' },
-  signature_letter: { title: 'Carta de assinatura', audience: 'Cliente' },
+const STEP_KEYS: Record<EmailTemplateStep, { titleKey: TranslationKey; audienceKey: TranslationKey }> = {
+  engineer_approval: { titleKey: 'templates.step.engineer_approval', audienceKey: 'templates.audience.engineer' },
+  client_proposal: { titleKey: 'templates.step.client_proposal', audienceKey: 'templates.audience.client' },
+  signature_letter: { titleKey: 'templates.step.signature_letter', audienceKey: 'templates.audience.client' },
 };
 
-const STEPS = Object.keys(STEP_LABELS) as EmailTemplateStep[];
+const STEPS = Object.keys(STEP_KEYS) as EmailTemplateStep[];
 
 const COUNTRIES: Country[] = ['PT', 'ES'];
-const COUNTRY_LABELS: Record<Country, string> = { PT: 'Portugal', ES: 'Espanha' };
+// O nome do país por extenso é da INTERFACE (ajuda quem não reconhece "PT"/"ES"); o que
+// decide o idioma do email continua a ser o código do país guardado no hospital.
+const COUNTRY_LABEL_KEYS: Record<Country, TranslationKey> = { PT: 'country.PT', ES: 'country.ES' };
 
 const PLACEHOLDERS = ['{{ano}}', '{{hospital}}', '{{engenheiro}}', '{{tabela}}'];
 
@@ -64,6 +63,7 @@ function PlaceholderChips() {
 // nome. Escolhida a via, as três etapas ficam lado a lado pela ordem em que acontecem —
 // que é a forma como quem revê os textos pensa neles: a sequência de um envio.
 export function TemplateEditor() {
+  const t = useT();
   const templates = useTemplateStore((state) => state.templates);
   const updateTemplate = useTemplateStore((state) => state.updateTemplate);
   const profile = useAuthStore((state) => state.profile);
@@ -103,7 +103,7 @@ export function TemplateEditor() {
       await updateTemplate(editing.key, editing.country, subject, body, profile?.id ?? null);
       setEditing(null);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : 'Falha ao gravar template.' });
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('templates.saveFailed') });
     } finally {
       setSaving(false);
     }
@@ -111,11 +111,11 @@ export function TemplateEditor() {
 
   return (
     <Card
-      title="Templates de email"
-      subtitle="Cada etapa tem uma versão PT e uma ES — o envio usa a do país do hospital. Cada via tem o seu conjunto próprio: editar a braquiterapia não mexe na via geral."
+      title={t('templates.title')}
+      subtitle={t('templates.subtitle')}
       actions={
         <div className="flex flex-col items-end gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-gray-400">Placeholders</span>
+          <span className="text-[11px] uppercase tracking-wide text-gray-400">{t('templates.placeholders')}</span>
           <PlaceholderChips />
         </div>
       }
@@ -134,7 +134,7 @@ export function TemplateEditor() {
                     className="h-2 w-2 rounded-full"
                     style={{ backgroundColor: APPROVAL_TRACK_COLORS[candidate], opacity: active ? 1 : 0.4 }}
                   />
-                  Via {APPROVAL_TRACK_LABELS[candidate]}
+                  {t('templates.trackOption', { track: t(APPROVAL_TRACK_KEYS[candidate]) })}
                   {missing > 0 && (
                     <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-semibold text-amber-700">
                       {missing}
@@ -162,8 +162,8 @@ export function TemplateEditor() {
                   {index + 1}
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-gray-900">{STEP_LABELS[step].title}</p>
-                  <p className="text-xs text-gray-500">para o {STEP_LABELS[step].audience.toLowerCase()}</p>
+                  <p className="truncate text-sm font-semibold text-gray-900">{t(STEP_KEYS[step].titleKey)}</p>
+                  <p className="text-xs text-gray-500">{t(STEP_KEYS[step].audienceKey)}</p>
                 </div>
               </header>
 
@@ -183,9 +183,9 @@ export function TemplateEditor() {
                         <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-bold text-gray-600">
                           {country}
                         </span>
-                        <span className="text-xs text-gray-500">{COUNTRY_LABELS[country]}</span>
+                        <span className="text-xs text-gray-500">{t(COUNTRY_LABEL_KEYS[country])}</span>
                         <span className="ml-auto text-xs font-medium text-gray-300 transition-colors group-hover:text-brand-600">
-                          Editar
+                          {t('templates.edit')}
                         </span>
                       </div>
                       {template ? (
@@ -193,10 +193,7 @@ export function TemplateEditor() {
                       ) : (
                         /* Um template em falta é sinal de migração por aplicar — dizê-lo
                            aqui evita descobri-lo só no momento do envio, com um erro. */
-                        <p className="text-xs text-amber-700">
-                          Ainda não existe na base de dados (migração 0017 por aplicar?) — o envio desta etapa falha até
-                          ser criado.
-                        </p>
+                        <p className="text-xs text-amber-700">{t('templates.missing')}</p>
                       )}
                     </button>
                   );
@@ -211,10 +208,12 @@ export function TemplateEditor() {
           onde se passa o tempo todo, e numa coluna de um terço da página não se lê. */}
       {editing && (
         <FormModal
-          title={`${STEP_LABELS[editing.step].title} · ${COUNTRY_LABELS[editing.country]} · Via ${
-            APPROVAL_TRACK_LABELS[editing.track]
-          }`}
-          submitLabel="Guardar"
+          title={t('templates.editTitle', {
+            step: t(STEP_KEYS[editing.step].titleKey),
+            country: t(COUNTRY_LABEL_KEYS[editing.country]),
+            track: t(APPROVAL_TRACK_KEYS[editing.track]),
+          })}
+          submitLabel={t('common.save')}
           size="lg"
           saving={saving}
           canSubmit={subject.trim().length > 0 && body.trim().length > 0}
@@ -222,28 +221,28 @@ export function TemplateEditor() {
           onCancel={() => setEditing(null)}
         >
           <label className="col-span-2 flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-600">Assunto</span>
+            <span className="text-xs font-medium text-gray-600">{t('templates.subject')}</span>
             <input
               className="pm-field text-sm"
               value={subject}
               onChange={(event) => setSubject(event.target.value)}
-              placeholder="Assunto do email"
+              placeholder={t('templates.subjectPlaceholder')}
             />
           </label>
           <label className="col-span-2 flex flex-col gap-1">
-            <span className="text-xs font-medium text-gray-600">Corpo</span>
+            <span className="text-xs font-medium text-gray-600">{t('templates.body')}</span>
             <textarea
               className="pm-field font-mono text-sm leading-relaxed"
               rows={14}
               value={body}
               onChange={(event) => setBody(event.target.value)}
-              placeholder="Corpo do email"
+              placeholder={t('templates.bodyPlaceholder')}
             />
           </label>
           {/* Os placeholders repetidos aqui: é a editar que fazem falta, e ir buscá-los
               atrás do modal não dá. */}
           <div className="col-span-2 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-gray-500">Placeholders:</span>
+            <span className="text-xs text-gray-500">{t('templates.placeholdersInline')}</span>
             <PlaceholderChips />
           </div>
         </FormModal>

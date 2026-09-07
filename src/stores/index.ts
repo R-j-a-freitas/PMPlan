@@ -1,6 +1,7 @@
 export * from './authStore';
 export * from './calendarStore';
 export * from './conflictStore';
+export * from './contactStore';
 export * from './emailRecipientStore';
 export * from './engineerStore';
 export * from './equipmentStore';
@@ -15,3 +16,4 @@ export * from './zoneStore';
 export * from './systemHealthStore';
 export * from './signedDocumentStore';
 export * from './appSettingsStore';
+export * from './languageStore';

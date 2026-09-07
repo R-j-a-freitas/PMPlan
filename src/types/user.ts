@@ -1,3 +1,5 @@
+import type { Lang } from '../i18n/types';
+
 export type UserRole = 'admin' | 'planner' | 'engineer' | 'readonly';
 
 export type UserProfile = {
@@ -11,6 +13,10 @@ export type UserProfile = {
   /** true para contas criadas por um admin com palavra-passe temporária — força a
    *  troca no primeiro login (RequireAuth redirige para /set-password). */
   must_change_password: boolean;
+  /** Idioma da interface escolhido pelo utilizador (migração 0019). Nulo enquanto não
+   *  escolher — a app pede a escolha antes de o deixar entrar. Não tem qualquer efeito
+   *  no idioma das cartas e emails enviados a clientes, que segue hospitals.country. */
+  language: Lang | null;
   created_at: string;
 };
 
