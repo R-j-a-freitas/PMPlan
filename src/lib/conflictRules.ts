@@ -13,7 +13,6 @@ import {
 import type { Interval } from 'date-fns';
 import type { ConflictResult, Country, Equipment, EquipmentFull, EngineerWithZones, Holiday, PMEvent, WeekendWork, Zone } from '../types';
 import { toDisplayDate } from './dateFormat';
-import { getZoneLoadScopeIds } from './zoneTree';
 
 const ENGINEER_SUGGESTION_SEARCH_DAYS = 60;
 /** Acima deste rácio procura-vs-capacidade a zona é assinalada como sobrecarregada (alerta, não bloqueio). */
@@ -464,10 +463,13 @@ function sumActiveEventDays(
 // Partilhado pelo motor de conflitos (gate) e pelo LoadMap da sidebar (visualização contínua)
 // — mantém as duas leituras de carga sempre coerentes entre si. Cálculo anual (não
 // mensal — secção "todos os cálculos a nível anual"). Zona-mãe = soma das zonas filhas
-// e SÓ delas (ver zoneTree.getZoneLoadScopeIds): engenheiros/equipamentos atribuídos
-// directamente à mãe não entram, senão a mãe não batia com as filhas.
-// `events`/`equipment` vêm completos (não pré-filtrados) — a filtragem por zona
-// (incluindo descendentes) é feita aqui dentro.
+// e SÓ delas: procura = Σ procura das filhas, capacidade = Σ capacidade das filhas.
+// Engenheiros/equipamentos atribuídos directamente à mãe não entram, e um engenheiro que
+// cubra várias filhas conta em cada uma (como na leitura de cada filha) — antes a mãe
+// era calculada como um bolo único e esse engenheiro contava uma só vez, o que encolhia
+// a capacidade da mãe e a punha acima do que as filhas justificavam.
+// `events`/`equipment` vêm completos (não pré-filtrados) — a filtragem por zona é feita
+// aqui dentro.
 // Fins-de-semana com PMs marcadas contam como dias úteis dos dois lados do rácio — ver
 // weekendWorkDaysFromEvents.
 export function computeZoneLoadRatio(
@@ -478,7 +480,40 @@ export function computeZoneLoadRatio(
   equipment: Equipment[],
   zones: Zone[],
 ): LoadRatio {
-  const zoneScope = getZoneLoadScopeIds(zoneId, zones);
+  return sumZoneLoad(zoneId, year, events, engineers, equipment, zones, new Set());
+}
+
+function sumZoneLoad(
+  zoneId: string,
+  year: number,
+  events: PMEvent[],
+  engineers: EngineerWithZones[],
+  equipment: Equipment[],
+  zones: Zone[],
+  visited: Set<string>,
+): LoadRatio {
+  visited.add(zoneId); // guarda contra um ciclo pai↔filho nos dados do cliente
+  const children = zones.filter((zone) => zone.parent_zone_id === zoneId && !visited.has(zone.id));
+  if (children.length === 0) return computeLeafZoneLoad(zoneId, year, events, engineers, equipment);
+
+  let capacityDays = 0;
+  let demandDays = 0;
+  for (const child of children) {
+    const load = sumZoneLoad(child.id, year, events, engineers, equipment, zones, visited);
+    capacityDays += load.capacityDays;
+    demandDays += load.demandDays;
+  }
+  return { capacityDays, demandDays, ratio: capacityDays === 0 ? 0 : demandDays / capacityDays };
+}
+
+function computeLeafZoneLoad(
+  zoneId: string,
+  year: number,
+  events: PMEvent[],
+  engineers: EngineerWithZones[],
+  equipment: Equipment[],
+): LoadRatio {
+  const zoneScope = new Set([zoneId]);
   const yearStart = startOfYear(new Date(year, 0, 1));
   const yearEnd = endOfYear(yearStart);
 

@@ -80,8 +80,8 @@ export const calendar = {
     'de lunes a viernes, más los sábados/domingos con PMs programados — un fin de semana trabajado cuenta como día normal.',
   ],
   'load.zone.note1': [
-    'Uma zona-mãe conta só as zonas filhas (engenheiros e PMs); o que estiver atribuído directamente à mãe fica de fora. A percentagem da mãe é a carga conjunta das filhas, não a soma das percentagens.',
-    'Una zona superior cuenta solo las zonas hijas (ingenieros y PMs); lo asignado directamente a la superior queda fuera. El porcentaje de la superior es la carga conjunta de las hijas, no la suma de los porcentajes.',
+    'Uma zona-mãe é só a soma das filhas: procura das filhas ÷ capacidade das filhas. O que estiver atribuído directamente à mãe fica de fora.',
+    'Una zona superior es solo la suma de las hijas: demanda de las hijas ÷ capacidad de las hijas. Lo asignado directamente a la superior queda fuera.',
   ],
   'load.zone.note2': [
     'Um engenheiro que cubra várias zonas conta por inteiro em cada uma delas.',
