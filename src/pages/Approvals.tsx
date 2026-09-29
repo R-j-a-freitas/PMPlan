@@ -2,14 +2,26 @@ import { useEffect, useMemo, useState } from 'react';
 import { PageShell } from '../app/PageShell';
 import { useSearchParams } from 'react-router-dom';
 import {
-  ApprovalSignedDocuments,
   EmailRecipientsEditor,
   OrphanSignedDocuments,
+  SignedLetterLinks,
   TemplateEditor,
 } from '../components/approvals';
-import type { ApprovalSignedDocumentRow, OrphanDocumentRow } from '../components/approvals';
-import { formatDocumentDateTime, useDocumentActions } from '../components/documents';
-import { Badge, Button, Card, EmptyState, FilterChip, Modal, PageHeader, SortableTh, Tabs } from '../components/ui';
+import type { LetterDocument, OrphanDocumentRow } from '../components/approvals';
+import { formatDocumentDateTime } from '../components/documents';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  FilterChip,
+  Modal,
+  PageHeader,
+  SearchInput,
+  SortableTh,
+  Tabs,
+} from '../components/ui';
+import { matchesSearch } from '../lib/searchText';
 import { useTableSort } from '../hooks';
 import type { SortAccessors } from '../hooks';
 import { buildProposalLetterData, generateProposalLetterPdf } from '../lib/exporters/letterPdf';
@@ -96,6 +108,9 @@ interface HospitalBundle {
   /** Documento assinado mais recente devolvido pelo cliente para esta proposta — null
    *  enquanto não chegar nenhum. */
   signedDocument: SignedDocument | null;
+  /** Coluna "Cartas assinadas": os PDFs desta proposta e os do hospital sem via chegados
+   *  no ano de planeamento, mais recentes primeiro. */
+  letterDocuments: LetterDocument[];
 }
 
 function bundleKey(hospitalId: string, track: ApprovalTrack): string {
@@ -304,6 +319,7 @@ export function Approvals() {
   // Filtro de via: com dois processos por hospital a lista duplica de tamanho, e quem está
   // a tratar da braquiterapia quer ver só essas linhas.
   const [trackFilter, setTrackFilter] = useState<ApprovalTrack | 'all'>('all');
+  const [searchText, setSearchText] = useState('');
   // Hospital cujo workflow o utilizador pediu para reiniciar — aberto o modal de
   // confirmação enquanto não for null (reiniciar implica revalidar engenheiro + cliente).
   const [resetTarget, setResetTarget] = useState<HospitalBundle | null>(null);
@@ -406,6 +422,17 @@ export function Approvals() {
           const signedDocument = proposal
             ? (signedDocuments.find((document) => document.proposal_id === proposal.id) ?? null)
             : null;
+          // Os da proposta são todos do ano por definição (a proposta é do ano). Os que só
+          // têm hospital não têm ano próprio: contam os chegados no ano de planeamento, e
+          // aparecem nas duas vias do hospital porque não se sabe de qual são.
+          const letterDocuments: LetterDocument[] = signedDocuments.flatMap((document): LetterDocument[] => {
+            if (proposal && document.proposal_id === proposal.id) return [{ document, withoutTrack: false }];
+            const isHospitalLevel =
+              document.hospital_id === hospital.id &&
+              !document.proposal_id &&
+              new Date(document.received_at).getFullYear() === planningYear;
+            return isHospitalLevel ? [{ document, withoutTrack: true }] : [];
+          });
           return {
             hospital,
             track,
@@ -419,6 +446,7 @@ export function Approvals() {
             teamLeader,
             zoneTeam: resolveZoneTeam(hospital.zone_id, engineers),
             signedDocument,
+            letterDocuments,
           };
         }),
       )
@@ -428,29 +456,34 @@ export function Approvals() {
           a.hospital.name.localeCompare(b.hospital.name) ||
           APPROVAL_TRACKS.indexOf(a.track) - APPROVAL_TRACKS.indexOf(b.track),
       );
-  }, [hospitals, contacts, equipment, modalities, yearEvents, proposals, engineers, zones, signedDocuments]);
+  }, [hospitals, contacts, equipment, modalities, yearEvents, proposals, engineers, zones, signedDocuments, planningYear]);
+
+  // Procura sobre o que se lê na linha: hospital, via, país, zona, TL e estado (pelos
+  // rótulos no idioma da interface), mais os engenheiros das PMs. Aplica-se antes do filtro
+  // de via, para as contagens das pastilhas dizerem quantas linhas a procura deixa em cada.
+  const searchedBundles = useMemo(
+    () =>
+      bundles.filter((bundle) =>
+        matchesSearch(searchText, [
+          bundle.hospital.name,
+          bundle.hospital.short_name,
+          bundle.hospital.country,
+          bundle.hospital.zone_name,
+          t(APPROVAL_TRACK_KEYS[bundle.track]),
+          bundle.teamLeader?.name,
+          t(STAGE_LABEL_KEYS[bundle.proposal?.stage ?? 'draft']),
+          ...bundle.engineerNames,
+        ]),
+      ),
+    [bundles, searchText, t],
+  );
 
   const filteredBundles = useMemo(
-    () => (trackFilter === 'all' ? bundles : bundles.filter((bundle) => bundle.track === trackFilter)),
-    [bundles, trackFilter],
+    () => (trackFilter === 'all' ? searchedBundles : searchedBundles.filter((bundle) => bundle.track === trackFilter)),
+    [searchedBundles, trackFilter],
   );
 
   const { rows: visibleBundles, sortableProps } = useTableSort(filteredBundles, BUNDLE_SORT, 'hospital');
-
-  // Todos os documentos das propostas visíveis (não só o mais recente de cada uma): se o
-  // cliente mandou a carta duas vezes, ou em dois PDFs, quem fecha o processo quer ver os
-  // dois. Segue o filtro de via da tabela principal.
-  const signedDocumentRows = useMemo<ApprovalSignedDocumentRow[]>(() => {
-    const bundleByProposal = new Map(
-      filteredBundles
-        .filter((bundle) => bundle.proposal)
-        .map((bundle) => [bundle.proposal!.id, bundle] as const),
-    );
-    return signedDocuments.flatMap((document) => {
-      const bundle = document.proposal_id ? bundleByProposal.get(document.proposal_id) : undefined;
-      return bundle ? [{ document, hospitalName: bundle.hospital.name, track: bundle.track }] : [];
-    });
-  }, [filteredBundles, signedDocuments]);
 
   // Fila manual: sem hospital, ou com hospital que tem cartas à espera de assinatura mas
   // sem se saber de qual delas é o documento (duas vias, ficheiro sem indício). Um
@@ -887,10 +920,23 @@ export function Approvals() {
             {/* Filtro de via + acção em lote numa barra só: são os dois controlos que
                 actuam sobre a lista inteira, e pertencem juntos por cima dela. */}
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="text-sm text-gray-600">{t('approvals.trackFilter')}</span>
+              {/* Mesma regra do filtro de via: mudar a procura limpa a selecção, para o
+                  "Avançar seleccionados" nunca mexer em linhas que deixaram de estar à vista. */}
+              <SearchInput
+                value={searchText}
+                onChange={(value) => {
+                  setSearchText(value);
+                  setSelectedIds(new Set());
+                }}
+                placeholder={t('approvals.searchPlaceholder')}
+                className="w-72"
+              />
+              <span className="ml-2 text-sm text-gray-600">{t('approvals.trackFilter')}</span>
               {trackFilterOptions.map((option) => {
                 const count =
-                  option.key === 'all' ? bundles.length : bundles.filter((bundle) => bundle.track === option.key).length;
+                  option.key === 'all'
+                    ? searchedBundles.length
+                    : searchedBundles.filter((bundle) => bundle.track === option.key).length;
                 return (
                   <FilterChip
                     key={option.key}
@@ -923,7 +969,11 @@ export function Approvals() {
 
             {visibleBundles.length === 0 && (
               <Card>
-                <EmptyState>{t('approvals.noPmsInTrack', { year: planningYear })}</EmptyState>
+                <EmptyState>
+                  {searchText.trim()
+                    ? t('approvals.noSearchResults', { search: searchText.trim() })
+                    : t('approvals.noPmsInTrack', { year: planningYear })}
+                </EmptyState>
               </Card>
             )}
 
@@ -949,6 +999,7 @@ export function Approvals() {
                     <SortableTh {...sortableProps('equipmentCount')}>{t('common.equipmentPlural')}</SortableTh>
                     <SortableTh {...sortableProps('pmDays')}>{t('approvals.col.pmDays')}</SortableTh>
                     <SortableTh {...sortableProps('stage')}>{t('common.status')}</SortableTh>
+                    <th className="py-1.5 pr-2">{t('approvals.col.signedLetters')}</th>
                     <th className="py-1.5 pr-2" />
                   </tr>
                 </thead>
@@ -975,9 +1026,6 @@ export function Approvals() {
               </div>
               </Card>
             )}
-
-            <ApprovalSignedDocuments rows={signedDocumentRows} />
-
           </>
         )}
       </div>
@@ -1073,7 +1121,6 @@ function ApprovalRow({
   onReset,
 }: ApprovalRowProps) {
   const lang = useLang();
-  const { open: openDocument, busyId: openingDocumentId } = useDocumentActions();
   const stage = bundle.proposal?.stage ?? 'draft';
   const action = nextAction(stage);
   const resend = resendAction(stage);
@@ -1154,6 +1201,9 @@ function ApprovalRow({
           <Badge color={STAGE_COLORS[stage]}>{t(STAGE_LABEL_KEYS[stage])}</Badge>
         </span>
       </td>
+      <td className="py-1.5 pr-2">
+        <SignedLetterLinks documents={bundle.letterDocuments} />
+      </td>
       <td className="py-1.5 pr-2 text-right">
         {/* Cinco acções na mesma linha: as consultivas em ghost (não são o trabalho, são
             a verificação antes dele), a que faz avançar o processo em primary, e o
@@ -1166,19 +1216,6 @@ function ApprovalRow({
           <Button variant="ghost" size="sm" onClick={onDownloadCalendar} title={t('approvals.downloadIcsTitle')}>
             .ics
           </Button>
-          {/* A carta que o cliente devolveu assinada — visível a todos (inclusive só
-              leitura): é consulta, não uma acção sobre o processo. */}
-          {signedDocument && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => openDocument(signedDocument, false)}
-              disabled={openingDocumentId === signedDocument.id}
-              title={t('approvals.viewSignedLetterTitle', { filename: signedDocument.filename })}
-            >
-              {t('approvals.viewSignedLetter')}
-            </Button>
-          )}
           {/* Reenviar a carta a um hospital já assinado passa primeiro pela confirmação —
               invalida a assinatura registada. Nos restantes reenvios não há nada a perder,
               vai directo. */}

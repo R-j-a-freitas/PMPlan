@@ -41,9 +41,9 @@ export function OrphanSignedDocuments({ rows, hospitals, proposals, canManage }:
           <table className="pm-table">
             <thead>
               <tr>
-                <th className="py-1.5 pr-2">{t('approvals.signedDocs.col.file')}</th>
-                <th className="py-1.5 pr-2">{t('approvals.signedDocs.col.receivedAt')}</th>
-                <th className="py-1.5 pr-2">{t('approvals.signedDocs.col.from')}</th>
+                <th className="py-1.5 pr-2">{t('orphans.col.file')}</th>
+                <th className="py-1.5 pr-2">{t('orphans.col.receivedAt')}</th>
+                <th className="py-1.5 pr-2">{t('orphans.col.from')}</th>
                 <th className="py-1.5 pr-2">{t('orphans.col.subject')}</th>
                 <th className="py-1.5 pr-2">{t('orphans.col.assign')}</th>
                 <th className="py-1.5 pr-2" />

@@ -79,9 +79,10 @@ ganha dono (o webhook e a associação manual na página de Hospitais):
 Um documento só fecha uma carta enviada **antes** de ele chegar: depois de "Reenviar carta
 actualizada", uma assinatura antiga não vale pelo plano novo.
 
-Na página de Aprovações o documento aparece no botão "Carta assinada" da linha e na tabela
-"Cartas assinadas recebidas", que se actualiza em tempo real (a tabela está na publicação
-`supabase_realtime`).
+Na página de Aprovações os documentos aparecem na coluna "Cartas assinadas" de cada linha
+(ver/descarregar, com data e hora de chegada), que se actualiza em tempo real
+(`signed_documents` está na publicação `supabase_realtime`). Os documentos do hospital
+sem via, chegados no ano de planeamento, aparecem também lá, marcados "sem via".
 
 ### Documentos por associar (0024)
 

@@ -37,6 +37,14 @@ export const approvals = {
     'Sin PMs programados en esta vía para {year}.',
   ],
   'approvals.trackFilter': ['Via:', 'Vía:'],
+  'approvals.noSearchResults': [
+    'Nenhuma linha corresponde a "{search}".',
+    'Ninguna fila coincide con «{search}».',
+  ],
+  'approvals.searchPlaceholder': [
+    'Procurar hospital, zona, TL, engenheiro, estado…',
+    'Buscar hospital, zona, TL, ingeniero, estado…',
+  ],
   'approvals.allTracks': ['Todas', 'Todas'],
   'approvals.selectedCount': ['{count} seleccionado', '{count} seleccionado'],
   'approvals.selectedCount_plural': ['{count} seleccionados', '{count} seleccionados'],
@@ -95,10 +103,15 @@ export const approvals = {
     'A zona "{zone}" não tem engenheiros activos com email — atribui-os em Configurações → Zonas.',
     'La zona «{zone}» no tiene ingenieros activos con email — asígnalos en Configuración → Zonas.',
   ],
-  'approvals.viewSignedLetter': ['Carta assinada', 'Carta firmada'],
-  'approvals.viewSignedLetterTitle': [
-    'Abrir o documento assinado devolvido pelo cliente ({filename})',
-    'Abrir el documento firmado devuelto por el cliente ({filename})',
+  'approvals.col.signedLetters': ['Cartas assinadas', 'Cartas firmadas'],
+  'approvals.letterDocs.viewTitle': [
+    'Ver o documento assinado devolvido pelo cliente ({filename})',
+    'Ver el documento firmado devuelto por el cliente ({filename})',
+  ],
+  'approvals.letterDocs.withoutTrack': ['sem via', 'sin vía'],
+  'approvals.letterDocs.withoutTrackTitle': [
+    'Arquivado neste hospital, mas sem via associada: chegou sem forma de saber de qual das cartas é. Aparece nas linhas das duas vias.',
+    'Archivado en este hospital, pero sin vía asociada: llegó sin forma de saber de cuál de las cartas es. Aparece en las filas de las dos vías.',
   ],
   'approvals.signedAutomatically': [
     'Assinado automaticamente: o documento do cliente chegou em {date}.',
@@ -138,28 +151,6 @@ export const approvals = {
     'Sin contactos de email para {hospital} — añádelos en Hospitales → Contactos.',
   ],
 
-  // ─── Cartas assinadas recebidas ──────────────────────────────────────────────
-  'approvals.signedDocs.title': [
-    '{count} carta assinada recebida',
-    '{count} carta firmada recibida',
-  ],
-  'approvals.signedDocs.title_plural': [
-    '{count} cartas assinadas recebidas',
-    '{count} cartas firmadas recibidas',
-  ],
-  'approvals.signedDocs.subtitle': [
-    'Chegam sozinhas quando o cliente responde à carta com o PDF assinado — a linha correspondente passa a "Assinado".',
-    'Llegan solas cuando el cliente responde a la carta con el PDF firmado — la fila correspondiente pasa a «Firmado».',
-  ],
-  'approvals.signedDocs.empty': [
-    'Ainda não chegou nenhuma carta assinada neste ano.',
-    'Todavía no ha llegado ninguna carta firmada este año.',
-  ],
-  'approvals.signedDocs.col.file': ['Documento', 'Documento'],
-  'approvals.signedDocs.col.receivedAt': ['Recebido em', 'Recibido el'],
-  'approvals.signedDocs.col.from': ['Enviado por', 'Enviado por'],
-  'approvals.signedDocs.col.match': ['Associação', 'Asociación'],
-
   // ─── Documentos por associar ─────────────────────────────────────────────────
   'approvals.tab.orphans': ['Documentos por associar', 'Documentos por asociar'],
   'orphans.title': ['{count} documento por associar', '{count} documento por asociar'],
@@ -172,6 +163,9 @@ export const approvals = {
     'Nada por associar — todos os documentos recebidos estão arquivados no hospital e na via certos.',
     'Nada por asociar — todos los documentos recibidos están archivados en el hospital y la vía correctos.',
   ],
+  'orphans.col.file': ['Documento', 'Documento'],
+  'orphans.col.receivedAt': ['Recebido em', 'Recibido el'],
+  'orphans.col.from': ['Enviado por', 'Enviado por'],
   'orphans.col.subject': ['Assunto', 'Asunto'],
   'orphans.col.assign': ['Associar a', 'Asociar a'],
   'orphans.kind.no_hospital': ['Sem hospital', 'Sin hospital'],

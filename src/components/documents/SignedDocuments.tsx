@@ -47,9 +47,8 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Etiqueta de como o documento foi associado — partilhada com a tabela da página de
- *  Aprovações. */
-export function MatchBadge({ method }: { method: SignedDocumentMatchMethod }) {
+/** Etiqueta de como o documento foi associado. */
+function MatchBadge({ method }: { method: SignedDocumentMatchMethod }) {
   const t = useT();
   const match = MATCH_META[method];
   return (
