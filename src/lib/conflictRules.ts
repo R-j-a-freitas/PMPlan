@@ -13,7 +13,7 @@ import {
 import type { Interval } from 'date-fns';
 import type { ConflictResult, Country, Equipment, EquipmentFull, EngineerWithZones, Holiday, PMEvent, WeekendWork, Zone } from '../types';
 import { toDisplayDate } from './dateFormat';
-import { expandZoneSelection } from './zoneTree';
+import { getZoneLoadScopeIds } from './zoneTree';
 
 const ENGINEER_SUGGESTION_SEARCH_DAYS = 60;
 /** Acima deste rácio procura-vs-capacidade a zona é assinalada como sobrecarregada (alerta, não bloqueio). */
@@ -463,10 +463,9 @@ function sumActiveEventDays(
 
 // Partilhado pelo motor de conflitos (gate) e pelo LoadMap da sidebar (visualização contínua)
 // — mantém as duas leituras de carga sempre coerentes entre si. Cálculo anual (não
-// mensal — secção "todos os cálculos a nível anual"). Zona-mãe agrega automaticamente a
-// carga das zonas filhas (mesma regra do filtro do calendário, ver lib/zoneTree) — uma
-// zona de agrupamento como "NorthWest" reflecte sempre a soma das filhas, nunca fica a
-// 0% só por não ter nada atribuído directamente a ela.
+// mensal — secção "todos os cálculos a nível anual"). Zona-mãe = soma das zonas filhas
+// e SÓ delas (ver zoneTree.getZoneLoadScopeIds): engenheiros/equipamentos atribuídos
+// directamente à mãe não entram, senão a mãe não batia com as filhas.
 // `events`/`equipment` vêm completos (não pré-filtrados) — a filtragem por zona
 // (incluindo descendentes) é feita aqui dentro.
 // Fins-de-semana com PMs marcadas contam como dias úteis dos dois lados do rácio — ver
@@ -479,7 +478,7 @@ export function computeZoneLoadRatio(
   equipment: Equipment[],
   zones: Zone[],
 ): LoadRatio {
-  const zoneScope = expandZoneSelection([zoneId], zones);
+  const zoneScope = getZoneLoadScopeIds(zoneId, zones);
   const yearStart = startOfYear(new Date(year, 0, 1));
   const yearEnd = endOfYear(yearStart);
 

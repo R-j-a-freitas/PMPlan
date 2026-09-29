@@ -28,6 +28,16 @@ export function expandZoneSelection(zoneIds: string[], zones: Zone[]): Set<strin
   return result;
 }
 
+/** Âmbito de uma zona para efeitos de CARGA: uma zona-mãe é só a soma das filhas — o que
+ *  estiver atribuído directamente à própria mãe (engenheiros, equipamentos) fica de fora,
+ *  senão a percentagem da mãe deixava de bater com as das filhas. Uma zona sem filhas é
+ *  apenas ela própria. Difere de expandZoneSelection (filtros), que inclui a mãe. */
+export function getZoneLoadScopeIds(zoneId: string, zones: Zone[]): Set<string> {
+  const scope = getZoneScopeIds(zoneId, zones);
+  if (scope.size > 1) scope.delete(zoneId);
+  return scope;
+}
+
 /** Team Leader efectivo de uma zona: o seu próprio, ou — se não tiver — o da zona-mãe mais
  *  próxima que tenha um. É por isso que basta definir o TL nas zonas de topo ("North & West",
  *  "South & Eastern Spain") para todos os hospitais das zonas-filhas (Galiza, Lisboa, Norte,
