@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+node_modules.*/
 dist
 dist-ssr
 *.local
@@ -16,6 +17,9 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Cópias da base de dados feitas pelos scripts (ex: importar-pm-2026.mjs) — dados reais
+BACKUPS/
 
 # Token do heartbeat gerado localmente (scripts/mint-heartbeat-token.mjs)
 hb.token
