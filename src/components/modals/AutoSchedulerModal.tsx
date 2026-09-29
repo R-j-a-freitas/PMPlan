@@ -4,14 +4,19 @@ import { useBulkAutoScheduler } from '../../hooks';
 import type { BulkSchedulerResult } from '../../hooks';
 import type { ProposedPMEvent } from '../../lib/autoScheduler';
 import {
+  cancelSourceChangesForEvents,
+  createSourceChangesForEvents,
   fetchYearEventsSnapshot,
   useAuthStore,
   useCalendarStore,
   useEngineerStore,
   useEquipmentStore,
+  useModalityStore,
   useUiStore,
   useZoneStore,
 } from '../../stores';
+import { resolveApprovalTrack } from '../../lib/approvalTrack';
+import { defaultCalendarLabel } from '../../lib/pmLabels';
 import type { PMEvent, PMEventInsert } from '../../types';
 import { Badge, Button, Modal } from '../ui';
 import { useT, type TFunction } from '../../i18n';
@@ -185,6 +190,8 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
   const equipment = useEquipmentStore((state) => state.equipment);
   const engineers = useEngineerStore((state) => state.engineers);
   const zones = useZoneStore((state) => state.zones);
+  const modalities = useModalityStore((state) => state.modalities);
+  const fetchModalities = useModalityStore((state) => state.fetchModalities);
   const createBulkEvents = useCalendarStore((state) => state.createBulkEvents);
   const deleteEvents = useCalendarStore((state) => state.deleteEvents);
   const setPreviewEvents = useCalendarStore((state) => state.setPreviewEvents);
@@ -219,6 +226,17 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
   // Ids de engenheiros reais — propostas cujo engineerId não resolve (vazio ou obsoleto)
   // são marcadas "sem engenheiro" na revisão e gravadas com engineer_id null.
   const validEngineerIds = useMemo(() => new Set(engineers.map((e) => e.id)), [engineers]);
+
+  // A etiqueta da PM depende da via da modalidade (fontes → "SCRX + PM"). Sem a tabela
+  // carregada, resolveApprovalTrack cai no palpite pelo nome, que também apanha as fontes.
+  useEffect(() => {
+    if (modalities.length === 0) void fetchModalities();
+  }, [modalities.length, fetchModalities]);
+
+  const labelByEquipment = useMemo(
+    () => new Map(equipment.map((e) => [e.id, defaultCalendarLabel(resolveApprovalTrack(e.modality, modalities))])),
+    [equipment, modalities],
+  );
 
   // Pré-seleccionar todos os equipamentos activos ao abrir o modal
   useEffect(() => {
@@ -358,6 +376,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
             actual_end_date: null,
             status: 'planned',
             outlook_event_id: null,
+            calendar_label: labelByEquipment.get(proposal.equipmentId) ?? 'PM',
             notes: hasEngineer
               ? baseNotes
               : `${baseNotes} Sem engenheiro atribuído — requer atribuição manual.`,
@@ -373,8 +392,20 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
       // Guarda as propostas novas ANTES de apagar as antigas — se o delete falhar a
       // seguir, o utilizador fica com as PMs novas (e as antigas por remover à mão),
       // nunca com o equipamento sem nenhuma PM.
-      await createBulkEvents(toSave);
+      const created = await createBulkEvents(toSave);
       const successMessage = t('scheduler.savedOk', { count: toSave.length, year: targetYear });
+
+      // Cancela primeiro as trocas das PMs substituídas e só depois cria as novas — uma PM
+      // nova na mesma data de uma antiga não pode ver a sua troca cancelada logo a seguir.
+      // Falhar aqui não desfaz as PMs: avisa e deixa o registo para fazer à mão.
+      const syncSourceChanges = async (replaced: PMEvent[]) => {
+        try {
+          await cancelSourceChangesForEvents(replaced);
+          await createSourceChangesForEvents(created);
+        } catch {
+          pushToast({ variant: 'warning', message: t('scheduler.sourceChangesFailed') });
+        }
+      };
 
       if (replaceable.length > 0) {
         try {
@@ -384,10 +415,13 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
             variant: 'warning',
             message: t('scheduler.deleteOldFailed'),
           });
+          // As PMs antigas ficaram — as trocas delas também.
+          await syncSourceChanges([]);
           onClose();
           return;
         }
       }
+      await syncSourceChanges(replaceable);
 
       if (withoutEngineer > 0) {
         pushToast({
@@ -428,7 +462,7 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
         preview.push({
           id: `__preview__${result.equipmentId}_${i}`,
           equipment_id: proposal.equipmentId,
-          calendar_label: null,
+          calendar_label: labelByEquipment.get(proposal.equipmentId) ?? 'PM',
           client_description: null,
           engineer_id: validEngineerIds.has(proposal.engineerId) ? proposal.engineerId : null,
           start_date: format(proposal.proposedStartDate, 'yyyy-MM-dd'),

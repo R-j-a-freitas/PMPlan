@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
-import type { PMEvent, PMEventInsert, PMEventUpdate } from '../types';
+import { DEFAULT_SOURCE_TYPE, includesSourceChange } from '../lib/pmLabels';
+import type { PMEvent, PMEventInsert, PMEventUpdate, SourceChangeInsert } from '../types';
 
 export type CalendarViewName = 'multiMonthYear' | 'multiMonthQuarter' | 'dayGridMonth' | 'timeGridWeek';
 
@@ -64,6 +65,49 @@ export async function fetchYearEventsSnapshot(year: number): Promise<PMEvent[]> 
     .lte('start_date', `${year}-12-31`);
   if (error) throw error;
   return data;
+}
+
+// Trocas de fonte que acompanham as PMs de fontes (etiqueta "SCRX …") criadas pelo
+// agendador automático. source_changes não tem ligação a pm_events — a correspondência é
+// (equipamento, data de início), a mesma chave usada na importação de 2026.
+export async function createSourceChangesForEvents(events: PMEvent[]): Promise<void> {
+  const withSource = events.filter((event) => includesSourceChange(event.calendar_label));
+  if (withSource.length === 0) return;
+  const { error } = await supabase.from('source_changes').insert(
+    withSource.map(
+      (event): SourceChangeInsert => ({
+        equipment_id: event.equipment_id,
+        source_type: DEFAULT_SOURCE_TYPE,
+        initial_activity_gbq: null,
+        planned_date: event.start_date,
+        actual_date: null,
+        serial_number: null,
+        manufacturer: null,
+        status: 'planned',
+        notes: event.calendar_label,
+      }),
+    ),
+  );
+  if (error) throw error;
+}
+
+// Ao substituir PMs planeadas, as trocas de fonte planeadas nessas datas deixam de ter
+// PM. Cancela-as em vez de as apagar: o planner pode apagar PMs planeadas mas a RLS só
+// deixa o admin apagar source_changes (0001_init.sql) — e fica o registo do que mudou.
+export async function cancelSourceChangesForEvents(events: PMEvent[]): Promise<void> {
+  const datesByEquipment = new Map<string, string[]>();
+  for (const event of events) {
+    datesByEquipment.set(event.equipment_id, [...(datesByEquipment.get(event.equipment_id) ?? []), event.start_date]);
+  }
+  for (const [equipmentId, dates] of datesByEquipment) {
+    const { error } = await supabase
+      .from('source_changes')
+      .update({ status: 'cancelled' })
+      .eq('equipment_id', equipmentId)
+      .eq('status', 'planned')
+      .in('planned_date', dates);
+    if (error) throw error;
+  }
 }
 
 export const useCalendarStore = create<CalendarState>()(

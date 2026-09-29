@@ -218,6 +218,10 @@ export const modals = {
     'PMs novas criadas, mas não foi possível remover as antigas — remove-as manualmente no calendário.',
     'PMs nuevos creados, pero no ha sido posible eliminar los antiguos — elimínalos manualmente en el calendario.',
   ],
+  'scheduler.sourceChangesFailed': [
+    'PMs gravadas, mas não foi possível actualizar as trocas de fonte — regista-as à mão no equipamento.',
+    'PMs guardados, pero no ha sido posible actualizar los cambios de fuente — regístralos a mano en el equipo.',
+  ],
   'scheduler.savedWithoutEngineer': [
     '{message} ({count} sem engenheiro atribuído — atribui-os manualmente no calendário)',
     '{message} ({count} sin ingeniero asignado — asígnalos manualmente en el calendario)',
