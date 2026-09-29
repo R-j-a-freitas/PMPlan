@@ -85,6 +85,25 @@ export const approvals = {
   // ─── Acções ──────────────────────────────────────────────────────────────────
   'approvals.action.send_engineer': ['Enviar a engenheiro', 'Enviar al ingeniero'],
   'approvals.action.resend_engineer': ['Reenviar a engenheiro', 'Reenviar al ingeniero'],
+  'approvals.action.send_zone_team': ['Enviar a equipa de zona', 'Enviar al equipo de zona'],
+  'approvals.action.resend_zone_team': ['Reenviar a equipa de zona', 'Reenviar al equipo de zona'],
+  'approvals.zoneTeamTitle': [
+    'Equipa da zona "{zone}": {names}',
+    'Equipo de la zona «{zone}»: {names}',
+  ],
+  'approvals.noZoneTeam': [
+    'A zona "{zone}" não tem engenheiros activos com email — atribui-os em Configurações → Zonas.',
+    'La zona «{zone}» no tiene ingenieros activos con email — asígnalos en Configuración → Zonas.',
+  ],
+  'approvals.viewSignedLetter': ['Carta assinada', 'Carta firmada'],
+  'approvals.viewSignedLetterTitle': [
+    'Abrir o documento assinado devolvido pelo cliente ({filename})',
+    'Abrir el documento firmado devuelto por el cliente ({filename})',
+  ],
+  'approvals.signedAutomatically': [
+    'Assinado automaticamente: o documento do cliente chegou em {date}.',
+    'Firmado automáticamente: el documento del cliente llegó el {date}.',
+  ],
   'approvals.action.confirm_engineer': [
     'Marcar aprovado (engenheiro)',
     'Marcar aprobado (ingeniero)',
@@ -118,6 +137,68 @@ export const approvals = {
     'Sem contactos de email para {hospital} — adiciona em Hospitais → Contactos.',
     'Sin contactos de email para {hospital} — añádelos en Hospitales → Contactos.',
   ],
+
+  // ─── Cartas assinadas recebidas ──────────────────────────────────────────────
+  'approvals.signedDocs.title': [
+    '{count} carta assinada recebida',
+    '{count} carta firmada recibida',
+  ],
+  'approvals.signedDocs.title_plural': [
+    '{count} cartas assinadas recebidas',
+    '{count} cartas firmadas recibidas',
+  ],
+  'approvals.signedDocs.subtitle': [
+    'Chegam sozinhas quando o cliente responde à carta com o PDF assinado — a linha correspondente passa a "Assinado".',
+    'Llegan solas cuando el cliente responde a la carta con el PDF firmado — la fila correspondiente pasa a «Firmado».',
+  ],
+  'approvals.signedDocs.empty': [
+    'Ainda não chegou nenhuma carta assinada neste ano.',
+    'Todavía no ha llegado ninguna carta firmada este año.',
+  ],
+  'approvals.signedDocs.col.file': ['Documento', 'Documento'],
+  'approvals.signedDocs.col.receivedAt': ['Recebido em', 'Recibido el'],
+  'approvals.signedDocs.col.from': ['Enviado por', 'Enviado por'],
+  'approvals.signedDocs.col.match': ['Associação', 'Asociación'],
+
+  // ─── Documentos por associar ─────────────────────────────────────────────────
+  'approvals.tab.orphans': ['Documentos por associar', 'Documentos por asociar'],
+  'orphans.title': ['{count} documento por associar', '{count} documento por asociar'],
+  'orphans.title_plural': ['{count} documentos por associar', '{count} documentos por asociar'],
+  'orphans.subtitle': [
+    'Documentos assinados que chegaram por email sem que fosse possível perceber automaticamente de que hospital ou de que via são — sem código, sem nome do hospital no assunto, ou com um remetente que é contacto de vários hospitais. Escolhe o hospital (e, se souberes, a via) e carrega em Associar: se a carta estava à espera de assinatura, passa a "Assinado".',
+    'Documentos firmados que han llegado por correo sin que fuera posible saber automáticamente de qué hospital o de qué vía son — sin código, sin el nombre del hospital en el asunto, o con un remitente que es contacto de varios hospitales. Elige el hospital (y, si lo sabes, la vía) y pulsa Asociar: si la carta estaba pendiente de firma, pasa a «Firmado».',
+  ],
+  'orphans.empty': [
+    'Nada por associar — todos os documentos recebidos estão arquivados no hospital e na via certos.',
+    'Nada por asociar — todos los documentos recibidos están archivados en el hospital y la vía correctos.',
+  ],
+  'orphans.col.subject': ['Assunto', 'Asunto'],
+  'orphans.col.assign': ['Associar a', 'Asociar a'],
+  'orphans.kind.no_hospital': ['Sem hospital', 'Sin hospital'],
+  'orphans.kind.no_track': ['Via por definir', 'Vía por definir'],
+  'orphans.candidates': ['{count} hospitais possíveis', '{count} hospitales posibles'],
+  'orphans.candidates_plural': ['{count} hospitais possíveis', '{count} hospitales posibles'],
+  'orphans.candidatesGroup': [
+    'Possíveis (o remetente é contacto destes)',
+    'Posibles (el remitente es contacto de estos)',
+  ],
+  'orphans.allHospitals': ['Todos os hospitais', 'Todos los hospitales'],
+  'orphans.trackAuto': ['Via: automática (pelo ficheiro)', 'Vía: automática (por el archivo)'],
+  'orphans.trackHint': [
+    'Sem escolher, a via é deduzida do nome do ficheiro ou, se o hospital só tiver uma carta à espera, é essa.',
+    'Sin elegir, la vía se deduce del nombre del archivo o, si el hospital solo tiene una carta pendiente, es esa.',
+  ],
+  'orphans.assign': ['Associar', 'Asociar'],
+  'orphans.noPermission': ['Sem permissões para associar.', 'Sin permisos para asociar.'],
+  'orphans.hospitalsNotice': [
+    '{count} documento assinado por associar a um hospital.',
+    '{count} documento firmado por asociar a un hospital.',
+  ],
+  'orphans.hospitalsNotice_plural': [
+    '{count} documentos assinados por associar a um hospital.',
+    '{count} documentos firmados por asociar a un hospital.',
+  ],
+  'orphans.openQueue': ['Abrir documentos por associar', 'Abrir documentos por asociar'],
 
   // ─── Modais de confirmação ───────────────────────────────────────────────────
   'approvals.resendLetterTitle': ['Reenviar carta para assinatura', 'Reenviar carta para firma'],

@@ -1,4 +1,4 @@
-import type { Zone } from '../types';
+import type { Engineer, EngineerWithZones, Zone } from '../types';
 
 /** Zona + todos os seus descendentes (filhas, netas, ...). Permite que marcar uma
  *  zona-mãe (ex: "NorthWest") agregue automaticamente o âmbito das suas zonas filhas
@@ -50,6 +50,18 @@ export function resolveZoneTeamLeaderId(zoneId: string | null, zones: Zone[]): s
       : undefined;
   }
   return null;
+}
+
+/** Equipa de uma zona: os engenheiros activos atribuídos DIRECTAMENTE a ela (Configurações →
+ *  Zonas → "Engenheiros nesta zona"). Os herdados da zona-mãe ficam de fora de propósito:
+ *  quem está só em "North & West" não é da equipa de Lisboa, e receberia os envios de todos
+ *  os hospitais da região. Só os que têm email — é para eles que se envia. */
+export function resolveZoneTeam(zoneId: string | null, engineers: EngineerWithZones[]): Engineer[] {
+  if (!zoneId) return [];
+  return engineers.filter(
+    (engineer) =>
+      engineer.active && !!engineer.email && engineer.zones.some((assignment) => assignment.zone_id === zoneId),
+  );
 }
 
 /** Zonas-folha (sem filhas) — só estas podem receber hospitais directamente; zonas-mãe

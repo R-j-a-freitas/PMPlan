@@ -496,7 +496,7 @@ export function Clients() {
       {/* Documentos assinados que chegaram sem hospital identificado — no topo, porque
           ficarem esquecidos numa fila que ninguém vê é a única forma de este mecanismo
           falhar em silêncio. Só aparece quando existe algum. */}
-      <UnmatchedSignedDocuments hospitals={hospitals} />
+      <UnmatchedSignedDocuments />
 
       <Card
         padded={false}

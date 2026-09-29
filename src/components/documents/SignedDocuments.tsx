@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useAuthStore, useSignedDocumentStore, useUiStore } from '../../stores';
-import type { HospitalWithZone, SignedDocument, SignedDocumentMatchMethod } from '../../types';
+import { Link } from 'react-router-dom';
+import type { SignedDocument, SignedDocumentMatchMethod } from '../../types';
 import { Badge, Button } from '../ui';
 import { useLang, useT, type TranslationKey } from '../../i18n';
+import { formatDocumentDateTime, useDocumentActions } from './documentActions';
 
 // Quão fiável foi a associação ao hospital. Um documento identificado pelo código da
 // proposta é certo; um identificado pelo email do remetente é um palpite informado — e
@@ -45,47 +47,23 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatDateTime(iso: string, locale: string): string {
-  return new Date(iso).toLocaleString(locale, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-/** Abrir/descarregar passa sempre por um signed URL pedido no momento: o bucket é privado
- *  e o link só é válido durante alguns minutos. */
-function useDocumentActions() {
+/** Etiqueta de como o documento foi associado — partilhada com a tabela da página de
+ *  Aprovações. */
+export function MatchBadge({ method }: { method: SignedDocumentMatchMethod }) {
   const t = useT();
-  const getDocumentUrl = useSignedDocumentStore((state) => state.getDocumentUrl);
-  const pushToast = useUiStore((state) => state.pushToast);
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  async function open(document: SignedDocument, download: boolean) {
-    setBusyId(document.id);
-    try {
-      const url = await getDocumentUrl(document, { download });
-      // _blank + noopener: o link é temporário mas ainda assim não se dá à página aberta
-      // acesso ao window.opener.
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('documents.openFailed') });
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  return { open, busyId };
+  const match = MATCH_META[method];
+  return (
+    <span title={t(match.titleKey)}>
+      <Badge color={match.color}>{t(match.labelKey)}</Badge>
+    </span>
+  );
 }
 
 interface DocumentRowProps {
   document: SignedDocument;
-  showMatchBadge?: boolean;
 }
 
-function DocumentRow({ document, showMatchBadge = true }: DocumentRowProps) {
+function DocumentRow({ document }: DocumentRowProps) {
   const t = useT();
   const lang = useLang();
   const { open, busyId } = useDocumentActions();
@@ -95,7 +73,6 @@ function DocumentRow({ document, showMatchBadge = true }: DocumentRowProps) {
   const role = useAuthStore((state) => state.profile?.role);
   const pushToast = useUiStore((state) => state.pushToast);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const match = MATCH_META[document.match_method];
   const busy = busyId === document.id;
 
   async function handleDelete() {
@@ -116,18 +93,14 @@ function DocumentRow({ document, showMatchBadge = true }: DocumentRowProps) {
       </span>
       <span className="shrink-0 text-xs text-gray-400">{formatSize(document.size_bytes)}</span>
       <span className="shrink-0 text-xs text-gray-500" title={document.subject ?? ''}>
-        {formatDateTime(document.received_at, lang === 'es' ? 'es-ES' : 'pt-PT')}
+        {formatDocumentDateTime(document.received_at, lang)}
       </span>
       {document.from_email && (
         <span className="shrink-0 truncate text-xs text-gray-400" title={document.from_email}>
           {document.from_name ?? document.from_email}
         </span>
       )}
-      {showMatchBadge && (
-        <span title={t(match.titleKey)}>
-          <Badge color={match.color}>{t(match.labelKey)}</Badge>
-        </span>
-      )}
+      <MatchBadge method={document.match_method} />
       <div className="ml-auto flex shrink-0 gap-1">
         <Button variant="ghost" size="sm" onClick={() => open(document, false)} disabled={busy}>
           {t('common.view')}
@@ -181,67 +154,25 @@ export function HospitalSignedDocuments({ hospitalId }: { hospitalId: string }) 
   );
 }
 
-/** Fila dos documentos que chegaram sem ser possível identificar o hospital. Aparece no
- *  topo da página de hospitais só quando existe algum — nunca se perde um PDF assinado por
- *  não se ter percebido de quem era, mas também não se deixa a caixa a encher em silêncio. */
-export function UnmatchedSignedDocuments({ hospitals }: { hospitals: HospitalWithZone[] }) {
+/** Aviso no topo da página de hospitais quando há documentos sem hospital. A associação
+ *  faz-se num sítio só — Aprovações → Documentos por associar, com os hospitais candidatos
+ *  e a escolha da via —, por isso aqui é só o sinal e o caminho para lá: nunca se perde um
+ *  PDF assinado, mas também não se deixa a fila a encher em silêncio. */
+export function UnmatchedSignedDocuments() {
   const t = useT();
   const documents = useSignedDocumentStore((state) => state.documents);
-  const assignToHospital = useSignedDocumentStore((state) => state.assignToHospital);
-  const profile = useAuthStore((state) => state.profile);
-  const canManage = useAuthStore((state) => state.permissions.canApproveSchedule);
-  const pushToast = useUiStore((state) => state.pushToast);
-  const [assigning, setAssigning] = useState<string | null>(null);
-
-  const unmatched = documents.filter((document) => !document.hospital_id);
-  if (unmatched.length === 0) return null;
-
-  async function handleAssign(documentId: string, hospitalId: string) {
-    if (!hospitalId) return;
-    setAssigning(documentId);
-    try {
-      await assignToHospital(documentId, hospitalId, profile?.id ?? null);
-      pushToast({ variant: 'success', message: t('documents.assigned') });
-    } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('documents.assignFailed') });
-    } finally {
-      setAssigning(null);
-    }
-  }
+  const count = documents.filter((document) => !document.hospital_id).length;
+  if (count === 0) return null;
 
   return (
-    <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3">
-      <h2 className="mb-1 text-sm font-semibold text-amber-900">
-        {t('documents.unmatchedTitle', { count: unmatched.length })}
-      </h2>
-      <p className="mb-2 text-xs text-amber-800">{t('documents.unmatchedHint')}</p>
-      <div className="flex flex-col gap-1">
-        {unmatched.map((document) => (
-          <div key={document.id} className="flex flex-col gap-1 rounded-md border border-amber-200 bg-white p-2">
-            <DocumentRow document={document} showMatchBadge={false} />
-            <div className="flex items-center gap-2 px-2 text-xs text-gray-500">
-              <span className="truncate" title={document.subject ?? ''}>
-                {t('documents.subject', { subject: document.subject || t('documents.noSubject') })}
-              </span>
-              {canManage && (
-                <select
-                  className="ml-auto pm-field"
-                  defaultValue=""
-                  disabled={assigning === document.id}
-                  onChange={(event) => handleAssign(document.id, event.target.value)}
-                >
-                  <option value="">{t('documents.assignHospital')}</option>
-                  {hospitals.map((hospital) => (
-                    <option key={hospital.id} value={hospital.id}>
-                      {hospital.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 p-3">
+      <span className="text-sm font-semibold text-amber-900">{t('orphans.hospitalsNotice', { count })}</span>
+      <Link
+        to="/approvals?tab=orphans"
+        className="ml-auto text-sm font-medium text-amber-900 underline hover:text-amber-700"
+      >
+        {t('orphans.openQueue')}
+      </Link>
     </div>
   );
 }

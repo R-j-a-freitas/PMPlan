@@ -173,19 +173,6 @@ export const clients = {
     'Sem documentos assinados recebidos. Chegam automaticamente quando o cliente responde à carta de assinatura com o PDF em anexo.',
     'Sin documentos firmados recibidos. Llegan automáticamente cuando el cliente responde a la carta de firma con el PDF adjunto.',
   ],
-  'documents.unmatchedTitle': [
-    '{count} documento assinado por associar',
-    '{count} documento firmado por asociar',
-  ],
-  'documents.unmatchedTitle_plural': [
-    '{count} documentos assinados por associar',
-    '{count} documentos firmados por asociar',
-  ],
-  'documents.unmatchedHint': [
-    'Chegaram por email mas não foi possível identificar o hospital — normalmente porque a resposta perdeu o código da proposta no assunto. Escolhe o hospital para os arquivar.',
-    'Han llegado por correo pero no ha sido posible identificar el hospital — normalmente porque la respuesta perdió el código de la propuesta en el asunto. Elige el hospital para archivarlos.',
-  ],
-  'documents.subject': ['Assunto: {subject}', 'Asunto: {subject}'],
   'documents.noSubject': ['(sem assunto)', '(sin asunto)'],
   'documents.assignHospital': ['Associar a hospital…', 'Asociar a hospital…'],
   'documents.assigned': ['Documento associado ao hospital.', 'Documento asociado al hospital.'],

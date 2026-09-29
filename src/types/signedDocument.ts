@@ -30,6 +30,9 @@ export type SignedDocument = {
   matched_at: string | null;
   matched_by: string | null;
   notes: string | null;
+  /** Hospitais possíveis que a Edge Function não conseguiu desempatar (ex.: remetente
+   *  contacto de vários) — sugeridos primeiro na associação manual (migração 0024). */
+  candidate_hospital_ids: string[];
   created_at: string;
 };
 

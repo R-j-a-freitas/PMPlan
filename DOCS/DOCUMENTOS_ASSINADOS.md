@@ -52,6 +52,59 @@ e aparece como etiqueta na interface, porque a confiança não é a mesma:
 | `sender_email` | Email do remetente coincide com um contacto do hospital | Palpite — confirmar |
 | `unmatched` | Nada bateu certo | Fica na fila "por associar" |
 
+### A proposta fecha sozinha (migração 0022)
+
+Quando um documento fica associado a uma proposta, a proposta passa de "Carta enviada" a
+"Assinado" sem ninguém carregar em "Marcar como assinado". Fazem-no dois triggers em
+`signed_documents`, e não a Edge Function, porque há dois caminhos por onde um documento
+ganha dono (o webhook e a associação manual na página de Hospitais):
+
+- **Resolver a proposta, documento a documento** (0023). Um email pode trazer as duas
+  cartas assinadas, por isso a via decide-se por cada PDF, por ordem de certeza:
+  1. **código no nome do ficheiro** — o PDF que enviamos chama-se
+     `Plano_Manutencao_[Braquiterapia_]<Hospital>_<ano>_<PM|BT-XXXXXXXX>.pdf`, e quem
+     devolve o mesmo ficheiro assinado devolve o código;
+  2. **via pelo nome do ficheiro** — "Braquiterapia"/Flexitron/Selectron → braquiterapia;
+     `Plano_Manutencao_` sem esses indícios → geral. Corrige também o código do assunto
+     quando o cliente responde a uma carta com os dois PDFs;
+  3. **via pelo assunto**, se mencionar braquiterapia;
+  4. sem indício nenhum: a única proposta do hospital em "Carta enviada", se só houver
+     uma. Com duas e sem indício, fica no hospital e marca-se à mão.
+
+  Com indício de via, nunca se cai para a outra: se a braquiterapia não está à espera de
+  assinatura, um PDF "Braquiterapia" não fecha a carta geral.
+- **Marcar como assinada.** `stage = 'signed'`, `signed_at` = data de chegada do
+  documento, `signed_by` a null (é assim que a UI distingue a assinatura automática).
+
+Um documento só fecha uma carta enviada **antes** de ele chegar: depois de "Reenviar carta
+actualizada", uma assinatura antiga não vale pelo plano novo.
+
+Na página de Aprovações o documento aparece no botão "Carta assinada" da linha e na tabela
+"Cartas assinadas recebidas", que se actualiza em tempo real (a tabela está na publicação
+`supabase_realtime`).
+
+### Documentos por associar (0024)
+
+Quando nada disto chega, o documento vai para **Aprovações → Documentos por associar**
+(o separador mostra a contagem; a página de Hospitais mostra um aviso com o atalho). Entram
+lá dois tipos:
+
+- **Sem hospital** — nenhuma regra o reconheceu, ou o remetente é contacto de **mais de um
+  hospital** (caixa partilhada de um grupo hospitalar). Neste último caso a função já não
+  escolhe o primeiro que calha: guarda os candidatos em `candidate_hospital_ids`, e a
+  página põe-nos à cabeça da lista de hospitais.
+- **Via por definir** — o hospital é conhecido mas tem cartas à espera de assinatura e
+  não se percebe de qual é o documento.
+
+Em cada linha escolhe-se o hospital e, opcionalmente, a via (sem via, a BD deduz pelo nome
+do ficheiro). Associar a uma carta em "Carta enviada" passa-a a "Assinado". Uma escolha
+manual de hospital **e** via nunca é reinterpretada pelos triggers. O admin pode apagar o
+que não for uma carta assinada.
+
+A identificação pelo remetente usa `hospital_contacts` (0021), mais o jsonb antigo
+`hospitals.contacts` enquanto existir. Contactos desactivados contam: desactivar tira dos
+envios, não muda de quem é o contacto.
+
 **Um documento nunca é descartado por não ser reconhecido.** Fica guardado com
 `hospital_id` a null e aparece num aviso no topo da página de Hospitais, para associação
 manual. Perder o PDF assinado de um cliente porque o assunto não bateu certo seria muito

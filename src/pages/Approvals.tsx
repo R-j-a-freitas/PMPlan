@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PageShell } from '../app/PageShell';
-import { EmailRecipientsEditor, TemplateEditor } from '../components/approvals';
+import { useSearchParams } from 'react-router-dom';
+import {
+  ApprovalSignedDocuments,
+  EmailRecipientsEditor,
+  OrphanSignedDocuments,
+  TemplateEditor,
+} from '../components/approvals';
+import type { ApprovalSignedDocumentRow, OrphanDocumentRow } from '../components/approvals';
+import { formatDocumentDateTime, useDocumentActions } from '../components/documents';
 import { Badge, Button, Card, EmptyState, FilterChip, Modal, PageHeader, SortableTh, Tabs } from '../components/ui';
 import { useTableSort } from '../hooks';
 import type { SortAccessors } from '../hooks';
@@ -21,9 +29,9 @@ import {
   resolveApprovalTrack,
   templateKeyFor,
 } from '../lib/approvalTrack';
-import { useT, type TFunction, type TranslationKey } from '../i18n';
+import { useLang, useT, type TFunction, type TranslationKey } from '../i18n';
 import { APPROVAL_TRACK_KEYS } from '../i18n/labels';
-import { resolveZoneTeamLeaderId } from '../lib/zoneTree';
+import { resolveZoneTeam, resolveZoneTeamLeaderId } from '../lib/zoneTree';
 import {
   SETTING_INCLUDE_TEAM_LEADERS,
   useAppSettingsStore,
@@ -36,6 +44,7 @@ import {
   useHospitalStore,
   useModalityStore,
   useProposalStore,
+  useSignedDocumentStore,
   useTemplateStore,
   useUiStore,
   useZoneStore,
@@ -49,6 +58,7 @@ import type {
   HospitalWithZone,
   PMEvent,
   ProposalStage,
+  SignedDocument,
 } from '../types';
 
 // btoa() só lida com Latin1 — o .ics tem acentuação (ex: "Manutenção"), por isso passa
@@ -80,6 +90,12 @@ interface HospitalBundle {
   /** Team Leader da zona do hospital (ou o herdado da zona-mãe) — vai sempre em CC nos
    *  emails ao cliente. null = zona sem TL definido, sinalizado na linha da tabela. */
   teamLeader: Engineer | null;
+  /** Engenheiros activos atribuídos à zona do hospital — destinatários do
+   *  "Enviar a equipa de zona", alternativa ao envio só aos engenheiros das PMs. */
+  zoneTeam: Engineer[];
+  /** Documento assinado mais recente devolvido pelo cliente para esta proposta — null
+   *  enquanto não chegar nenhum. */
+  signedDocument: SignedDocument | null;
 }
 
 function bundleKey(hospitalId: string, track: ApprovalTrack): string {
@@ -167,6 +183,8 @@ const STAGE_COLORS: Record<ProposalStage, string> = {
 type ActionKey =
   | 'send_engineer'
   | 'resend_engineer'
+  | 'send_zone_team'
+  | 'resend_zone_team'
   | 'confirm_engineer'
   | 'send_client'
   | 'resend_client'
@@ -253,6 +271,12 @@ export function Approvals() {
   const logEmailSent = useProposalStore((state) => state.logEmailSent);
   const templates = useTemplateStore((state) => state.templates);
   const fetchTemplates = useTemplateStore((state) => state.fetchTemplates);
+  // Documentos assinados devolvidos pelos clientes — a tabela "Cartas assinadas recebidas"
+  // e o botão "Carta assinada" de cada linha. É a chegada de um destes que passa a
+  // proposta a 'signed' (trigger da migração 0022), por isso a página escuta-os ao vivo.
+  const signedDocuments = useSignedDocumentStore((state) => state.documents);
+  const fetchSignedDocuments = useSignedDocumentStore((state) => state.fetchSignedDocuments);
+  const subscribeToSignedDocuments = useSignedDocumentStore((state) => state.subscribeToChanges);
   const recipients = useEmailRecipientStore((state) => state.recipients);
   const fetchRecipients = useEmailRecipientStore((state) => state.fetchRecipients);
   const fetchAppSettings = useAppSettingsStore((state) => state.fetchAppSettings);
@@ -270,7 +294,13 @@ export function Approvals() {
   // à parte e pode estar a ser trabalhado ao mesmo tempo.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'approvals' | 'templates' | 'recipients'>('approvals');
+  // ?tab=orphans abre directamente a fila de documentos por associar — é para lá que
+  // aponta o aviso da página de Hospitais.
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<'approvals' | 'orphans' | 'templates' | 'recipients'>(() =>
+    searchParams.get('tab') === 'orphans' ? 'orphans' : 'approvals',
+  );
+  const canAssignDocuments = useAuthStore((state) => state.permissions.canApproveSchedule);
   // Filtro de via: com dois processos por hospital a lista duplica de tamanho, e quem está
   // a tratar da braquiterapia quer ver só essas linhas.
   const [trackFilter, setTrackFilter] = useState<ApprovalTrack | 'all'>('all');
@@ -309,6 +339,14 @@ export function Approvals() {
     fetchYearEvents(planningYear);
     fetchProposals(planningYear);
   }, [planningYear, fetchYearEvents, fetchProposals]);
+
+  // Quando o cliente responde com a carta assinada, o webhook arquiva o PDF e o trigger
+  // fecha a proposta — recarregar as duas coisas faz a linha passar a "Assinado" no ecrã
+  // de quem está a olhar, sem ter de refrescar a página.
+  useEffect(() => {
+    fetchSignedDocuments();
+    return subscribeToSignedDocuments(() => fetchProposals(planningYear));
+  }, [planningYear, fetchSignedDocuments, subscribeToSignedDocuments, fetchProposals]);
 
   // Um bundle por (hospital, via): o equipamento do hospital é primeiro repartido pelas
   // vias (a via vem da modalidade — ver resolveApprovalTrack) e só depois se monta o
@@ -364,6 +402,10 @@ export function Approvals() {
           // configurá-lo nas zonas de topo — ver resolveZoneTeamLeaderId).
           const teamLeaderId = resolveZoneTeamLeaderId(hospital.zone_id, zones);
           const teamLeader = engineers.find((engineer) => engineer.id === teamLeaderId) ?? null;
+          // signedDocuments vem ordenado do mais recente para o mais antigo (store).
+          const signedDocument = proposal
+            ? (signedDocuments.find((document) => document.proposal_id === proposal.id) ?? null)
+            : null;
           return {
             hospital,
             track,
@@ -375,6 +417,8 @@ export function Approvals() {
             engineerEmails,
             clientEmails,
             teamLeader,
+            zoneTeam: resolveZoneTeam(hospital.zone_id, engineers),
+            signedDocument,
           };
         }),
       )
@@ -384,7 +428,7 @@ export function Approvals() {
           a.hospital.name.localeCompare(b.hospital.name) ||
           APPROVAL_TRACKS.indexOf(a.track) - APPROVAL_TRACKS.indexOf(b.track),
       );
-  }, [hospitals, contacts, equipment, modalities, yearEvents, proposals, engineers, zones]);
+  }, [hospitals, contacts, equipment, modalities, yearEvents, proposals, engineers, zones, signedDocuments]);
 
   const filteredBundles = useMemo(
     () => (trackFilter === 'all' ? bundles : bundles.filter((bundle) => bundle.track === trackFilter)),
@@ -392,6 +436,38 @@ export function Approvals() {
   );
 
   const { rows: visibleBundles, sortableProps } = useTableSort(filteredBundles, BUNDLE_SORT, 'hospital');
+
+  // Todos os documentos das propostas visíveis (não só o mais recente de cada uma): se o
+  // cliente mandou a carta duas vezes, ou em dois PDFs, quem fecha o processo quer ver os
+  // dois. Segue o filtro de via da tabela principal.
+  const signedDocumentRows = useMemo<ApprovalSignedDocumentRow[]>(() => {
+    const bundleByProposal = new Map(
+      filteredBundles
+        .filter((bundle) => bundle.proposal)
+        .map((bundle) => [bundle.proposal!.id, bundle] as const),
+    );
+    return signedDocuments.flatMap((document) => {
+      const bundle = document.proposal_id ? bundleByProposal.get(document.proposal_id) : undefined;
+      return bundle ? [{ document, hospitalName: bundle.hospital.name, track: bundle.track }] : [];
+    });
+  }, [filteredBundles, signedDocuments]);
+
+  // Fila manual: sem hospital, ou com hospital que tem cartas à espera de assinatura mas
+  // sem se saber de qual delas é o documento (duas vias, ficheiro sem indício). Um
+  // documento com hospital e sem proposta cuja carta já não está à espera não entra — é
+  // arquivo da ficha do hospital, não trabalho por fazer.
+  const orphanRows = useMemo<OrphanDocumentRow[]>(() => {
+    const hospitalsAwaitingSignature = new Set(
+      proposals.filter((proposal) => proposal.stage === 'letter_sent').map((proposal) => proposal.hospital_id),
+    );
+    return signedDocuments.flatMap((document): OrphanDocumentRow[] => {
+      if (!document.hospital_id) return [{ document, kind: 'no_hospital' }];
+      if (!document.proposal_id && hospitalsAwaitingSignature.has(document.hospital_id)) {
+        return [{ document, kind: 'no_track' }];
+      }
+      return [];
+    });
+  }, [signedDocuments, proposals]);
 
   const trackFilterOptions: { key: ApprovalTrack | 'all'; label: string }[] = [
     { key: 'all', label: t('approvals.allTracks') },
@@ -419,6 +495,9 @@ export function Approvals() {
     step: EmailTemplateStep,
     to: string[],
     attachments?: EmailAttachment[],
+    /** Substitui o {{engenheiro}} — o envio à equipa de zona cumprimenta a equipa, não os
+     *  engenheiros das PMs, que podem nem estar entre os destinatários. */
+    greeting?: string,
   ) {
     // A via escolhe o template (a braquiterapia tem os seus, `brachy_*`), o país escolhe o
     // idioma — nunca uma única versão fixa (secção: "estes emails e cartas têm de ser em PT
@@ -432,11 +511,12 @@ export function Approvals() {
     // {{engenheiro}} usa o(s) nome(s) real(is) atribuído(s) às PMs deste hospital; só cai
     // no genérico ("Equipa técnica"/"Equipo técnico") quando nenhuma PM tem engenheiro.
     const engenheiro =
-      bundle.engineerNames.length > 0
+      greeting ??
+      (bundle.engineerNames.length > 0
         ? bundle.engineerNames.join(', ')
         : bundle.hospital.country === 'ES'
           ? 'Equipo técnico'
-          : 'Equipa técnica';
+          : 'Equipa técnica');
     // A proposta é criada ANTES do envio (e não depois, como estava): é dela que sai o
     // reference_code que vai no assunto da carta, e é por esse código que a resposta do
     // cliente com o documento assinado é reconhecida. Se o envio falhar fica uma proposta
@@ -522,8 +602,14 @@ export function Approvals() {
     // correio de quem tem de os assinar.
     const baseName = `${trackFileTag(bundle.track)}${bundle.hospital.name.replace(/\s+/g, '_')}_${planningYear}`;
     const ics = buildProposalIcs(bundle.hospital.name, bundle.equipmentList, bundle.events);
+    // O código da proposta vai também no nome do PDF: o cliente devolve normalmente o mesmo
+    // ficheiro, assinado, e é por este código que cada documento é arquivado na sua via
+    // (migração 0023) — mesmo que as duas cartas voltem no mesmo email, ou num email novo
+    // sem o código no assunto. getOrCreateProposal é idempotente: sendTemplateEmail volta a
+    // chamá-lo e recebe a mesma proposta.
+    const proposal = await getOrCreateProposal(bundle.hospital.id, planningYear, bundle.track);
     return sendTemplateEmail(bundle, 'signature_letter', bundle.clientEmails, [
-      { filename: `Plano_Manutencao_${baseName}.pdf`, content: pdfBase64 },
+      { filename: `Plano_Manutencao_${baseName}_${proposal.reference_code}.pdf`, content: pdfBase64 },
       // charset=utf-8 explícito: sem ele o Resend/Outlook tratam o .ics como US-ASCII
       // e removem os acentos (ç, ã) e o travessão. method=PUBLISH espelha o do ficheiro.
       {
@@ -532,6 +618,18 @@ export function Approvals() {
         contentType: 'text/calendar; charset=utf-8; method=PUBLISH',
       },
     ]);
+  }
+
+  // Mesmo email de validação do "Enviar a engenheiro" (template engineer_approval, com a
+  // tabela das PMs), mas para todos os engenheiros da zona do hospital. A saudação vai no
+  // idioma do hospital — é o do template — e não no da interface de quem envia.
+  async function sendToZoneTeam(bundle: HospitalBundle) {
+    if (bundle.zoneTeam.length === 0) {
+      throw new Error(t('approvals.noZoneTeam', { zone: bundle.hospital.zone_name }));
+    }
+    const greeting = `${bundle.hospital.country === 'ES' ? 'Equipo' : 'Equipa'} ${bundle.hospital.zone_name}`;
+    const emails = [...new Set(bundle.zoneTeam.map((engineer) => engineer.email))];
+    return sendTemplateEmail(bundle, 'engineer_approval', emails, undefined, greeting);
   }
 
   async function runAction(bundle: HospitalBundle, action: ActionKey) {
@@ -551,6 +649,17 @@ export function Approvals() {
             throw new Error(t('approvals.noEngineerEmail', { bundle: bundleLabel(bundle, t) }));
           }
           await sendTemplateEmail(bundle, 'engineer_approval', bundle.engineerEmails);
+          break;
+        }
+        // A validação pela equipa da zona é a mesma fase da validação pelo engenheiro:
+        // avança para 'pending_engineer' e confirma-se com o mesmo "Marcar aprovado".
+        case 'send_zone_team': {
+          const proposal = await sendToZoneTeam(bundle);
+          await updateProposal(proposal.id, { stage: 'pending_engineer' });
+          break;
+        }
+        case 'resend_zone_team': {
+          await sendToZoneTeam(bundle);
           break;
         }
         case 'confirm_engineer': {
@@ -724,10 +833,34 @@ export function Approvals() {
           onChange={setActiveTab}
           tabs={[
             { key: 'approvals', label: t('approvals.tab.workflow') },
+            {
+              key: 'orphans',
+              // Com a contagem à vista mesmo noutro separador: uma fila que só se vê
+              // quando se entra nela é uma fila que fica esquecida.
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  {t('approvals.tab.orphans')}
+                  {orphanRows.length > 0 && (
+                    <span className="rounded-full bg-red-600 px-1.5 text-xs font-semibold text-white">
+                      {orphanRows.length}
+                    </span>
+                  )}
+                </span>
+              ),
+            },
             { key: 'templates', label: t('approvals.tab.templates') },
             { key: 'recipients', label: t('approvals.tab.recipients') },
           ]}
         />
+
+        {activeTab === 'orphans' && (
+          <OrphanSignedDocuments
+            rows={orphanRows}
+            hospitals={hospitals}
+            proposals={proposals}
+            canManage={canAssignDocuments}
+          />
+        )}
 
         {activeTab === 'templates' && canAct && <TemplateEditor />}
         {activeTab === 'templates' && !canAct && (
@@ -842,6 +975,9 @@ export function Approvals() {
               </div>
               </Card>
             )}
+
+            <ApprovalSignedDocuments rows={signedDocumentRows} />
+
           </>
         )}
       </div>
@@ -936,9 +1072,30 @@ function ApprovalRow({
   onConfirmResendLetter,
   onReset,
 }: ApprovalRowProps) {
+  const lang = useLang();
+  const { open: openDocument, busyId: openingDocumentId } = useDocumentActions();
   const stage = bundle.proposal?.stage ?? 'draft';
   const action = nextAction(stage);
   const resend = resendAction(stage);
+  const { signedDocument } = bundle;
+  // Assinatura registada pelo trigger (0022) e não por alguém em "Marcar como assinado":
+  // sem signed_by, com o documento na proposta.
+  const signedAutomatically = stage === 'signed' && !bundle.proposal?.signed_by && !!signedDocument;
+  // A equipa de zona é uma alternativa ao envio ao(s) engenheiro(s) das PMs, nas mesmas
+  // fases: envio inicial em 'draft', reenvio enquanto se aguarda a validação.
+  const zoneTeamAction: { key: ActionKey; labelKey: TranslationKey } | null =
+    stage === 'draft'
+      ? { key: 'send_zone_team', labelKey: 'approvals.action.send_zone_team' }
+      : stage === 'pending_engineer'
+        ? { key: 'resend_zone_team', labelKey: 'approvals.action.resend_zone_team' }
+        : null;
+  const zoneTeamTitle =
+    bundle.zoneTeam.length > 0
+      ? t('approvals.zoneTeamTitle', {
+          zone: bundle.hospital.zone_name,
+          names: bundle.zoneTeam.map((engineer) => engineer.name).join(', '),
+        })
+      : t('approvals.noZoneTeam', { zone: bundle.hospital.zone_name });
 
   return (
     <tr>
@@ -985,7 +1142,17 @@ function ApprovalRow({
       <td className="py-1.5 pr-2">{bundle.equipmentList.length}</td>
       <td className="py-1.5 pr-2">{bundle.events.length}</td>
       <td className="py-1.5 pr-2">
-        <Badge color={STAGE_COLORS[stage]}>{t(STAGE_LABEL_KEYS[stage])}</Badge>
+        <span
+          title={
+            signedAutomatically
+              ? t('approvals.signedAutomatically', {
+                  date: formatDocumentDateTime(signedDocument!.received_at, lang),
+                })
+              : undefined
+          }
+        >
+          <Badge color={STAGE_COLORS[stage]}>{t(STAGE_LABEL_KEYS[stage])}</Badge>
+        </span>
       </td>
       <td className="py-1.5 pr-2 text-right">
         {/* Cinco acções na mesma linha: as consultivas em ghost (não são o trabalho, são
@@ -999,6 +1166,19 @@ function ApprovalRow({
           <Button variant="ghost" size="sm" onClick={onDownloadCalendar} title={t('approvals.downloadIcsTitle')}>
             .ics
           </Button>
+          {/* A carta que o cliente devolveu assinada — visível a todos (inclusive só
+              leitura): é consulta, não uma acção sobre o processo. */}
+          {signedDocument && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openDocument(signedDocument, false)}
+              disabled={openingDocumentId === signedDocument.id}
+              title={t('approvals.viewSignedLetterTitle', { filename: signedDocument.filename })}
+            >
+              {t('approvals.viewSignedLetter')}
+            </Button>
+          )}
           {/* Reenviar a carta a um hospital já assinado passa primeiro pela confirmação —
               invalida a assinatura registada. Nos restantes reenvios não há nada a perder,
               vai directo. */}
@@ -1015,6 +1195,19 @@ function ApprovalRow({
           {canAct && action && (
             <Button size="sm" onClick={() => onRunAction(action.key)} disabled={busy}>
               {busy ? t('approvals.processing') : t(action.labelKey)}
+            </Button>
+          )}
+          {/* Desactivado quando a zona não tem equipa, com o motivo no title — melhor do
+              que deixar carregar e só então dizer que não havia a quem enviar. */}
+          {canAct && zoneTeamAction && (
+            <Button
+              size="sm"
+              variant={stage === 'draft' ? 'primary' : 'secondary'}
+              onClick={() => onRunAction(zoneTeamAction.key)}
+              disabled={busy || bundle.zoneTeam.length === 0}
+              title={zoneTeamTitle}
+            >
+              {t(zoneTeamAction.labelKey)}
             </Button>
           )}
           {/* Reiniciar só faz sentido depois de o workflow ter arrancado (stage !== draft)

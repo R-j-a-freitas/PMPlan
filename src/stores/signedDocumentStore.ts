@@ -17,10 +17,19 @@ interface SignedDocumentState {
   /** URL temporário para abrir/descarregar o PDF (bucket privado — nunca há URL pública).
    *  `download` força a transferência em vez de abrir no browser. */
   getDocumentUrl: (document: SignedDocument, options?: { download?: boolean }) => Promise<string>;
-  /** Associa manualmente um documento que chegou sem ser reconhecido. */
-  assignToHospital: (id: string, hospitalId: string, userId: string | null) => Promise<void>;
+  /** Associa manualmente um documento que chegou sem ser reconhecido. `proposalId`
+   *  opcional: sem ele, a BD escolhe a via pelo nome do ficheiro quando consegue (0023). */
+  assignToHospital: (
+    id: string,
+    hospitalId: string,
+    userId: string | null,
+    proposalId?: string | null,
+  ) => Promise<void>;
   updateSignedDocument: (id: string, patch: SignedDocumentUpdate) => Promise<void>;
   deleteSignedDocument: (id: string) => Promise<void>;
+  /** Escuta inserções/alterações em signed_documents (realtime, migração 0022) e chama
+   *  `onChange` depois de recarregar a lista. Devolve a função que cancela a subscrição. */
+  subscribeToChanges: (onChange?: () => void) => () => void;
 }
 
 export const useSignedDocumentStore = create<SignedDocumentState>()(
@@ -55,9 +64,10 @@ export const useSignedDocumentStore = create<SignedDocumentState>()(
         return data.signedUrl;
       },
 
-      assignToHospital: async (id, hospitalId, userId) => {
+      assignToHospital: async (id, hospitalId, userId, proposalId = null) => {
         await get().updateSignedDocument(id, {
           hospital_id: hospitalId,
+          proposal_id: proposalId,
           match_method: 'manual',
           matched_at: new Date().toISOString(),
           matched_by: userId,
@@ -90,6 +100,23 @@ export const useSignedDocumentStore = create<SignedDocumentState>()(
         // ficheiro que já não existe (que seria um erro em cada abertura da ficha).
         if (target) await supabase.storage.from(BUCKET).remove([target.storage_path]);
         set({ documents: get().documents.filter((document) => document.id !== id) });
+      },
+
+      // O evento não traz a linha completa de forma fiável (RLS, colunas grandes), por isso
+      // serve só de sinal: recarrega-se a lista, que é pequena. Quem subscreve recebe o
+      // aviso depois disso — a página de Aprovações usa-o para recarregar as propostas, que
+      // o trigger da 0022 acabou de passar a 'signed'.
+      subscribeToChanges: (onChange) => {
+        const channel = supabase
+          .channel(`signed-documents-${Math.random().toString(36).slice(2)}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'signed_documents' }, async () => {
+            await get().fetchSignedDocuments();
+            onChange?.();
+          })
+          .subscribe();
+        return () => {
+          supabase.removeChannel(channel);
+        };
       },
     }),
     { name: 'signed-document-store' },

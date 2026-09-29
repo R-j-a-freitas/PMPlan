@@ -144,6 +144,9 @@ interface MatchResult {
   hospitalId: string | null;
   proposalId: string | null;
   method: 'reference_code' | 'subject_hospital' | 'sender_email' | 'unmatched';
+  /** Hospitais possíveis quando não deu para escolher um (ex.: o remetente é contacto de
+   *  vários) — sugestão para a associação manual (migração 0024). */
+  candidateHospitalIds: string[];
 }
 
 function extractEmailAddress(value: string | undefined): string | null {
@@ -189,7 +192,12 @@ async function identifyHospital(email: ReceivedEmail): Promise<MatchResult> {
       .maybeSingle();
     const proposal = data as { id: string; hospital_id: string } | null;
     if (proposal) {
-      return { hospitalId: proposal.hospital_id, proposalId: proposal.id, method: 'reference_code' };
+      return {
+        hospitalId: proposal.hospital_id,
+        proposalId: proposal.id,
+        method: 'reference_code',
+        candidateHospitalIds: [],
+      };
     }
   }
 
@@ -215,20 +223,55 @@ async function identifyHospital(email: ReceivedEmail): Promise<MatchResult> {
     )
     .sort((a, b) => b.needle.length - a.needle.length);
   const nameHit = candidates.find((candidate) => normalizedSubject.includes(candidate.needle));
-  if (nameHit) return { hospitalId: nameHit.id, proposalId: null, method: 'subject_hospital' };
-
-  // 3. Email do remetente contra os contactos dos hospitais. É o menos fiável (um grupo
-  //    hospitalar pode partilhar contactos), por isso fica registado como tal para alguém
-  //    poder confirmar.
-  const fromAddress = extractEmailAddress(email.from);
-  if (fromAddress) {
-    const contactHit = hospitals.find((hospital) =>
-      (hospital.contacts ?? []).some((contact) => contact.email?.trim().toLowerCase() === fromAddress),
-    );
-    if (contactHit) return { hospitalId: contactHit.id, proposalId: null, method: 'sender_email' };
+  if (nameHit) {
+    return { hospitalId: nameHit.id, proposalId: null, method: 'subject_hospital', candidateHospitalIds: [] };
   }
 
-  return { hospitalId: null, proposalId: null, method: 'unmatched' };
+  // 3. Email do remetente contra os contactos dos hospitais. É o menos fiável, e só
+  //    associa quando aponta para UM hospital. Um grupo hospitalar com uma caixa
+  //    partilhada (ou a mesma pessoa em dois hospitais) dá vários — antes ficava o
+  //    primeiro que calhasse e o documento ia parar ao hospital errado sem sinal nenhum.
+  //    Agora fica órfão, com os candidatos guardados para a associação manual.
+  const fromAddress = extractEmailAddress(email.from);
+  if (fromAddress) {
+    const senderHospitalIds = await hospitalsForSender(fromAddress, hospitals);
+    if (senderHospitalIds.length === 1) {
+      return {
+        hospitalId: senderHospitalIds[0],
+        proposalId: null,
+        method: 'sender_email',
+        candidateHospitalIds: [],
+      };
+    }
+    if (senderHospitalIds.length > 1) {
+      return { hospitalId: null, proposalId: null, method: 'unmatched', candidateHospitalIds: senderHospitalIds };
+    }
+  }
+
+  return { hospitalId: null, proposalId: null, method: 'unmatched', candidateHospitalIds: [] };
+}
+
+// Hospitais de que o remetente é contacto. A fonte é hospital_contacts (migração 0021),
+// onde os contactos vivem agora; o jsonb antigo hospitals.contacts entra também enquanto
+// não for apagado, para não perder hospitais que ainda só lá tenham o contacto.
+// Contactos desactivados contam: desactivar alguém tira-o dos ENVIOS, mas se ele responder
+// com uma carta assinada, continua a ser do hospital dele.
+async function hospitalsForSender(
+  fromAddress: string,
+  hospitals: { id: string; contacts: { email?: string }[] | null }[],
+): Promise<string[]> {
+  // ilike para ignorar maiúsculas; os `_` e `%` escapados porque no LIKE são wildcards, e
+  // "joao_silva@..." apanharia também "joaoXsilva@...".
+  const pattern = fromAddress.replace(/[\\%_]/g, (char) => `\\${char}`);
+  const { data, error } = await admin.from('hospital_contacts').select('hospital_id').ilike('email', pattern);
+  if (error) console.error(`hospital_contacts: ${error.message}`);
+  const fromTable = ((data ?? []) as { hospital_id: string }[]).map((row) => row.hospital_id);
+  const fromLegacy = hospitals
+    .filter((hospital) =>
+      (hospital.contacts ?? []).some((contact) => contact.email?.trim().toLowerCase() === fromAddress),
+    )
+    .map((hospital) => hospital.id);
+  return [...new Set([...fromTable, ...fromLegacy])];
 }
 
 // O inbound da Resend é catch-all: com o MX no domínio, este webhook recebe TODOS os
@@ -404,6 +447,7 @@ Deno.serve(async (req) => {
           subject: email.subject ?? null,
           match_method: match.method,
           matched_at: match.hospitalId ? new Date().toISOString() : null,
+          candidate_hospital_ids: match.candidateHospitalIds,
         },
         { onConflict: 'inbound_email_id,filename' },
       );
