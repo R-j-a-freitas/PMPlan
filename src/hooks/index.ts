@@ -4,5 +4,6 @@ export * from './useConflictEngine';
 export * from './useDragDrop';
 export * from './useHolidays';
 export * from './useOutlookSync';
+export * from './usePlanRemainingPMs';
 export * from './useSourceChanges';
 export * from './useTableSort';

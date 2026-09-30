@@ -87,6 +87,27 @@ export const modals = {
     'Engenheiro aplicado a mais {count} PMs.',
     'Ingeniero aplicado a {count} PM más.',
   ],
+  'pm.planRemaining': ['Planear PM', 'Planificar PM'],
+  'pm.planRemainingTitle': ['PM proposta em falta', 'PM propuesto pendiente'],
+  'pm.planRemainingTitle_plural': ['{count} PMs propostas em falta', '{count} PM propuestos pendientes'],
+  'pm.planRemainingHint': [
+    'Datas espaçadas a partir desta PM, no mesmo dia da semana. Nada é gravado até confirmar.',
+    'Fechas espaciadas a partir de este PM, en el mismo día de la semana. No se guarda nada hasta confirmar.',
+  ],
+  'pm.planRemainingReview': ['Rever', 'Revisar'],
+  'pm.planRemainingUnsaved': [
+    'Grave primeiro as alterações desta PM — a proposta parte da data gravada.',
+    'Guarde primero los cambios de este PM — la propuesta parte de la fecha guardada.',
+  ],
+  'pm.planRemainingNone': [
+    'Não foi possível propor datas para as PMs em falta.',
+    'No fue posible proponer fechas para los PM pendientes.',
+  ],
+  'pm.planRemainingFailed': ['Falha ao propor datas.', 'Error al proponer fechas.'],
+  'pm.planRemainingConfirm': ['Criar {count} PM', 'Crear {count} PM'],
+  'pm.planRemainingConfirm_plural': ['Criar {count} PMs', 'Crear {count} PM'],
+  'pm.planRemainingDone': ['{count} PM criada.', '{count} PM creado.'],
+  'pm.planRemainingDone_plural': ['{count} PMs criadas.', '{count} PM creados.'],
 
   // ─── Conflitos ───────────────────────────────────────────────────────────────
   'conflict.title': ['Conflito ao agendar PM', 'Conflicto al programar el PM'],

@@ -474,6 +474,78 @@ export function generateAnnualSchedule(config: SchedulerConfig): ProposedPMEvent
   return enforceMinimumSpacing(draftProposals, baseCtx);
 }
 
+// ─── PMS EM FALTA (botão "Planear PM" do modal de edição) ─────────────────────
+
+export interface RemainingPMsConfig
+  extends Omit<SchedulerConfig, 'previousYearHistory' | 'currentYearAnchor'> {
+  /** Início da PM já marcada que serve de âncora — as restantes espaçam-se a partir dela
+   *  em semanas inteiras, preservando o dia da semana (mesma regra de currentYearAnchor). */
+  anchorDate: Date;
+  /** PMs activas (não canceladas) do equipamento no ano alvo, âncora incluída — contam
+   *  para a quota e as novas propostas afastam-se delas. */
+  bookedEventsTargetYear: PMEvent[];
+}
+
+function nearestGapDays(candidate: Date, booked: Date[]): number {
+  return booked.reduce(
+    (min, date) => Math.min(min, Math.abs(differenceInCalendarDays(candidate, date))),
+    Number.POSITIVE_INFINITY,
+  );
+}
+
+// Completa o plano anual de um equipamento que já tem PM(s) marcada(s) mas ainda não
+// todas as contratadas (ex: 1/4 marcada à mão, sem histórico do ano anterior nem geração
+// automática). Os slots teóricos são âncora + k × (52÷pmPerYear) semanas, recolocados
+// dentro do ano; ficam os que estão MAIS LONGE das PMs já marcadas, tantos quantos
+// faltam. Tal como generateAnnualSchedule, é pura e só devolve propostas.
+export function proposeRemainingPMs(config: RemainingPMsConfig): ProposedPMEvent[] {
+  const { pmPerYear, targetYear, anchorDate, bookedEventsTargetYear } = config;
+  const missing = pmPerYear - bookedEventsTargetYear.length;
+  if (missing <= 0) return [];
+
+  const weeksBetweenPMs = Math.round(365 / pmPerYear / 7);
+  const bookedDates = bookedEventsTargetYear.map((event) => new Date(event.start_date));
+  const candidates = Array.from({ length: pmPerYear - 1 }, (_, index) =>
+    clampIntoTargetYearPreservingWeekday(addDays(anchorDate, (index + 1) * weeksBetweenPMs * 7), targetYear),
+  );
+  const chosen = [...candidates]
+    .sort((a, b) => nearestGapDays(b, bookedDates) - nearestGapDays(a, bookedDates))
+    .slice(0, missing)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const baseCtx: PlacementContext = {
+    equipmentId: config.equipmentId,
+    engineerId: config.preferredEngineerId,
+    durationDays: config.pmDurationDays,
+    zoneId: config.zoneId,
+    zoneCountry: config.zoneCountry,
+    holidays: config.holidays,
+    existingEvents: config.existingEventsTargetYear,
+    hospitalLocality: config.hospitalLocality,
+    hospitalCity: config.hospitalCity,
+    weekendWork: config.weekendWork,
+    hospitalId: config.hospitalId,
+    cityKey: config.cityKey,
+    siteIndex: config.siteIndex,
+  };
+
+  const drafts: ProposedPMEvent[] = [];
+  let pool = config.existingEventsTargetYear;
+  for (const candidate of chosen) {
+    const proposal = buildProposal({
+      candidate,
+      anchorSource: 'existing_current_year',
+      previousActualDate: null,
+      intervalDays: Math.round(365 / pmPerYear),
+      ctx: { ...baseCtx, existingEvents: pool },
+    });
+    drafts.push(proposal);
+    pool = [...pool, proposalToVirtualEvent(proposal)];
+  }
+
+  return enforceMinimumSpacing(drafts, baseCtx);
+}
+
 // ─── FUNÇÃO DE COMPARAÇÃO (para mostrar na UI) ────────────────────────────────
 
 function averageGapDays(dates: Date[]): number {

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addDays, format } from 'date-fns';
-import { useConflictEngine } from '../../hooks';
+import { useConflictEngine, usePlanRemainingPMs } from '../../hooks';
 import { useAuthStore, useCalendarStore, useEquipmentStore, useUiStore } from '../../stores';
 import { findEngineerOverlapInReassign, listPmEventsForEquipmentInYear } from '../../lib/conflictRules';
 import { toDisplayDate } from '../../lib/dateFormat';
 import type { PMStatus } from '../../types';
 import { Button, Modal } from '../ui';
 import { PMEventForm } from './PMEventForm';
+import { RemainingPMsPreview } from './RemainingPMsPreview';
 import { useT } from '../../i18n';
 import { conflictMessage } from '../../i18n/labels';
 
@@ -45,6 +46,7 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
   const permissions = useAuthStore((state) => state.permissions);
   const pushToast = useUiStore((state) => state.pushToast);
   const { validate } = useConflictEngine();
+  const planRemaining = usePlanRemainingPMs();
 
   const readOnly = eventId ? !permissions.canEditPM : !permissions.canCreatePM;
 
@@ -94,6 +96,49 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
       (event) => event.status !== 'completed' && event.engineer_id !== engineerId,
     );
   }, [eventId, equipmentId, engineerId, startDate, yearEvents, planningYear]);
+
+  // "Planear PM": só numa PM já gravada, activa, e enquanto o equipamento ainda não tem
+  // todas as PMs contratadas do ano (nem via ancoragem ao ano anterior nem via geração
+  // automática) — propõe as restantes a partir desta, sem gravar até o utilizador confirmar.
+  const canPlanRemaining =
+    Boolean(existing) &&
+    existing?.status !== 'cancelled' &&
+    !readOnly &&
+    permissions.canCreatePM &&
+    pmQuota !== null &&
+    pmQuota.count < pmQuota.max;
+  const previewing = planRemaining.proposals !== null;
+
+  async function handlePlanRemaining() {
+    if (!existing) return;
+    // A proposta parte da PM gravada — com datas/equipamento por gravar, as novas PMs
+    // ficariam espaçadas de uma data que não é a que o utilizador está a ver.
+    const dirty =
+      existing.start_date !== startDate || existing.end_date !== endDate || existing.equipment_id !== equipmentId;
+    if (dirty) {
+      pushToast({ variant: 'warning', message: t('pm.planRemainingUnsaved') });
+      return;
+    }
+    try {
+      const proposed = await planRemaining.propose(existing, engineerId);
+      if (proposed.length === 0) pushToast({ variant: 'warning', message: t('pm.planRemainingNone') });
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('pm.planRemainingFailed') });
+    }
+  }
+
+  async function handleConfirmPlanRemaining() {
+    try {
+      const outcome = await planRemaining.save();
+      pushToast({ variant: 'success', message: t('pm.planRemainingDone', { count: outcome.created }) });
+      if (!outcome.sourceChangesOk) {
+        pushToast({ variant: 'warning', message: t('scheduler.sourceChangesFailed') });
+      }
+      onClose();
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('pm.saveFailed') });
+    }
+  }
 
   // Trocar de equipamento muda o conjunto a que "aplicar a todas" se refere — desliga a
   // opção para ninguém reatribuir sem querer as PMs de outro equipamento.
@@ -215,6 +260,18 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
       title={eventId ? t('pm.edit') : t('pm.new')}
       onClose={onClose}
       footer={
+        previewing ? (
+          <div className="flex w-full justify-end gap-2">
+            <Button variant="secondary" onClick={planRemaining.reset} disabled={planRemaining.busy}>
+              {t('common.back')}
+            </Button>
+            <Button onClick={handleConfirmPlanRemaining} disabled={planRemaining.busy}>
+              {planRemaining.busy
+                ? t('common.saving')
+                : t('pm.planRemainingConfirm', { count: planRemaining.proposals?.length ?? 0 })}
+            </Button>
+          </div>
+        ) : (
         // Eliminar à esquerda, longe do par Cancelar/Guardar: é a única acção deste
         // modal que não se desfaz, e não pode estar encostada à que se clica sempre.
         <div className="flex w-full items-center justify-between">
@@ -226,6 +283,11 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
             <span />
           )}
           <div className="flex gap-2">
+            {canPlanRemaining && (
+              <Button variant="secondary" onClick={handlePlanRemaining} disabled={saving || planRemaining.busy}>
+                {t('pm.planRemaining')}
+              </Button>
+            )}
             <Button variant="secondary" onClick={onClose} disabled={saving}>
               {readOnly ? t('common.close') : t('common.cancel')}
             </Button>
@@ -236,6 +298,7 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
             )}
           </div>
         </div>
+        )
       }
     >
       <PMEventForm
@@ -259,6 +322,11 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
         onStatusChange={setStatus}
         onNotesChange={setNotes}
       />
+      {planRemaining.proposals && (
+        <div className="mt-3">
+          <RemainingPMsPreview proposals={planRemaining.proposals} />
+        </div>
+      )}
     </Modal>
   );
 }
