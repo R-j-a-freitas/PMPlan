@@ -49,6 +49,15 @@ export const approvals = {
   'approvals.selectedCount': ['{count} seleccionado', '{count} seleccionado'],
   'approvals.selectedCount_plural': ['{count} seleccionados', '{count} seleccionados'],
   'approvals.advanceSelected': ['Avançar seleccionados', 'Avanzar seleccionados'],
+  'approvals.advanceSelectedEngineer': ['Enviar seleccionados a engenheiro', 'Enviar seleccionados al ingeniero'],
+  'approvals.advanceSelectedZoneTeam': [
+    'Enviar seleccionados a equipa de zona',
+    'Enviar seleccionados al equipo de zona',
+  ],
+  'approvals.bulkDraftTitle': [
+    'Aplica-se às {count} linhas "Por enviar". As restantes linhas seleccionadas avançam para a fase seguinte.',
+    'Se aplica a las {count} filas «Por enviar». Las demás filas seleccionadas avanzan a la fase siguiente.',
+  ],
   'approvals.col.track': ['Via', 'Vía'],
   'approvals.col.teamLeader': ['Team Leader', 'Team Leader'],
   'approvals.col.pmDays': ['Dias-PM', 'Días-PM'],

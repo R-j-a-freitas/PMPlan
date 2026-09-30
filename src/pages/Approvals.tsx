@@ -231,6 +231,8 @@ function resendAction(stage: ProposalStage): { key: ActionKey; labelKey: Transla
   }
 }
 
+type BulkDraftAction = Extract<ActionKey, 'send_engineer' | 'send_zone_team'>;
+
 function nextAction(stage: ProposalStage): { key: ActionKey; labelKey: TranslationKey } | null {
   switch (stage) {
     case 'draft':
@@ -793,13 +795,20 @@ export function Approvals() {
     );
   }
 
-  async function runBulkAction() {
+  // As linhas em 'draft' têm dois caminhos (engenheiro das PMs ou equipa de zona); o
+  // destino escolhido na barra aplica-se a todas elas. As restantes seguem o nextAction.
+  async function runBulkAction(draftAction: BulkDraftAction) {
     const selected = visibleBundles.filter((bundle) => selectedIds.has(bundle.key));
     for (const bundle of selected) {
-      const action = nextAction(bundle.proposal?.stage ?? 'draft');
-      if (action) await runAction(bundle, action.key);
+      const stage = bundle.proposal?.stage ?? 'draft';
+      const actionKey = stage === 'draft' ? draftAction : nextAction(stage)?.key;
+      if (actionKey) await runAction(bundle, actionKey);
     }
   }
+
+  const selectedDraftCount = visibleBundles.filter(
+    (bundle) => selectedIds.has(bundle.key) && (bundle.proposal?.stage ?? 'draft') === 'draft',
+  ).length;
 
   // Reinicia o workflow desta via: volta a 'draft' e limpa todas as confirmações/envios já
   // registados (engenheiro, cliente, carta, assinatura). Usado quando as datas mudam depois
@@ -960,9 +969,34 @@ export function Approvals() {
                   <span className="text-sm text-gray-500">
                     {t('approvals.selectedCount', { count: selectedIds.size })}
                   </span>
-                  <Button onClick={runBulkAction} disabled={selectedIds.size === 0 || busyKey !== null}>
-                    {t('approvals.advanceSelected')}
-                  </Button>
+                  {/* Com linhas por enviar na selecção há dois destinos possíveis para a
+                      validação — mostram-se os dois, para se ver antes do clique para onde
+                      vai. Sem elas, um só botão avança cada linha para a fase seguinte. */}
+                  {selectedDraftCount > 0 ? (
+                    <>
+                      <Button
+                        onClick={() => runBulkAction('send_engineer')}
+                        disabled={busyKey !== null}
+                        title={t('approvals.bulkDraftTitle', { count: selectedDraftCount })}
+                      >
+                        {t('approvals.advanceSelectedEngineer')}
+                      </Button>
+                      <Button
+                        onClick={() => runBulkAction('send_zone_team')}
+                        disabled={busyKey !== null}
+                        title={t('approvals.bulkDraftTitle', { count: selectedDraftCount })}
+                      >
+                        {t('approvals.advanceSelectedZoneTeam')}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      onClick={() => runBulkAction('send_engineer')}
+                      disabled={selectedIds.size === 0 || busyKey !== null}
+                    >
+                      {t('approvals.advanceSelected')}
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
