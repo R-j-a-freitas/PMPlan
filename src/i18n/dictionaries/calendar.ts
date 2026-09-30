@@ -68,8 +68,8 @@ export const calendar = {
   'load.term.demand': ['Procura', 'Demanda'],
   'load.term.workingDays': ['Dias de trabalho', 'Días de trabajo'],
   'load.zone.capacity': [
-    'nº de engenheiros da zona × dias de trabalho do ano (1 dia-PM por engenheiro por dia).',
-    'nº de ingenieros de la zona × días de trabajo del año (1 día-PM por ingeniero y día).',
+    'engenheiros da zona × dias de trabalho do ano (1 dia-PM por engenheiro por dia). Cada engenheiro activo é repartido em partes iguais pelas zonas que cobre (primária e secundárias): quem cobre 3 zonas conta 1/3 em cada.',
+    'ingenieros de la zona × días de trabajo del año (1 día-PM por ingeniero y día). Cada ingeniero activo se reparte a partes iguales entre las zonas que cubre (principal y secundarias): quien cubre 3 zonas cuenta 1/3 en cada una.',
   ],
   'load.zone.demand': [
     'duração (início e fim inclusive) das PMs activas com início nesse ano, cujo equipamento está nesta zona.',
@@ -80,12 +80,12 @@ export const calendar = {
     'de lunes a viernes, más los sábados/domingos con PMs programados — un fin de semana trabajado cuenta como día normal.',
   ],
   'load.zone.note1': [
-    'Uma zona-mãe é só a soma das filhas: procura das filhas ÷ capacidade das filhas. O que estiver atribuído directamente à mãe fica de fora.',
-    'Una zona superior es solo la suma de las hijas: demanda de las hijas ÷ capacidad de las hijas. Lo asignado directamente a la superior queda fuera.',
+    'Uma zona-mãe é só a soma das filhas: procura das filhas ÷ capacidade das filhas. Uma atribuição directa à zona-mãe (ex.: Team Leader da região) não conta como zona coberta.',
+    'Una zona superior es solo la suma de las hijas: demanda de las hijas ÷ capacidad de las hijas. Una asignación directa a la zona superior (p. ej.: Team Leader de la región) no cuenta como zona cubierta.',
   ],
   'load.zone.note2': [
-    'Um engenheiro que cubra várias zonas conta por inteiro em cada uma delas.',
-    'Un ingeniero que cubra varias zonas cuenta por entero en cada una de ellas.',
+    'Como cada engenheiro é repartido, a soma das capacidades de todas as zonas é a da equipa real — ninguém é contado duas vezes. Engenheiros inactivos não contam.',
+    'Como cada ingeniero se reparte, la suma de las capacidades de todas las zonas es la del equipo real — nadie se cuenta dos veces. Los ingenieros inactivos no cuentan.',
   ],
   'load.zone.note3': [
     'Feriados não são descontados aos dias de trabalho.',
