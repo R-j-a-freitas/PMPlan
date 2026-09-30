@@ -34,3 +34,14 @@ hb.token
 *.njsproj
 *.sln
 *.sw?
+
+# Folhas de cálculo de trabalho com dados reais de clientes (contactos, hospitais, planos)
+DOCS/*.xlsx
+DOCS/XLS/
+
+# Ficheiros de lock do Office/LibreOffice
+~$*
+.~lock.*#
+
+# Definições locais do Claude Code
+.claude/settings.local.json
