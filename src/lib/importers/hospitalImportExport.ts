@@ -1,4 +1,5 @@
 import type { Country, HospitalInsert, HospitalUpdate, HospitalWithZone, Zone } from '../../types';
+import { toSpanishRegionCode } from '../spanishRegions';
 import type { ImportRef, ParsedImportRow } from '../spreadsheet';
 import type { ImportAliases } from './importHelpers';
 import { boolToPt, parseBooleanPt, resolveRef } from './importHelpers';
@@ -10,6 +11,12 @@ function parseCountry(value: string | undefined): Country | null {
   if (normalized === 'PT' || normalized === 'PORTUGAL') return 'PT';
   if (normalized === 'ES' || normalized === 'ESPANHA' || normalized === 'ESPAÑA') return 'ES';
   return null;
+}
+
+/** Em ES, hospitals.locality é o código ISO da Comunidade Autónoma (é o que casa com
+ *  holidays.locality) — aceita-se o nome no ficheiro e converte-se aqui. */
+function importedLocality(value: string, country: Country): string {
+  return country === 'ES' ? toSpanishRegionCode(value) : value;
 }
 
 /** Uma linha do ficheiro: ou actualiza um hospital que já existe, ou cria um novo. */
@@ -134,7 +141,8 @@ export function parseHospitalImportRows(
       set('address', row['Morada']?.trim() || undefined);
       set('postal_code', row['Código postal']?.trim() || undefined);
       set('country', country ?? undefined);
-      set('locality', row['Localidade']?.trim() || undefined);
+      const localityValue = row['Localidade']?.trim();
+      set('locality', localityValue ? importedLocality(localityValue, country ?? existing.country) : undefined);
       set('elekta_id', row['ElektaID']?.trim() || undefined);
       set('zone_id', zone?.id);
       // Cidade só faz sentido em ES (ver o comentário do campo em types/hospital.ts).
@@ -187,7 +195,7 @@ export function parseHospitalImportRows(
       address: row['Morada'] || null,
       postal_code: row['Código postal'] || null,
       country,
-      locality: row['Localidade'] || null,
+      locality: row['Localidade']?.trim() ? importedLocality(row['Localidade'].trim(), country) : null,
       city: country === 'ES' ? row['Cidade'] || null : null,
       zone_id: zone.id,
       elekta_id: row['ElektaID'] || null,

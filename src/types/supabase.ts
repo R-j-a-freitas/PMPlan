@@ -29,6 +29,7 @@ import type {
   HolidayRule,
   HolidayRuleInsert,
   HolidayRuleUpdate,
+  HolidaySyncRun,
   Hospital,
   HospitalContact,
   HospitalContactInsert,
@@ -146,6 +147,13 @@ export type Database = {
       };
       system_backups: {
         Row: SystemBackup;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      // Escrita só pelo script do BOE na VPS, através das funções da migração 0025.
+      holiday_sync_runs: {
+        Row: HolidaySyncRun;
         Insert: never;
         Update: never;
         Relationships: [];

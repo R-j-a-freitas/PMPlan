@@ -25,7 +25,17 @@ import { createHmac } from 'node:crypto';
 const SECRET = process.env.SUPABASE_JWT_SECRET;
 const REF = process.env.SUPABASE_PROJECT_REF;
 const YEARS = Number(process.env.TOKEN_YEARS ?? 5);
-const ROLE = 'pmplan_heartbeat';
+// Papéis de menor privilégio que este script pode cunhar — lista fechada, para um engano
+// de escrita nunca produzir um token de papel com mais acesso (ex: service_role).
+//   pmplan_heartbeat      keep-alive e verificador (migração 0011)
+//   pmplan_holiday_sync   importação dos feriados do BOE (migração 0025)
+const ALLOWED_ROLES = ['pmplan_heartbeat', 'pmplan_holiday_sync'];
+const ROLE = process.env.TOKEN_ROLE ?? 'pmplan_heartbeat';
+
+if (!ALLOWED_ROLES.includes(ROLE)) {
+  console.error(`TOKEN_ROLE inválido: ${ROLE}. Permitidos: ${ALLOWED_ROLES.join(', ')}`);
+  process.exit(1);
+}
 
 if (!SECRET || !REF) {
   console.error(
@@ -63,6 +73,10 @@ console.error(`Papel:    ${ROLE}`);
 console.error(`Projecto: ${REF}`);
 console.error(`Validade: ${YEARS} anos (expira em ${new Date(payload.exp * 1000).toISOString().slice(0, 10)})`);
 console.error('');
-console.error('Colar em SUPABASE_HEARTBEAT_TOKEN (/etc/pmplan/keep-alive.env e GitHub Secret).');
+console.error(
+  ROLE === 'pmplan_holiday_sync'
+    ? 'Colar em SUPABASE_HOLIDAY_SYNC_TOKEN (/etc/pmplan/boe-holidays.env).'
+    : 'Colar em SUPABASE_HEARTBEAT_TOKEN (/etc/pmplan/keep-alive.env e GitHub Secret).',
+);
 console.error('');
 console.log(token);

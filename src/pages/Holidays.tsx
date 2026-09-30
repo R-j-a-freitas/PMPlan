@@ -3,10 +3,11 @@ import { PageShell } from '../app/PageShell';
 import { useHolidays, useTableSort } from '../hooks';
 import type { SortAccessors } from '../hooks';
 import { computeActiveLocalities } from '../lib/activeLocalities';
+import { ruleAppliesToYear } from '../lib/expandHolidayRule';
 import { toDisplayDate } from '../lib/dateFormat';
-import { expandHolidayRule } from '../lib/expandHolidayRule';
 import { spanishRegionName, SPANISH_REGIONS } from '../lib/spanishRegions';
 import {
+  RULE_SOURCE,
   useAuthStore,
   useEquipmentStore,
   useHolidayRuleStore,
@@ -14,9 +15,12 @@ import {
   useUiStore,
   useZoneStore,
 } from '../stores';
-import type { Country, Holiday, HolidayRule, HolidayRuleType, Zone } from '../types';
+import type { Country, Holiday, HolidayRule, Zone } from '../types';
 import { matchesSearch } from '../lib/searchText';
 import { Button, Card, EmptyState, FormModal, PageHeader, SearchInput, SortableTh } from '../components/ui';
+import { HolidayRuleFormModal, HolidayRulesCard, HolidaySourcesNote } from '../components/holidays';
+import { spanishCityCalendarUrl } from '../lib/holidayReferenceLinks';
+import { describeRule, formToRuleFields, ruleToForm, type HolidayRuleForm } from '../lib/holidayRuleForm';
 import { useT, type TFunction } from '../i18n';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -24,55 +28,32 @@ const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_
 
 const EMPTY_FORM = { name: '', date: '', country: 'PT' as Country, zoneId: '', locality: '' };
 
-const EMPTY_RULE_FORM = {
-  name: '',
-  locality: '',
-  ruleType: 'fixed_date' as HolidayRuleType,
-  fixedMonth: '1',
-  fixedDay: '1',
-  easterOffsetDays: '0',
-};
-
-function describeRule(rule: HolidayRule, t: TFunction): string {
-  if (rule.rule_type === 'fixed_date') {
-    return t('holidays.rules.describeFixed', {
-      day: String(rule.fixed_day).padStart(2, '0'),
-      month: String(rule.fixed_month).padStart(2, '0'),
-    });
-  }
-  const offset = rule.easter_offset_days ?? 0;
-  return t('holidays.rules.describeEaster', { offset: `${offset >= 0 ? '+' : ''}${offset}` });
-}
-
-/** Chave de ordenação da coluna "Recorrência": as regras de data fixa ordenam-se entre
- *  si por mês/dia e as móveis por distância à Páscoa, com os dois grupos separados —
- *  ordenar pelo texto ("Páscoa +60 dias" vs "Todos os anos: 13/06") misturava as duas
- *  famílias sem dizer nada sobre quando cada feriado cai. */
-function ruleSortValue(rule: HolidayRule): string {
-  if (rule.rule_type === 'fixed_date') {
-    return `0-${String(rule.fixed_month).padStart(2, '0')}-${String(rule.fixed_day).padStart(2, '0')}`;
-  }
-  // Deslocamento com sinal e largura fixa, para -7 vir antes de +1 e +60 depois de +7.
-  return `1-${String((rule.easter_offset_days ?? 0) + 1000).padStart(5, '0')}`;
-}
-
 type HolidayForm = typeof EMPTY_FORM;
-type RuleForm = typeof EMPTY_RULE_FORM;
 
 type HolidaySortKey = 'date' | 'name' | 'locality' | 'source';
-type RuleSortKey = 'locality' | 'name' | 'recurrence';
+
+/** Regra a criar (rule=null) ou a editar, no país indicado — um modal só serve os dois
+ *  cartões de regras (PT e ES). */
+type RuleEditing = { country: Country; rule: HolidayRule | null };
 
 // Rótulos da coluna "Localidade" ao nível do módulo (e não em linha no JSX): passam
 // para HolidaySection como dependência da ordenação, e uma função nova a cada render
 // mandava reordenar a tabela sem nada ter mudado.
-const ptLocalityLabel = (holiday: Holiday) => holiday.locality ?? '';
-const esLocalityLabel = (holiday: Holiday) => (holiday.locality ? spanishRegionName(holiday.locality) : '');
+const plainLocalityLabel = (holiday: Holiday) => holiday.locality ?? '';
+const esRegionLabel = (holiday: Holiday) => (holiday.locality ? spanishRegionName(holiday.locality) : '');
 
-const RULE_SORT: SortAccessors<HolidayRule, RuleSortKey> = {
-  locality: (rule) => rule.locality,
-  name: (rule) => rule.name,
-  recurrence: ruleSortValue,
-};
+/** holidays.locality em ES guarda tanto códigos de Comunidade Autónoma ("ES-GA") como
+ *  nomes de cidade ("Vigo") — os códigos são o que separa uma coisa da outra. */
+function isSpanishRegionCode(locality: string): boolean {
+  return locality.startsWith('ES-');
+}
+
+function sourceLabel(source: string, t: TFunction): string {
+  if (source.startsWith('manual')) return t('holidays.source.manual');
+  if (source === RULE_SOURCE) return t('holidays.source.rule');
+  if (source === 'boe') return t('holidays.source.boe');
+  return t('holidays.source.auto');
+}
 
 // Introdução de feriado manual (um ano só) — ver FormModal para o porquê de estar em modal.
 function HolidayFormModal({
@@ -157,96 +138,6 @@ function HolidayFormModal({
   );
 }
 
-// Introdução de regra recorrente (projectada para qualquer ano) — ver FormModal.
-function HolidayRuleFormModal({
-  t,
-  localities,
-  saving,
-  onCancel,
-  onSubmit,
-}: {
-  t: TFunction;
-  localities: string[];
-  saving: boolean;
-  onCancel: () => void;
-  onSubmit: (values: RuleForm) => void;
-}) {
-  const [form, setForm] = useState(EMPTY_RULE_FORM);
-
-  return (
-    <FormModal
-      title={t('holidays.rules.new')}
-      submitLabel={t('holidays.rules.add')}
-      saving={saving}
-      canSubmit={Boolean(form.name.trim() && form.locality.trim())}
-      onCancel={onCancel}
-      onSubmit={() => onSubmit(form)}
-    >
-      <input
-        autoFocus
-        list="pt-concelhos-regras"
-        placeholder={t('holidays.rules.locality')}
-        className="pm-field"
-        value={form.locality}
-        onChange={(event) => setForm({ ...form, locality: event.target.value })}
-      />
-      <datalist id="pt-concelhos-regras">
-        {localities.map((locality) => (
-          <option key={locality} value={locality} />
-        ))}
-      </datalist>
-      <input
-        placeholder={t('holidays.namePlaceholder')}
-        className="pm-field"
-        value={form.name}
-        onChange={(event) => setForm({ ...form, name: event.target.value })}
-      />
-      <select
-        className="col-span-2 pm-field"
-        value={form.ruleType}
-        onChange={(event) => setForm({ ...form, ruleType: event.target.value as HolidayRuleType })}
-      >
-        <option value="fixed_date">{t('holidays.rules.fixed')}</option>
-        <option value="easter_relative">{t('holidays.rules.easter')}</option>
-      </select>
-      {form.ruleType === 'fixed_date' ? (
-        <>
-          <select
-            className="pm-field"
-            value={form.fixedMonth}
-            onChange={(event) => setForm({ ...form, fixedMonth: event.target.value })}
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
-              <option key={month} value={month}>
-                {t('holidays.rules.month', { month })}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-2 text-sm text-gray-600">
-            {t('holidays.rules.day')}
-            <input
-              type="number"
-              min={1}
-              max={31}
-              className="w-20 pm-field"
-              value={form.fixedDay}
-              onChange={(event) => setForm({ ...form, fixedDay: event.target.value })}
-            />
-          </label>
-        </>
-      ) : (
-        <input
-          type="number"
-          placeholder={t('holidays.rules.easterOffset')}
-          className="col-span-2 pm-field"
-          value={form.easterOffsetDays}
-          onChange={(event) => setForm({ ...form, easterOffsetDays: event.target.value })}
-        />
-      )}
-    </FormModal>
-  );
-}
-
 interface HolidaySectionProps {
   t: TFunction;
   title: string;
@@ -257,7 +148,7 @@ interface HolidaySectionProps {
   localityLabel?: (holiday: Holiday) => string;
 }
 
-// Uma secção (tabela) por âmbito de feriado — reutilizada pelas 4 categorias da página.
+// Uma secção (tabela) por âmbito de feriado — reutilizada pelas 5 categorias da página.
 function HolidaySection({ t, title, hint, holidays, canManageHolidays, onDelete, localityLabel }: HolidaySectionProps) {
   // holiday.date é ISO (AAAA-MM-DD): ordena cronologicamente já como texto, ao contrário
   // do DD/MM/AAAA que a célula mostra.
@@ -266,8 +157,7 @@ function HolidaySection({ t, title, hint, holidays, canManageHolidays, onDelete,
       date: (holiday) => holiday.date,
       name: (holiday) => holiday.name,
       locality: (holiday) => localityLabel?.(holiday) ?? null,
-      source: (holiday) =>
-        holiday.source.startsWith('manual') ? t('holidays.source.manual') : t('holidays.source.auto'),
+      source: (holiday) => sourceLabel(holiday.source, t),
     }),
     [localityLabel, t],
   );
@@ -296,11 +186,11 @@ function HolidaySection({ t, title, hint, holidays, canManageHolidays, onDelete,
                   <td className="py-1.5 pr-2 tabular-nums">{toDisplayDate(holiday.date)}</td>
                   <td className="py-1.5 pr-2 font-medium text-gray-800">{holiday.name}</td>
                   {localityLabel && <td className="py-1.5 pr-2">{localityLabel(holiday)}</td>}
-                  <td className="py-1.5 pr-2 text-xs text-gray-400">
-                    {holiday.source.startsWith('manual') ? t('holidays.source.manual') : t('holidays.source.auto')}
-                  </td>
+                  <td className="py-1.5 pr-2 text-xs text-gray-400">{sourceLabel(holiday.source, t)}</td>
                   <td className="py-1.5 pr-2 text-right">
-                    {canManageHolidays && (
+                    {/* Linhas geradas por regra não se apagam aqui: voltavam no próximo
+                        carregamento do ano. Edita-se ou elimina-se a regra. */}
+                    {canManageHolidays && holiday.source !== RULE_SOURCE && (
                       <Button variant="dangerGhost" size="sm" onClick={() => onDelete(holiday.id)}>
                         {t('common.delete')}
                       </Button>
@@ -317,9 +207,9 @@ function HolidaySection({ t, title, hint, holidays, canManageHolidays, onDelete,
 }
 
 // Feriados por zona (secção: "os feriados de cada zona têm de ser reflectidos e
-// marcados no calendário"). Organizados em 4 categorias: nacionais PT/ES (vêm
-// automaticamente da Nager.Date) e locais PT / regionais ES — só mostrados onde há
-// equipamento real, já que um feriado municipal/regional só importa onde há máquinas.
+// marcados no calendário"). Organizados em 5 categorias: nacionais PT/ES (Nager.Date),
+// regionais ES (Comunidades Autónomas) e locais PT (concelhos) / ES (cidades) — só
+// mostrados onde há equipamento real, já que um feriado local só importa onde há máquinas.
 export function Holidays() {
   const t = useT();
   const canManageHolidays = useAuthStore((state) => state.permissions.canManageHolidays);
@@ -329,16 +219,20 @@ export function Holidays() {
   const fetchEquipment = useEquipmentStore((state) => state.fetchEquipment);
   const createHoliday = useHolidayStore((state) => state.createHoliday);
   const deleteHoliday = useHolidayStore((state) => state.deleteHoliday);
+  const syncRuleHolidays = useHolidayStore((state) => state.syncRuleHolidays);
+  const boeImports = useHolidayStore((state) => state.boeImports);
+  const fetchBoeImport = useHolidayStore((state) => state.fetchBoeImport);
   const pushToast = useUiStore((state) => state.pushToast);
   const holidayRules = useHolidayRuleStore((state) => state.rules);
   const fetchHolidayRules = useHolidayRuleStore((state) => state.fetchRules);
   const createHolidayRule = useHolidayRuleStore((state) => state.createRule);
+  const updateHolidayRule = useHolidayRuleStore((state) => state.updateRule);
   const deleteHolidayRule = useHolidayRuleStore((state) => state.deleteRule);
 
   const [year, setYear] = useState(CURRENT_YEAR);
   const { holidays } = useHolidays(year);
   const [creatingHoliday, setCreatingHoliday] = useState(false);
-  const [creatingRule, setCreatingRule] = useState(false);
+  const [ruleEditing, setRuleEditing] = useState<RuleEditing | null>(null);
   const [searchText, setSearchText] = useState('');
   const [saving, setSaving] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
@@ -349,11 +243,19 @@ export function Holidays() {
     fetchHolidayRules();
   }, [fetchZones, fetchEquipment, fetchHolidayRules]);
 
+  useEffect(() => {
+    fetchBoeImport(year);
+  }, [fetchBoeImport, year]);
+
   // Só mostra feriados locais/regionais de localidades onde existe equipamento real —
   // um feriado de uma região sem nenhuma máquina lá não interessa ao planeamento.
   const activeLocalities = useMemo(() => computeActiveLocalities(equipment), [equipment]);
+  const activeEsCities = useMemo(
+    () => [...activeLocalities.es].filter((locality) => !isSpanishRegionCode(locality)).sort((a, b) => a.localeCompare(b)),
+    [activeLocalities],
+  );
 
-  // A procura corta transversalmente as 4 categorias e as regras: filtra-se antes de
+  // A procura corta transversalmente as 5 categorias e as regras: filtra-se antes de
   // separar por âmbito, para o mesmo texto valer em toda a página.
   const sorted = [...holidays]
     .filter((holiday) =>
@@ -365,14 +267,34 @@ export function Holidays() {
         // A coluna mostra o nome da região em ES; procura-se tanto por "ES-GA" como por
         // "Galiza", já que o código anda nos ficheiros e o nome anda no ecrã.
         holiday.locality ? spanishRegionName(holiday.locality) : null,
-        holiday.source.startsWith('manual') ? t('holidays.source.manual') : t('holidays.source.auto'),
+        sourceLabel(holiday.source, t),
       ]),
     )
     .sort((a, b) => a.date.localeCompare(b.date));
   const nationalPT = sorted.filter((h) => h.country === 'PT' && !h.locality);
   const nationalES = sorted.filter((h) => h.country === 'ES' && !h.locality);
   const localPT = sorted.filter((h) => h.country === 'PT' && h.locality && activeLocalities.pt.has(h.locality));
-  const regionalES = sorted.filter((h) => h.country === 'ES' && h.locality && activeLocalities.es.has(h.locality));
+  const spanishWithLocality = sorted.filter(
+    (h): h is Holiday & { locality: string } =>
+      h.country === 'ES' && h.locality !== null && activeLocalities.es.has(h.locality),
+  );
+  const regionalES = spanishWithLocality.filter((h) => isSpanishRegionCode(h.locality));
+  const localES = spanishWithLocality.filter((h) => !isSpanishRegionCode(h.locality));
+
+  // Fonte dos regionais ES do ano em vista: BOE (importação automática da VPS) ou, até a
+  // resolução sair, a Nager.Date — que erra, e por isso se diz.
+  const hasBoeRegionals = holidays.some((h) => h.country === 'ES' && h.source === 'boe');
+  const regionalESHint = `${t('holidays.regionalESHint')} ${
+    hasBoeRegionals ? t('holidays.regionalES.fromBoe') : t('holidays.regionalES.fromNager', { year })
+  }`;
+  const boeImport = boeImports[year];
+  const esRulesNotice = boeImport
+    ? t('holidays.rules.boeImported', {
+        year,
+        boeId: boeImport.boe_id ?? '',
+        date: toDisplayDate(boeImport.ran_at.slice(0, 10)),
+      })
+    : null;
 
   async function handleCreate(form: HolidayForm) {
     if (!form.name || !form.date) return;
@@ -406,51 +328,106 @@ export function Holidays() {
 
   // Só mostra regras de localidades onde já há equipamento — as restantes ~300 (de
   // concelhos sem máquinas) ficam disponíveis na BD mas não poluem esta lista.
-  const filteredRules = useMemo(
+  // Só as versões das regras que valem no ano em vista — é nesse ano que se edita.
+  const rulesOfYear = useMemo(
+    () => holidayRules.filter((rule) => ruleAppliesToYear(rule, year)),
+    [holidayRules, year],
+  );
+  const visibleRules = useMemo(
     () =>
-      holidayRules
-        .filter((rule) => activeLocalities.pt.has(rule.locality) || activeLocalities.es.has(rule.locality))
+      rulesOfYear
+        .filter((rule) => (rule.country === 'PT' ? activeLocalities.pt : activeLocalities.es).has(rule.locality))
         .filter((rule) => matchesSearch(searchText, [rule.locality, rule.name, describeRule(rule, t)])),
-    [holidayRules, activeLocalities, searchText, t],
+    [rulesOfYear, activeLocalities, searchText, t],
+  );
+  const ptRules = visibleRules.filter((rule) => rule.country === 'PT');
+  const esRules = visibleRules.filter((rule) => rule.country === 'ES');
+
+  // Localidades com equipamento sem nenhuma regra: sem este aviso, uma cidade sem
+  // feriados locais simplesmente não aparecia na página e a falta passava despercebida.
+  const missingPT = useMemo(() => {
+    const withRules = new Set(rulesOfYear.filter((rule) => rule.country === 'PT').map((rule) => rule.locality));
+    return [...activeLocalities.pt].filter((locality) => !withRules.has(locality)).sort((a, b) => a.localeCompare(b));
+  }, [rulesOfYear, activeLocalities]);
+  const missingES = useMemo(() => {
+    const withRules = new Set(rulesOfYear.filter((rule) => rule.country === 'ES').map((rule) => rule.locality));
+    return activeEsCities.filter((city) => !withRules.has(city));
+  }, [rulesOfYear, activeEsCities]);
+
+  // Sugestões do campo de localidade no modal: concelhos já conhecidos (PT) ou as
+  // cidades dos hospitais espanhóis (ES), escritas exactamente como em hospitals.city.
+  const ptRuleLocalities = useMemo(
+    () => [...new Set(holidayRules.filter((rule) => rule.country === 'PT').map((rule) => rule.locality))].sort(),
+    [holidayRules],
   );
 
-  const { rows: visibleRules, sortableProps: ruleSortableProps } = useTableSort(filteredRules, RULE_SORT, 'locality');
-
-  // Concelhos já conhecidos, para sugerir no campo do modal de regras.
-  const ruleLocalities = [...new Set(holidayRules.map((rule) => rule.locality))].sort();
-
-  async function handleCreateRule(ruleForm: RuleForm) {
-    if (!ruleForm.name || !ruleForm.locality) return;
+  async function handleSaveRule(form: HolidayRuleForm) {
+    if (!ruleEditing) return;
+    const fields = formToRuleFields(form);
+    if (!fields.name || !fields.locality) return;
     setSavingRule(true);
     try {
-      const rule = await createHolidayRule({
-        country: 'PT',
-        locality: ruleForm.locality,
-        name: ruleForm.name,
-        rule_type: ruleForm.ruleType,
-        fixed_month: ruleForm.ruleType === 'fixed_date' ? Number(ruleForm.fixedMonth) : null,
-        fixed_day: ruleForm.ruleType === 'fixed_date' ? Number(ruleForm.fixedDay) : null,
-        easter_offset_days: ruleForm.ruleType === 'easter_relative' ? Number(ruleForm.easterOffsetDays) : null,
-        active: true,
-      });
-      // Aplica já ao ano em vista — sem isto, só apareceria depois de um reload (a cache
-      // de anos carregados em holidayStore não sabe que esta regra é nova).
-      await createHoliday(expandHolidayRule(rule, year));
-      setCreatingRule(false);
+      const previous = ruleEditing.rule;
+      const unchanged =
+        previous !== null &&
+        (Object.keys(fields) as (keyof typeof fields)[]).every((key) => fields[key] === previous[key]);
+      if (unchanged) {
+        // Guardar sem mexer em nada não pode criar uma versão nova.
+      } else if (!previous) {
+        // Regra nova: vale a partir do ano em vista (os anteriores já estão fechados).
+        const created = await createHolidayRule({
+          country: ruleEditing.country,
+          ...fields,
+          active: true,
+          valid_from: year,
+          valid_to: null,
+        });
+        await syncRuleHolidays(null, created);
+      } else if (previous.valid_from !== null && previous.valid_from >= year) {
+        // A versão começa neste ano (ou depois): não há anos anteriores a proteger.
+        await updateHolidayRule(previous.id, fields);
+        await syncRuleHolidays(previous, { ...previous, ...fields });
+      } else {
+        // A versão vem de anos anteriores: fecha-se no ano passado e cria-se outra a
+        // partir do ano em vista, para as datas dos anos anteriores não mudarem.
+        const closed = { ...previous, valid_to: year - 1 };
+        await updateHolidayRule(previous.id, { valid_to: closed.valid_to });
+        await syncRuleHolidays(previous, closed);
+        const created = await createHolidayRule({
+          country: previous.country,
+          ...fields,
+          active: true,
+          valid_from: year,
+          valid_to: previous.valid_to,
+        });
+        await syncRuleHolidays(null, created);
+      }
+      setRuleEditing(null);
     } catch (err) {
-      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('holidays.rules.createFailed') });
+      const fallback = ruleEditing.rule ? t('holidays.rules.updateFailed') : t('holidays.rules.createFailed');
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : fallback });
     } finally {
       setSavingRule(false);
     }
   }
 
-  async function handleDeleteRule(id: string) {
+  // Eliminar também é "a partir do ano em vista": os anos anteriores mantêm o feriado.
+  async function handleDeleteRule(rule: HolidayRule) {
     try {
-      await deleteHolidayRule(id);
+      if (rule.valid_from !== null && rule.valid_from >= year) {
+        await deleteHolidayRule(rule.id);
+        await syncRuleHolidays(rule, null);
+      } else {
+        const closed = { ...rule, valid_to: year - 1 };
+        await updateHolidayRule(rule.id, { valid_to: closed.valid_to });
+        await syncRuleHolidays(rule, closed);
+      }
     } catch (err) {
       pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('holidays.rules.deleteFailed') });
     }
   }
+
+  const editingSpanish = ruleEditing?.country === 'ES';
 
   return (
     <PageShell>
@@ -460,7 +437,9 @@ export function Holidays() {
         actions={canManageHolidays && <Button onClick={() => setCreatingHoliday(true)}>{t('holidays.add')}</Button>}
       />
 
-      {/* Ano e procura numa barra só: a procura aplica-se às 4 categorias e às regras em
+      <HolidaySourcesNote t={t} year={year} boeImport={boeImport} />
+
+      {/* Ano e procura numa barra só: a procura aplica-se às categorias e às regras em
           simultâneo, por isso pertence ao topo da página e não a cada secção. */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm text-gray-600">
@@ -498,66 +477,55 @@ export function Holidays() {
           holidays={localPT}
           canManageHolidays={canManageHolidays}
           onDelete={handleDelete}
-          localityLabel={ptLocalityLabel}
+          localityLabel={plainLocalityLabel}
         />
         <HolidaySection
           t={t}
           title={t('holidays.regionalES')}
-          hint={t('holidays.regionalESHint')}
+          hint={regionalESHint}
           holidays={regionalES}
           canManageHolidays={canManageHolidays}
           onDelete={handleDelete}
-          localityLabel={esLocalityLabel}
+          localityLabel={esRegionLabel}
+        />
+        <HolidaySection
+          t={t}
+          title={t('holidays.localES')}
+          hint={t('holidays.localESHint')}
+          holidays={localES}
+          canManageHolidays={canManageHolidays}
+          onDelete={handleDelete}
+          localityLabel={plainLocalityLabel}
         />
 
-        {/* O botão fica nesta secção, e não no topo da página, porque uma regra
-            recorrente é outra coisa que não um feriado manual — separar evita
-            adicionar-se uma julgando estar a adicionar a outra. */}
-        <Card
-          padded={false}
+        <HolidayRulesCard
+          t={t}
           title={t('holidays.rules.title')}
           subtitle={t('holidays.rules.subtitle')}
-          actions={
-            canManageHolidays && (
-              <Button variant="secondary" onClick={() => setCreatingRule(true)}>
-                {t('holidays.rules.add')}
-              </Button>
-            )
-          }
-        >
-          {visibleRules.length === 0 ? (
-            <EmptyState size="compact">{t('holidays.rules.empty')}</EmptyState>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="pm-table">
-                <thead>
-                  <tr>
-                    <SortableTh {...ruleSortableProps('locality')}>{t('holidays.rules.locality')}</SortableTh>
-                    <SortableTh {...ruleSortableProps('name')}>{t('common.name')}</SortableTh>
-                    <SortableTh {...ruleSortableProps('recurrence')}>{t('holidays.rules.recurrence')}</SortableTh>
-                    <th className="py-1.5 pr-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRules.map((rule) => (
-                    <tr key={rule.id}>
-                      <td className="py-1.5 pr-2">{rule.locality}</td>
-                      <td className="py-1.5 pr-2 font-medium text-gray-800">{rule.name}</td>
-                      <td className="py-1.5 pr-2 text-xs text-gray-400">{describeRule(rule, t)}</td>
-                      <td className="py-1.5 pr-2 text-right">
-                        {canManageHolidays && (
-                          <Button variant="dangerGhost" size="sm" onClick={() => handleDeleteRule(rule.id)}>
-                            {t('common.delete')}
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+          localityLabel={t('holidays.rules.locality')}
+          emptyLabel={t('holidays.rules.empty')}
+          rules={ptRules}
+          missingLocalities={missingPT}
+          canManage={canManageHolidays}
+          onAdd={() => setRuleEditing({ country: 'PT', rule: null })}
+          onEdit={(rule) => setRuleEditing({ country: 'PT', rule })}
+          onDelete={handleDeleteRule}
+        />
+        <HolidayRulesCard
+          t={t}
+          title={t('holidays.rules.titleES')}
+          subtitle={t('holidays.rules.subtitleES')}
+          localityLabel={t('common.city')}
+          emptyLabel={t('holidays.rules.emptyES')}
+          rules={esRules}
+          missingLocalities={missingES}
+          notice={esRulesNotice}
+          confirmUrl={(rule) => spanishCityCalendarUrl(rule.locality, year)}
+          canManage={canManageHolidays}
+          onAdd={() => setRuleEditing({ country: 'ES', rule: null })}
+          onEdit={(rule) => setRuleEditing({ country: 'ES', rule })}
+          onDelete={handleDeleteRule}
+        />
       </div>
 
       {creatingHoliday && (
@@ -570,13 +538,23 @@ export function Holidays() {
         />
       )}
 
-      {creatingRule && (
+      {ruleEditing && (
         <HolidayRuleFormModal
           t={t}
-          localities={ruleLocalities}
+          title={
+            ruleEditing.rule
+              ? t('holidays.rules.editFrom', { year })
+              : editingSpanish
+                ? t('holidays.rules.newES')
+                : t('holidays.rules.new')
+          }
+          submitLabel={ruleEditing.rule ? t('common.save') : t('holidays.rules.add')}
+          localityLabel={editingSpanish ? t('common.city') : t('holidays.rules.locality')}
+          localities={editingSpanish ? activeEsCities : ptRuleLocalities}
+          initial={ruleEditing.rule ? ruleToForm(ruleEditing.rule) : undefined}
           saving={savingRule}
-          onCancel={() => setCreatingRule(false)}
-          onSubmit={handleCreateRule}
+          onCancel={() => setRuleEditing(null)}
+          onSubmit={handleSaveRule}
         />
       )}
     </PageShell>

@@ -2,6 +2,11 @@ import { addDays, format } from 'date-fns';
 import { computeEasterSunday } from './easter';
 import type { HolidayInsert, HolidayRule } from '../types';
 
+/** A versão da regra vale neste ano? (valid_from/valid_to null = sem limite) */
+export function ruleAppliesToYear(rule: Pick<HolidayRule, 'valid_from' | 'valid_to'>, year: number): boolean {
+  return (rule.valid_from === null || year >= rule.valid_from) && (rule.valid_to === null || year <= rule.valid_to);
+}
+
 // Projecta uma regra recorrente (holiday_rules) para uma data concreta no ano pedido —
 // é isto que permite a um concelho/Comunidade Autónoma ter o feriado atribuído uma única
 // vez e aparecer automaticamente em qualquer ano de planeamento, móvel ou fixo.

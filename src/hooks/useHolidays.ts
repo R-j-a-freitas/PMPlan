@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { expandHolidayRule } from '../lib/expandHolidayRule';
+import { expandHolidayRule, ruleAppliesToYear } from '../lib/expandHolidayRule';
 import { useHolidayRuleStore, useHolidayStore } from '../stores';
 import type { Country, Holiday, HolidayInsert, NagerDateHoliday } from '../types';
 
@@ -36,6 +36,11 @@ function toHolidayInserts(raw: NagerDateHoliday, country: Country, year: number)
   }));
 }
 
+// Mesma chave que a restrição única de holidays (country, zone_id, locality, date, name).
+function holidayKey(holiday: HolidayInsert): string {
+  return [holiday.country, holiday.zone_id ?? '', holiday.locality ?? '', holiday.date, holiday.name].join('|');
+}
+
 interface UseHolidaysResult {
   holidays: Holiday[];
   loading: boolean;
@@ -43,7 +48,7 @@ interface UseHolidaysResult {
 }
 
 // No arranque da app (ou ao mudar de ano no calendário), garante que os feriados PT+ES
-// desse ano existem na BD — vai à Nager.Date apenas se ainda não estiverem lá.
+// desse ano existem na BD — vai à Nager.Date apenas pelo que ainda lá não estiver.
 export function useHolidays(year: number): UseHolidaysResult {
   const holidays = useHolidayStore((state) => state.holidays.filter((h) => h.year === year));
   const loading = useHolidayStore((state) => state.loading);
@@ -57,24 +62,44 @@ export function useHolidays(year: number): UseHolidaysResult {
     if (isYearLoaded(year)) return;
     let cancelled = false;
 
+    // Completa o ano em vez de o tratar como "tudo ou nada": o ano pode já ter linhas na
+    // BD sem estar completo — regras criadas depois do primeiro carregamento, ou os
+    // regionais ES importados do BOE pela VPS antes de alguém abrir esse ano na app.
     async function ensureYear(): Promise<void> {
       const existing = await fetchHolidaysFromDb(year);
-      if (cancelled || existing.length > 0) return;
+      if (cancelled) return;
+
+      // Nager.Date só para os países sem nenhum feriado nacional gravado neste ano.
+      const countriesWithoutNationals = SUPPORTED_COUNTRIES.filter(
+        (country) => !existing.some((h) => h.country === country && !h.locality && !h.zone_id),
+      );
+      // Com os regionais ES já vindos do BOE, os da Nager.Date (menos fiáveis) ficam de fora.
+      const hasBoeRegionals = existing.some((h) => h.country === 'ES' && h.source === 'boe');
 
       const [fetchedPerCountry, rules] = await Promise.all([
-        Promise.all(SUPPORTED_COUNTRIES.map((country) => fetchFromNager(year, country))),
+        Promise.all(countriesWithoutNationals.map((country) => fetchFromNager(year, country))),
         fetchHolidayRules(),
       ]);
       if (cancelled) return;
 
       const fromNager = fetchedPerCountry.flatMap((holidaysForCountry, index) => {
-        const country = SUPPORTED_COUNTRIES[index];
+        const country = countriesWithoutNationals[index];
         if (!country) return [];
-        return holidaysForCountry.flatMap((raw) => toHolidayInserts(raw, country, year));
+        return holidaysForCountry
+          .flatMap((raw) => toHolidayInserts(raw, country, year))
+          .filter((holiday) => !(country === 'ES' && hasBoeRegionals && holiday.locality));
       });
-      // Regras recorrentes (feriados locais PT, fixos ou móveis) expandidas para este ano.
-      const fromRules = rules.map((rule) => expandHolidayRule(rule, year));
-      await addHolidays([...fromNager, ...fromRules], year);
+      // Regras recorrentes (feriados locais PT/ES, fixos ou móveis) expandidas para este ano.
+      const fromRules = rules.filter((rule) => ruleAppliesToYear(rule, year)).map((rule) => expandHolidayRule(rule, year));
+
+      const knownKeys = new Set(existing.map(holidayKey));
+      const missing = [...fromNager, ...fromRules].filter((holiday) => {
+        const key = holidayKey(holiday);
+        if (knownKeys.has(key)) return false;
+        knownKeys.add(key);
+        return true;
+      });
+      await addHolidays(missing, year);
     }
 
     ensureYear().catch((err: unknown) => {

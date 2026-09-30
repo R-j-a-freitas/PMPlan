@@ -1,0 +1,41 @@
+# PMPlan — importação dos feriados regionais de Espanha a partir do BOE.
+# Instalar em /etc/systemd/system/. Ver DOCS/FERIADOS.md, secção "Importação automática do BOE".
+#
+# AJUSTAR ANTES DE INSTALAR: caminhos de /opt/pmplan e /usr/bin/node.
+
+[Unit]
+Description=PMPlan — feriados regionais de Espanha (BOE)
+Documentation=file:///opt/pmplan/DOCS/FERIADOS.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pmplan
+Group=pmplan
+WorkingDirectory=/opt/pmplan
+EnvironmentFile=/etc/pmplan/boe-holidays.env
+ExecStart=/usr/bin/node /opt/pmplan/scripts/sync-boe-holidays.mjs
+
+# A procura percorre até ~150 sumários diários do BOE (com uma pausa curta entre pedidos,
+# por cortesia) — normalmente 20 a 60 segundos.
+TimeoutStartSec=600
+
+# ─── Endurecimento (igual ao keep-alive) ──────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadWritePaths=/var/log/pmplan
+
+# MemoryDenyWriteExecute continua deliberadamente ausente — o V8 precisa de W+X.

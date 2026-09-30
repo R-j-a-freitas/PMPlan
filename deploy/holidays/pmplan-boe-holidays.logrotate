@@ -1,0 +1,11 @@
+# PMPlan — rotação do log da importação do BOE. Instalar em /etc/logrotate.d/pmplan-boe-holidays
+
+/var/log/pmplan/boe-holidays.log {
+    monthly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 pmplan pmplan
+}

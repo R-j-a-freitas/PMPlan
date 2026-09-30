@@ -1,0 +1,19 @@
+# PMPlan — timer da importação dos feriados do BOE. Instalar em /etc/systemd/system/ e
+# activar com  systemctl enable --now pmplan-boe-holidays.timer
+
+[Unit]
+Description=PMPlan — procura semanal da resolução de feriados no BOE
+Documentation=file:///opt/pmplan/DOCS/FERIADOS.md
+
+[Timer]
+# Segundas às 08:00. A resolução sai uma vez por ano (fim de Outubro); semanal chega para
+# a apanhar a tempo, e fora da época o script termina em dois pedidos (ano já importado).
+OnCalendar=Mon *-*-* 08:00:00
+RandomizedDelaySec=1h
+
+# Uma VPS desligada à hora marcada corre a execução em falta no arranque seguinte — não há
+# nada de enganador nisso, ao contrário do verificador de heartbeat.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

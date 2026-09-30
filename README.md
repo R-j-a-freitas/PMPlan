@@ -62,6 +62,7 @@ clientes passam todos pela Resend (domínio `pmplan.net`).
 - Quem recebe o quê, configuração da Resend e do DNS: **[DOCS/EMAILS_E_RESEND.md](DOCS/EMAILS_E_RESEND.md)**
 - Arquivo dos documentos assinados: **[DOCS/DOCUMENTOS_ASSINADOS.md](DOCS/DOCUMENTOS_ASSINADOS.md)**
 - Braquiterapia aprovada à parte do resto do hospital: **[DOCS/APROVACOES_BRAQUITERAPIA.md](DOCS/APROVACOES_BRAQUITERAPIA.md)**
+- Feriados (origem dos dados, lista do BOE, revisão anual de Espanha): **[DOCS/FERIADOS.md](DOCS/FERIADOS.md)**
 
 ---
 
