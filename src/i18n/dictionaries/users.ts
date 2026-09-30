@@ -14,6 +14,43 @@ export const users = {
   'users.count': ['{count} utilizador', '{count} usuario'],
   'users.count_plural': ['{count} utilizadores', '{count} usuarios'],
   'users.empty': ['Ainda não há utilizadores registados.', 'Todavía no hay usuarios registrados.'],
+  // Quadro de privilégios por função
+  'users.priv.title': ['Privilégios de cada função', 'Privilegios de cada función'],
+  'users.priv.subtitle': [
+    'O que cada função pode ver e alterar na aplicação.',
+    'Lo que cada función puede ver y modificar en la aplicación.',
+  ],
+  'users.priv.col.area': ['Área', 'Área'],
+  'users.priv.area.calendar': ['Calendário de manutenções (PMs)', 'Calendario de mantenimientos (PMs)'],
+  'users.priv.area.equipment': ['Equipamentos', 'Equipos'],
+  'users.priv.area.hospitals': ['Hospitais e contactos', 'Hospitales y contactos'],
+  'users.priv.area.holidays': ['Feriados', 'Festivos'],
+  'users.priv.area.engineers': ['Engenheiros', 'Ingenieros'],
+  'users.priv.area.zones': ['Zonas e atribuição de engenheiros', 'Zonas y asignación de ingenieros'],
+  'users.priv.area.reports': ['Relatórios e exportação', 'Informes y exportación'],
+  'users.priv.area.approvals': [
+    'Aprovações, emails a clientes e documentos assinados',
+    'Aprobaciones, emails a clientes y documentos firmados',
+  ],
+  'users.priv.area.users': ['Utilizadores', 'Usuarios'],
+  'users.priv.area.system': ['Saúde do sistema e backups', 'Estado del sistema y backups'],
+  'users.priv.level.edit': ['Ver e editar', 'Ver y editar'],
+  'users.priv.level.view': ['Só ver', 'Solo ver'],
+  'users.priv.level.yes': ['Sim', 'Sí'],
+  'users.priv.level.none': ['Sem acesso', 'Sin acceso'],
+  'users.priv.note.plannerDelete': [
+    'O Planeador só pode apagar manutenções ainda não realizadas (planeadas ou atrasadas); o Administrador apaga qualquer uma.',
+    'El Planificador solo puede borrar mantenimientos aún no realizados (planificados o retrasados); el Administrador borra cualquiera.',
+  ],
+  'users.priv.note.allZones': [
+    'Todas as funções vêem todas as zonas.',
+    'Todas las funciones ven todas las zonas.',
+  ],
+  'users.priv.note.enforced': [
+    'Estas regras são aplicadas pela base de dados, não só pela interface: um botão escondido não é a única barreira.',
+    'Estas reglas las aplica la base de datos, no solo la interfaz: un botón oculto no es la única barrera.',
+  ],
+
   'users.restricted': ['Acesso restrito a administradores.', 'Acceso restringido a administradores.'],
   'users.emailRequired': ['Email (obrigatório)', 'Email (obligatorio)'],
   'users.noName': ['(sem nome)', '(sin nombre)'],
@@ -127,6 +164,37 @@ export const users = {
   'health.backupNoAccounts': [
     ' Sem a lista de contas: a base de dados não a deixou ler.',
     ' Sin la lista de cuentas: la base de datos no ha permitido leerla.',
+  ],
+
+  // Ficheiros guardados na VPS
+  'health.vps.title': [
+    'Cópias guardadas na VPS',
+    'Copias guardadas en la VPS',
+  ],
+  'health.vps.reload': ['Recarregar lista', 'Recargar lista'],
+  'health.vps.empty': [
+    'Ainda não há ficheiros em /var/backups/pmplan.',
+    'Todavía no hay archivos en /var/backups/pmplan.',
+  ],
+  'health.vps.unavailable': ['Não foi possível ler a lista da VPS:', 'No se ha podido leer la lista de la VPS:'],
+  'health.vps.col.date': ['Data', 'Fecha'],
+  'health.vps.col.content': ['Conteúdo', 'Contenido'],
+  'health.vps.col.retention': ['Retenção', 'Retención'],
+  'health.vps.kind.data': ['Dados (pg_dump)', 'Datos (pg_dump)'],
+  'health.vps.kind.users': ['Contas (auth.users)', 'Cuentas (auth.users)'],
+  'health.vps.tier.daily': ['diário', 'diario'],
+  'health.vps.tier.weekly': ['semanal', 'semanal'],
+  'health.vps.tier.monthly': ['mensal', 'mensual'],
+  'health.vps.download': ['Descarregar', 'Descargar'],
+  'health.vps.downloading': ['A descarregar…', 'Descargando…'],
+  'health.vps.downloaded': ['{name} descarregado.', '{name} descargado.'],
+  'health.vps.downloadFailed': [
+    'Falha ao descarregar o ficheiro da VPS.',
+    'Error al descargar el archivo de la VPS.',
+  ],
+  'health.vps.hint': [
+    'Estes são os backups completos (schema, dados e contas), tal como estão no disco da VPS. Guardar um fora da VPS de vez em quando protege também contra a perda da própria VPS. Restaurar com pg_restore — ver DOCS/DISASTER_RECOVERY.md.',
+    'Estos son los backups completos (esquema, datos y cuentas), tal como están en el disco de la VPS. Guardar uno fuera de la VPS de vez en cuando protege también contra la pérdida de la propia VPS. Restaurar con pg_restore — ver DOCS/DISASTER_RECOVERY.md.',
   ],
 
   'health.checkFailed': [

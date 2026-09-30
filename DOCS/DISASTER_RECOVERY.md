@@ -264,11 +264,23 @@ um incidente.
 
 ### Fazer trimestralmente — um comando
 
-Na VPS, depois de instalar o `postgresql-17` (servidor + cliente):
+Na VPS, depois de instalar o servidor PostgreSQL local (ver abaixo). O utilizador
+`postgres` não tem acesso a `/var/backups/pmplan` (é `pmplan:pmplan`, modo 750) — e
+não deve ter —, por isso o teste corre sobre uma cópia temporária, apagada no fim:
 
 ```bash
-sudo -u postgres /opt/pmplan/scripts/test-restore.sh
+D=2026-09-30                     # data do backup a testar
+T=$(sudo -u postgres mktemp -d)
+sudo install -o postgres -m 600 /var/backups/pmplan/daily/pmplan-{,users-}$D.* $T/
+sudo -u postgres bash -c "cd /tmp && /opt/pmplan/scripts/test-restore.sh $T/pmplan-$D.dump"
+sudo rm -rf $T
 ```
+
+O dump de contas (`pmplan-users-DATA.sql.gz`) é procurado ao lado do dump de dados. Com
+ele, o script cria um schema `auth` mínimo antes do restauro, e as chaves estrangeiras
+para `auth.users` são validadas contra as contas reais — sem ele, essas 10 chaves e as 2
+políticas que usam `auth.uid()` falhariam, e o teste nunca verificaria a ligação entre
+os dados e as contas.
 
 Restaura o backup mais recente para uma base de dados descartável **no Postgres local**,
 verifica o conteúdo, e destrói a base de teste no fim — inclusive se algo correr mal
@@ -277,7 +289,7 @@ verifica o conteúdo, e destrói a base de teste no fim — inclusive se algo co
 Para testar um backup específico:
 
 ```bash
-sudo -u postgres /opt/pmplan/scripts/test-restore.sh /var/backups/pmplan/monthly/pmplan-2026-07-01.dump
+sudo -u postgres /opt/pmplan/scripts/test-restore.sh <tmp>/pmplan-2026-07-01.dump
 ```
 
 O que verifica, além de o restauro correr:
@@ -291,7 +303,7 @@ O que verifica, além de o restauro correr:
 Instalar o servidor local (só uma vez):
 
 ```bash
-sudo apt install -y postgresql-17    # traz também pg_dump/pg_restore/psql 17
+sudo apt install -y postgresql-18    # Ubuntu 26.04; lê dumps do servidor 17. Só escuta em 127.0.0.1
 ```
 
 ### Alternativa com Docker
@@ -339,18 +351,23 @@ com password `teste` exposta em `localhost:55432`, é pior do que não ter backu
 
 | Data | Backup usado | Resultado | Quem |
 |---|---|---|---|
-| *(por preencher — ver nota abaixo)* | | | |
+| 2026-09-30 | `daily/pmplan-2026-09-30.dump` + `pmplan-users-2026-09-30.sql.gz` (primeiro backup da VPS) | **OK** — restauro sem erros; contagens iguais às de produção (ver abaixo) | Claude Code, na VPS |
 
-> **Ainda não foi feito nenhum teste de restauro.** A Fase 4 do plano exigia-o, mas o
-> ambiente onde este procedimento foi escrito não tem `pg_dump`, `pg_restore`, `psql` nem
-> Docker instalados, e não tem a password da base de dados. Os passos acima estão
-> escritos com os comandos exactos, e o `test-restore.sh` foi verificado sintacticamente,
-> mas **nunca correram contra dados reais**. Até a primeira linha desta tabela estar
-> preenchida, o procedimento é teoria.
->
-> Por decisão tomada a 2026-07-31, o teste fica para o momento da instalação na VPS, onde
-> as ferramentas serão instaladas de qualquer forma. **É o passo que falta para a Fase 4
-> estar realmente concluída.**
+Detalhe do teste de 2026-09-30, restaurado num PostgreSQL 18 local e comparado com a
+produção à mesma hora:
+
+| | Restauro | Produção |
+|---|---|---|
+| Tabelas / vistas / políticas | 23 / 2 / 76 | 23 / 2 / 76 |
+| Funções / índices | 22 / 55 | 22 / 55 |
+| `pm_events` / `equipment` / `hospitals` | 597 / 185 / 94 | 597 / 185 / 94 |
+| `engineers` / `zones` / `user_profiles` | 24 / 12 / 6 | 24 / 12 / 6 |
+| Contas (`auth.users`) | 6 | 6 |
+| Tabelas sem RLS / funções de segurança em falta / perfis sem conta | 0 / 0 / 0 | — |
+
+O primeiro teste, sem o schema `auth` mínimo, restaurou os dados mas deu 12 erros
+(10 chaves estrangeiras para `auth.users` e 2 políticas com `auth.uid()`) — foi isso que
+levou ao passo 3b do script. **Repetir trimestralmente**; próximo: 2026-12.
 
 ---
 
@@ -420,6 +437,36 @@ systemctl list-timers 'pmplan-*' --no-pager
 
 **Fazer o teste de restauro (secção acima) logo a seguir ao primeiro backup**, e
 preencher a tabela de registo. É o único passo que transforma isto de plano em garantia.
+
+### Descarga pelo ecrã *Saúde do sistema*
+
+O cartão **Cópias guardadas na VPS** lista os ficheiros de `/var/backups/pmplan` e deixa
+um admin descarregá-los. Quem os serve é `scripts/backup-download-server.mjs`, em
+`127.0.0.1:8081`, com o Caddy a encaminhar `/api/vps-backups`. O serviço não guarda
+segredos: pergunta ao Supabase, com o token de quem pede, se é admin (`user_role()`).
+Tem só acesso de leitura à pasta dos backups.
+
+```bash
+# 1. Script e unidade
+sudo install -m 755 $REPO/scripts/backup-download-server.mjs /opt/pmplan/scripts/
+sudo cp $REPO/deploy/backup/pmplan-backup-web.service /etc/systemd/system/
+
+# 2. Configuração — URL e anon key, as mesmas do .env da app (VITE_SUPABASE_*)
+sudo cp $REPO/deploy/backup/backup-web.env.example /etc/pmplan/backup-web.env
+sudo chmod 600 /etc/pmplan/backup-web.env
+sudo nano /etc/pmplan/backup-web.env
+
+# 3. Arrancar e confirmar (sem token tem de responder 403)
+sudo systemctl daemon-reload
+sudo systemctl enable --now pmplan-backup-web.service
+curl -s -w ' [%{http_code}]\n' http://127.0.0.1:8081/api/vps-backups
+```
+
+O bloco `handle /api/vps-backups*` já está em `deploy/Caddyfile`.
+
+Se `/opt/pmplan` for uma cópia e não o clone, os dois scripts têm de ser copiados de
+novo sempre que mudarem no repositório (`sudo install -m 755 …` como acima, e
+`sudo systemctl restart pmplan-backup-web` no caso do servidor).
 
 ---
 

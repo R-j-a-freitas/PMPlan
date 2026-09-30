@@ -12,6 +12,10 @@
 # USO:
 #   sudo -u postgres ./scripts/test-restore.sh                     # backup mais recente
 #   sudo -u postgres ./scripts/test-restore.sh /caminho/para.dump  # um específico
+#   sudo -u postgres ./scripts/test-restore.sh dados.dump contas.sql.gz
+#
+# O dump de contas (pmplan-users-DATA.sql.gz) é procurado ao lado do dump de dados, com
+# a mesma data; o segundo argumento só é preciso se estiver noutro sítio.
 #
 # REQUER: postgresql-17 (servidor + cliente) na máquina, e permissão para criar bases de
 # dados. Ver DOCS/DISASTER_RECOVERY.md, secção "Requisitos das ferramentas".
@@ -86,8 +90,53 @@ SQL
 echo "OK"
 
 echo
-echo "--- 4. restauro ---"
+echo "--- 3b. schema auth mínimo, a partir do dump de contas ---"
+# O dump de `public` referencia o schema `auth` da Supabase — chaves estrangeiras para
+# auth.users e políticas com auth.uid(). Num Postgres simples esse schema não existe, e
+# sem isto esses objectos falhavam ao restaurar: o teste passava a verde sem nunca ter
+# verificado a ligação entre os dados e as contas.
+#
+# Por isso cria-se um auth.users só com o `id`, carregado a partir do dump de contas que
+# o backup-supabase.sh grava ao lado. Quando o restauro criar as chaves estrangeiras, o
+# Postgres valida que cada linha que aponta para uma conta aponta para uma conta que
+# EXISTE no dump — o que prova, de uma vez, que o dump de contas é legível e que é
+# coerente com os dados.
 SCRATCH_URL="${LOCAL%/*}/$SCRATCH_DB"
+USERS_DUMP="${2:-}"
+if [ -z "$USERS_DUMP" ]; then
+  DUMP_DATE="$(basename "$DUMP" | sed -n 's/^pmplan-\([0-9-]*\)\.dump$/\1/p')"
+  [ -n "$DUMP_DATE" ] && USERS_DUMP="$(dirname "$DUMP")/pmplan-users-$DUMP_DATE.sql.gz"
+fi
+psql "$SCRATCH_URL" -q -v ON_ERROR_STOP=1 <<'SQL' || { echo "FALHOU: não consegui criar o schema auth"; exit 1; }
+create schema auth;
+create table auth.users (id uuid primary key);
+create function auth.uid() returns uuid language sql stable as
+  $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+SQL
+if [ -n "$USERS_DUMP" ] && [ -f "$USERS_DUMP" ]; then
+  # O dump é `COPY auth.users (col, col, …) FROM stdin;` seguido de linhas separadas por
+  # tabs. A posição do `id` lê-se da lista de colunas — não se assume que é a primeira
+  # (não é: `instance_id` vem antes).
+  if ! gunzip -c "$USERS_DUMP" | awk -F'\t' '
+        /^COPY auth\.users \(/ {
+          cols = $0; sub(/^COPY auth\.users \(/, "", cols); sub(/\) FROM stdin;$/, "", cols)
+          n = split(cols, c, ", "); for (i = 1; i <= n; i++) if (c[i] == "id") idx = i
+          inside = 1; next
+        }
+        inside && /^\\\.$/ { inside = 0; next }
+        inside && idx { print $idx }
+      ' | psql "$SCRATCH_URL" -q -v ON_ERROR_STOP=1 -c "copy auth.users (id) from stdin"; then
+    echo "FALHOU: o dump de contas $USERS_DUMP não é legível"
+    exit 1
+  fi
+  echo "OK — $(psql "$SCRATCH_URL" -tAc 'select count(*) from auth.users') conta(s) carregadas de $(basename "$USERS_DUMP")"
+else
+  echo "AVISO: sem dump de contas (${USERS_DUMP:-não indicado}) — auth.users fica vazio e as"
+  echo "       chaves estrangeiras para contas vão falhar no restauro."
+fi
+
+echo
+echo "--- 4. restauro ---"
 RESTORE_LOG=/tmp/pmplan-restore.log
 if pg_restore --dbname="$SCRATCH_URL" --no-owner --no-privileges --schema=public \
      "$DUMP" > "$RESTORE_LOG" 2>&1; then
@@ -120,6 +169,10 @@ union all select 'engineers',     count(*) from engineers
 union all select 'zones',         count(*) from zones
 union all select 'user_profiles', count(*) from user_profiles
 order by 1;
+
+\echo
+\echo 'Perfis sem conta em auth.users (deve vir vazio):'
+select p.id from user_profiles p where not exists (select 1 from auth.users u where u.id = p.id);
 
 \echo
 \echo 'Tabelas SEM row level security (devem ser zero):'

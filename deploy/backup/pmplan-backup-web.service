@@ -1,0 +1,42 @@
+# PMPlan — serve os backups da VPS ao ecrã "Saúde do sistema". Instalar em
+# /etc/systemd/system/ e activar com  systemctl enable --now pmplan-backup-web.service
+#
+# Ouve só em 127.0.0.1:8081; o Caddy encaminha /api/vps-backups para cá. Corre como
+# `pmplan`, o dono dos backups, e só tem acesso de LEITURA à pasta — um erro neste
+# serviço não consegue apagar nem alterar uma cópia.
+
+[Unit]
+Description=PMPlan — descarga dos backups da VPS
+Documentation=file:///opt/pmplan/DOCS/DISASTER_RECOVERY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pmplan
+Group=pmplan
+WorkingDirectory=/opt/pmplan
+EnvironmentFile=/etc/pmplan/backup-web.env
+ExecStart=/usr/bin/node /opt/pmplan/scripts/backup-download-server.mjs
+Restart=on-failure
+RestartSec=5
+
+# ─── Endurecimento ────────────────────────────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+ReadOnlyPaths=/var/backups/pmplan
+
+[Install]
+WantedBy=multi-user.target

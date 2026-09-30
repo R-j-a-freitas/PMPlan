@@ -1,0 +1,37 @@
+(origem_cloudflare) {
+	tls /etc/caddy/certs/pmplan.net.pem /etc/caddy/certs/pmplan.net.key
+}
+
+www.pmplan.net {
+	import origem_cloudflare
+	redir https://pmplan.net{uri} permanent
+}
+
+pmplan.net {
+	import origem_cloudflare
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	@hashed path /assets/*
+	header @hashed >Cache-Control "public, max-age=31536000, immutable"
+	# /api/* fica de fora: o serviço de backups manda o seu próprio no-store.
+	@mutable not path /assets/* /api/*
+	header @mutable >Cache-Control "no-cache"
+
+	# Descarga dos backups da VPS (scripts/backup-download-server.mjs). O próprio serviço
+	# exige o token de um admin; o Caddy só encaminha.
+	handle /api/vps-backups* {
+		reverse_proxy 127.0.0.1:8081
+	}
+
+	handle {
+		reverse_proxy localhost:8080
+	}
+}

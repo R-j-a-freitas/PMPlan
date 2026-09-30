@@ -77,3 +77,19 @@ export type ManualBackupResult = {
    *  mas não a lista de contas, e quem a guarda tem de saber disso. */
   includesAccounts: boolean;
 };
+
+/** Retenção em que um ficheiro da VPS está (pastas de /var/backups/pmplan). */
+export type VpsBackupTier = 'daily' | 'weekly' | 'monthly';
+
+/** Um ficheiro de backup guardado na VPS, como o lista scripts/backup-download-server.mjs.
+ *  `data` é o pg_dump do schema public; `users` é o dump de auth.users que o acompanha.
+ *  Os semanais e mensais são hardlinks dos diários, por isso vêm numa só linha com todas
+ *  as retenções em `tiers`. */
+export type VpsBackupFile = {
+  name: string;
+  date: string;
+  kind: 'data' | 'users';
+  size_bytes: number;
+  modified_at: string;
+  tiers: VpsBackupTier[];
+};

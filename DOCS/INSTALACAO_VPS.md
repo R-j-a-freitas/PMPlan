@@ -378,8 +378,7 @@ Tudo já está escrito — seguir pela ordem:
 3. **Backup:** [DISASTER_RECOVERY.md → Instalação do backup na VPS](DISASTER_RECOVERY.md#instalação-do-backup-na-vps).
    No `PGURL`, usar a ligação directa ou o pooler conforme o resultado do passo 5.
 4. **Teste de restauro** logo a seguir ao primeiro backup ([DISASTER_RECOVERY.md → Teste de restauro](DISASTER_RECOVERY.md#teste-de-restauro)),
-   e preencher a tabela de registo. Continua a ser o passo que falta para a Fase 4 estar
-   concluída.
+   e preencher a tabela de registo. Feito a 2026-09-30 — ver o registo nesse documento.
 
 No fim:
 
@@ -400,7 +399,7 @@ systemctl list-timers 'pmplan-*' --no-pager
 - [ ] Login Microsoft funciona em `https://pmplan.net`
 - [ ] Email de reposição de password tem o link certo
 - [ ] Três timers `pmplan-*` activos
-- [ ] Primeiro backup em `/var/backups/pmplan/daily/` e **teste de restauro feito**
+- [x] Primeiro backup em `/var/backups/pmplan/daily/` e **teste de restauro feito**
 - [ ] *Saúde do sistema* na app mostra a origem `vps` no heartbeat, no dia seguinte
 
 ---

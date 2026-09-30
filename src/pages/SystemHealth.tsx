@@ -16,7 +16,7 @@ import {
   overallHeartbeatLevel,
   summariseHeartbeats,
 } from '../lib/systemHealth';
-import type { HealthLevel } from '../types';
+import type { HealthLevel, VpsBackupFile, VpsBackupTier } from '../types';
 import { useLang, useT } from '../i18n';
 import { HEALTH_LEVEL_KEYS } from '../i18n/labels';
 
@@ -30,6 +30,12 @@ function StatusBadge({ level }: { level: HealthLevel }) {
 function Empty({ children }: { children: ReactNode }) {
   return <EmptyState size="compact">{children}</EmptyState>;
 }
+
+const VPS_TIER_KEYS = {
+  daily: 'health.vps.tier.daily',
+  weekly: 'health.vps.tier.weekly',
+  monthly: 'health.vps.tier.monthly',
+} as const satisfies Record<VpsBackupTier, string>;
 
 // ─── Página ──────────────────────────────────────────────────────────────────
 
@@ -57,11 +63,19 @@ export function SystemHealth() {
   const fetchHealth = useSystemHealthStore((state) => state.fetchHealth);
   const runSystemCheck = useSystemHealthStore((state) => state.runSystemCheck);
   const runManualBackup = useSystemHealthStore((state) => state.runManualBackup);
+  const vpsFiles = useSystemHealthStore((state) => state.vpsFiles);
+  const vpsLoading = useSystemHealthStore((state) => state.vpsLoading);
+  const vpsError = useSystemHealthStore((state) => state.vpsError);
+  const vpsDownloading = useSystemHealthStore((state) => state.vpsDownloading);
+  const fetchVpsFiles = useSystemHealthStore((state) => state.fetchVpsFiles);
+  const downloadVpsFile = useSystemHealthStore((state) => state.downloadVpsFile);
   const pushToast = useUiStore((state) => state.pushToast);
 
   useEffect(() => {
-    if (canView) fetchHealth();
-  }, [canView, fetchHealth]);
+    if (!canView) return;
+    fetchHealth();
+    fetchVpsFiles();
+  }, [canView, fetchHealth, fetchVpsFiles]);
 
   const sources = useMemo(() => summariseHeartbeats(heartbeats), [heartbeats]);
   const overall = useMemo(() => overallHeartbeatLevel(sources), [sources]);
@@ -109,6 +123,15 @@ export function SystemHealth() {
     });
   }
 
+  async function handleVpsDownload(file: VpsBackupFile) {
+    const result = await downloadVpsFile(file, t);
+    pushToast(
+      result.ok
+        ? { variant: 'success', message: t('health.vps.downloaded', { name: file.name }) }
+        : { variant: 'error', message: result.message },
+    );
+  }
+
   if (!canView) {
     return (
       <PageShell>
@@ -132,7 +155,14 @@ export function SystemHealth() {
                 {t('health.readAt', { time: fetchedAt.toLocaleTimeString(locale) })}
               </span>
             )}
-            <Button variant="secondary" onClick={fetchHealth} disabled={loading}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                fetchHealth();
+                fetchVpsFiles();
+              }}
+              disabled={loading}
+            >
               {loading ? t('common.loading') : t('health.refresh')}
             </Button>
           </>
@@ -288,6 +318,71 @@ export function SystemHealth() {
             </p>
           </Card>
         </div>
+
+        <Card
+          className="mt-4"
+          title={t('health.vps.title')}
+          actions={
+            <Button variant="secondary" onClick={fetchVpsFiles} disabled={vpsLoading}>
+              {vpsLoading ? t('common.loading') : t('health.vps.reload')}
+            </Button>
+          }
+        >
+          {vpsError && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              <strong>{t('health.vps.unavailable')}</strong> {vpsError}
+            </div>
+          )}
+
+          {vpsFiles !== null && vpsFiles.length === 0 && <Empty>{t('health.vps.empty')}</Empty>}
+
+          {vpsFiles !== null && vpsFiles.length > 0 && (
+            <table className="pm-table">
+              <thead>
+                <tr>
+                  <th className="pb-1 font-medium">{t('health.vps.col.date')}</th>
+                  <th className="pb-1 font-medium">{t('health.vps.col.content')}</th>
+                  <th className="pb-1 font-medium">{t('health.vps.col.retention')}</th>
+                  <th className="pb-1 text-right font-medium">{t('health.col.size')}</th>
+                  <th className="pb-1" />
+                </tr>
+              </thead>
+              <tbody>
+                {vpsFiles.map((file) => (
+                  <tr key={file.name}>
+                    <td className="py-1.5 text-gray-700">
+                      {new Date(file.modified_at).toLocaleString(locale)}
+                    </td>
+                    <td className="py-1.5 text-gray-700">
+                      {t(file.kind === 'data' ? 'health.vps.kind.data' : 'health.vps.kind.users')}
+                      <div className="font-mono text-xs text-gray-400">{file.name}</div>
+                    </td>
+                    <td className="py-1.5 text-gray-500">
+                      {file.tiers.map((tier) => t(VPS_TIER_KEYS[tier])).join(', ')}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-gray-700">
+                      {formatBytes(file.size_bytes)}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleVpsDownload(file)}
+                        disabled={vpsDownloading !== null}
+                      >
+                        {vpsDownloading === file.name
+                          ? t('health.vps.downloading')
+                          : t('health.vps.download')}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <p className="mt-3 text-xs text-gray-400">{t('health.vps.hint')}</p>
+        </Card>
       </div>
     </PageShell>
   );
