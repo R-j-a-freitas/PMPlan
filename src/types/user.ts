@@ -26,12 +26,16 @@ export type Permissions = {
   canDeletePM: boolean;
   canManageEquipment: boolean;
   canManageEngineers: boolean;
-  /** Criar/editar zonas e hospitais (e atribuir engenheiros a zonas) — exclusivo do admin. */
+  /** Criar/editar/apagar/importar hospitais e os seus contactos — admin e planner. */
+  canManageHospitals: boolean;
+  /** Criar/editar zonas (e atribuir engenheiros a zonas) — exclusivo do admin. */
   canManageZones: boolean;
   /** Criar contas e alterar roles de outros utilizadores — exclusivo do admin. */
   canManageUsers: boolean;
   /** Criar/eliminar feriados manuais (regionais/locais de zona) — admin e planner. */
   canManageHolidays: boolean;
+  /** Página de aprovações, propostas e documentos assinados — exclusivo do admin
+   *  (migração 0028: nem a leitura está aberta aos outros papéis). */
   canApproveSchedule: boolean;
   canSendEmails: boolean;
   canExportReports: boolean;

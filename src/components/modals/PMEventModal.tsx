@@ -44,6 +44,7 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
   const equipment = useEquipmentStore((state) => state.equipment);
   const setSelectedEquipmentId = useEquipmentStore((state) => state.setSelectedEquipmentId);
   const permissions = useAuthStore((state) => state.permissions);
+  const role = useAuthStore((state) => state.profile?.role);
   const pushToast = useUiStore((state) => state.pushToast);
   const { validate } = useConflictEngine();
   const planRemaining = usePlanRemainingPMs();
@@ -58,6 +59,12 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
     toDateInput(existing ? new Date(existing.end_date) : (initial?.endDate ?? initialDate)),
   );
   const [status, setStatus] = useState<PMStatus>(existing?.status ?? 'planned');
+  // O planner só apaga PMs ainda não realizadas — é o que a RLS permite
+  // (pm_events_planner_delete_draft). Decide pelo estado GRAVADO, não pelo do formulário:
+  // mudar o select para 'planned' não torna apagável uma PM já concluída.
+  const canDelete =
+    permissions.canDeletePM &&
+    (role === 'admin' || existing?.status === 'planned' || existing?.status === 'delayed');
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [applyEngineerToAll, setApplyEngineerToAll] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -275,7 +282,7 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
         // Eliminar à esquerda, longe do par Cancelar/Guardar: é a única acção deste
         // modal que não se desfaz, e não pode estar encostada à que se clica sempre.
         <div className="flex w-full items-center justify-between">
-          {eventId && permissions.canDeletePM ? (
+          {eventId && canDelete ? (
             <Button variant="dangerGhost" onClick={handleDelete} disabled={saving}>
               {t('common.delete')}
             </Button>

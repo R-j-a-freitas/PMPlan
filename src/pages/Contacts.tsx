@@ -231,11 +231,11 @@ function ContactFormModal({
 }
 
 // Vista consolidada de todos os contactos dos clientes. A gestão (criar/editar/apagar/
-// importar) fica reservada a quem gere hospitais (canManageZones) — é a mesma permissão
-// que a tabela hospital_contacts exige na base de dados (RLS: escrita só de admin).
+// importar) fica reservada a quem gere hospitais (canManageHospitals) — é a mesma
+// permissão que a tabela hospital_contacts exige na base de dados (RLS: admin e planner).
 export function Contacts() {
   const t = useT();
-  const canManage = useAuthStore((state) => state.permissions.canManageZones);
+  const canManage = useAuthStore((state) => state.permissions.canManageHospitals);
   const hospitals = useHospitalStore((state) => state.hospitals);
   const fetchHospitals = useHospitalStore((state) => state.fetchHospitals);
   const contacts = useContactStore((state) => state.contacts);

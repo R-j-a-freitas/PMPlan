@@ -8,6 +8,10 @@ import type { Dictionary } from '../types';
 // escolhidos pelo país do hospital (email_templates.country, migração 0003) e do
 // letterPdf. Traduzir esta página não muda uma vírgula do que o cliente recebe.
 export const approvals = {
+  'approvals.restricted': [
+    'Sem permissão para ver as aprovações — são exclusivas do administrador.',
+    'Sin permiso para ver las aprobaciones — son exclusivas del administrador.',
+  ],
   'approvals.title': [
     'Aprovações — Envio de Propostas a Clientes',
     'Aprobaciones — Envío de Propuestas a Clientes',

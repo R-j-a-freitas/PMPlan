@@ -2,8 +2,9 @@
 // Envia email via Resend API (retries + validação) — a chave da Resend nunca pode estar
 // no bundle do frontend, por isso esta função existe (mesmo motivo do admin-create-user:
 // só corre aqui, com secrets do servidor). Chamada via supabase.functions.invoke() a
-// partir de pages/Approvals.tsx, restrita a quem tem canSendEmails (admin/planner —
-// verificado abaixo via user_profiles.role, nunca confiando no que o frontend manda).
+// partir de pages/Approvals.tsx, restrita a quem tem canSendEmails (só admin, desde a
+// migração 0028 — verificado abaixo via user_profiles.role, nunca confiando no que o
+// frontend manda).
 //
 // Deploy: supabase functions deploy send-proposal-email
 // Secrets (supabase secrets set ...): RESEND_API_KEY (obrigatório), RESEND_FROM_EMAIL,
@@ -161,9 +162,9 @@ Deno.serve(async (req) => {
 
   const { data: callerProfile } = await adminClient.from('user_profiles').select('role').eq('id', caller.id).single();
 
-  // canSendEmails (lib/permissions.ts) só é true para admin/planner — replicado aqui
-  // porque o frontend nunca pode ser a única barreira para uma operação privilegiada.
-  if (callerProfile?.role !== 'admin' && callerProfile?.role !== 'planner') {
+  // canSendEmails (lib/permissions.ts) só é true para o admin — replicado aqui porque o
+  // frontend nunca pode ser a única barreira para uma operação privilegiada.
+  if (callerProfile?.role !== 'admin') {
     return jsonResponse({ error: 'Sem permissão para enviar emails.' }, 403);
   }
 

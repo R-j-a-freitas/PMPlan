@@ -276,7 +276,9 @@ function HospitalFormModal({
 // na zona): a mesma zona pode agrupar hospitais de PT e de ES. Gestão exclusiva do admin.
 export function Clients() {
   const t = useT();
-  const canManageZones = useAuthStore((state) => state.permissions.canManageZones);
+  const canManageHospitals = useAuthStore((state) => state.permissions.canManageHospitals);
+  // Documentos assinados fazem parte das aprovações — só admin (migração 0028).
+  const canViewSignedDocuments = useAuthStore((state) => state.permissions.canApproveSchedule);
   const hospitals = useHospitalStore((state) => state.hospitals);
   const fetchHospitals = useHospitalStore((state) => state.fetchHospitals);
   const createHospital = useHospitalStore((state) => state.createHospital);
@@ -355,8 +357,8 @@ export function Clients() {
     fetchHolidayRules();
     // Documentos assinados devolvidos pelos clientes — arquivados a partir das respostas
     // à carta de assinatura (Edge Function inbound-signed-document).
-    fetchSignedDocuments();
-  }, [fetchHospitals, fetchContacts, fetchZones, fetchHolidayRules, fetchSignedDocuments]);
+    if (canViewSignedDocuments) fetchSignedDocuments();
+  }, [fetchHospitals, fetchContacts, fetchZones, fetchHolidayRules, fetchSignedDocuments, canViewSignedDocuments]);
 
   async function handleCreate(form: HospitalForm) {
     if (!form.name || !form.zoneId) return;
@@ -484,7 +486,7 @@ export function Clients() {
         title={t('hospitals.title')}
         description={t('hospitals.description')}
         actions={
-          canManageZones && (
+          canManageHospitals && (
             <>
               <ImportExportButtons onExport={handleExport} onFileSelected={handleFileSelected} />
               <Button onClick={() => setCreating(true)}>{t('hospitals.add')}</Button>
@@ -496,7 +498,7 @@ export function Clients() {
       {/* Documentos assinados que chegaram sem hospital identificado — no topo, porque
           ficarem esquecidos numa fila que ninguém vê é a única forma de este mecanismo
           falhar em silêncio. Só aparece quando existe algum. */}
-      <UnmatchedSignedDocuments />
+      {canViewSignedDocuments && <UnmatchedSignedDocuments />}
 
       <Card
         padded={false}
@@ -628,17 +630,19 @@ export function Clients() {
                       </td>
                       <td className="py-1.5 pr-2 text-right">
                         <div className="flex justify-end gap-1">
-                          {/* Documentos assinados é consulta, não gestão — fica disponível
-                              também para quem não pode editar hospitais. */}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDocumentsHospitalId(documentsOpen ? null : hospital.id)}
-                          >
-                            {t('hospitals.documents')}
-                            {documentCount > 0 ? ` (${documentCount})` : ''}
-                          </Button>
-                          {canManageZones && (
+                          {/* Documentos assinados são parte das aprovações — só para quem
+                              as vê (admin), mesmo que não seja preciso editar o hospital. */}
+                          {canViewSignedDocuments && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDocumentsHospitalId(documentsOpen ? null : hospital.id)}
+                            >
+                              {t('hospitals.documents')}
+                              {documentCount > 0 ? ` (${documentCount})` : ''}
+                            </Button>
+                          )}
+                          {canManageHospitals && (
                             <>
                               <Button variant="ghost" size="sm" onClick={() => setContactsHospitalId(hospital.id)}>
                                 {t('common.contacts')}
@@ -656,7 +660,7 @@ export function Clients() {
                     </>
                   )}
                 </tr>
-                {documentsOpen && !editing && (
+                {documentsOpen && !editing && canViewSignedDocuments && (
                   <tr className="pm-row-detail bg-gray-50">
                     <td colSpan={8} className="p-2">
                       <HospitalSignedDocuments hospitalId={hospital.id} />
@@ -673,7 +677,7 @@ export function Clients() {
         {filteredHospitals.length === 0 && (
           <EmptyState
             action={
-              hospitals.length === 0 && canManageZones ? (
+              hospitals.length === 0 && canManageHospitals ? (
                 <Button onClick={() => setCreating(true)}>{t('hospitals.add')}</Button>
               ) : undefined
             }

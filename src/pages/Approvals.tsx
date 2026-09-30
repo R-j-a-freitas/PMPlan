@@ -258,7 +258,26 @@ function nextAction(stage: ProposalStage): { key: ActionKey; labelKey: Translati
 // um hospital numa via de aprovação, no ano de planeamento activo — é essa a unidade de
 // envio/aprovação. Os equipamentos de braquiterapia formam uma via própria (migração 0017),
 // que corre a mesma sequência em paralelo e sem dependência da via geral.
+// Aprovações são exclusivas do admin (migração 0028 — nem a leitura está aberta aos
+// outros papéis). O menu já esconde a página; esta barreira cobre o endereço directo, e
+// fica num componente à parte para não montar os hooks e os pedidos do ecrã completo.
 export function Approvals() {
+  const t = useT();
+  const canView = useAuthStore((state) => state.permissions.canApproveSchedule);
+  if (!canView) {
+    return (
+      <PageShell>
+        <PageHeader title={t('approvals.title')} />
+        <Card>
+          <EmptyState>{t('approvals.restricted')}</EmptyState>
+        </Card>
+      </PageShell>
+    );
+  }
+  return <ApprovalsContent />;
+}
+
+function ApprovalsContent() {
   const t = useT();
   const canAct = useAuthStore((state) => state.permissions.canApproveSchedule || state.permissions.canSendEmails);
   const profile = useAuthStore((state) => state.profile);

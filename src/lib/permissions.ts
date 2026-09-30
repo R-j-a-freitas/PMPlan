@@ -6,6 +6,7 @@ export const PERMISSIONS: Record<UserRole, Permissions> = {
     canEditPM: true,
     canDeletePM: true,
     canManageEquipment: true,
+    canManageHospitals: true,
     canManageEngineers: true,
     canManageZones: true,
     canManageUsers: true,
@@ -18,24 +19,29 @@ export const PERMISSIONS: Record<UserRole, Permissions> = {
   planner: {
     canCreatePM: true,
     canEditPM: true,
-    canDeletePM: false,
+    // Só PMs ainda não realizadas ('planned'/'delayed') — a RLS (pm_events_planner_
+    // delete_draft) é quem o garante; o modal esconde o botão nos outros estados.
+    canDeletePM: true,
     canManageEquipment: true,
+    canManageHospitals: true,
     canManageEngineers: false,
     canManageZones: false,
     canManageUsers: false,
     canManageHolidays: true,
-    canApproveSchedule: true,
-    canSendEmails: true,
+    // Aprovações e envio de emails a clientes são exclusivos do admin (migração 0028).
+    canApproveSchedule: false,
+    canSendEmails: false,
     canExportReports: true,
     canViewSystemHealth: false,
   },
   engineer: {
     canCreatePM: false,
-    // Só-consulta: o engenheiro vê o calendário da(s) sua(s) zona(s) (engineer_zones,
-    // aplicado via RLS) mas nunca o altera — nem os seus próprios eventos.
+    // Só-consulta: o engenheiro vê o calendário de todas as zonas (migração 0028) mas
+    // nunca o altera — nem os seus próprios eventos.
     canEditPM: false,
     canDeletePM: false,
     canManageEquipment: false,
+    canManageHospitals: false,
     canManageEngineers: false,
     canManageZones: false,
     canManageUsers: false,
@@ -50,6 +56,7 @@ export const PERMISSIONS: Record<UserRole, Permissions> = {
     canEditPM: false,
     canDeletePM: false,
     canManageEquipment: false,
+    canManageHospitals: false,
     canManageEngineers: false,
     canManageZones: false,
     canManageUsers: false,

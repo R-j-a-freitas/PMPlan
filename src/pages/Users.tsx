@@ -7,6 +7,7 @@ import type { EngineerWithZones } from '../types';
 import { useTableSort } from '../hooks';
 import type { SortAccessors } from '../hooks';
 import { Badge, Button, Card, EmptyState, FormModal, PageHeader, SortableTh } from '../components/ui';
+import { RolePrivileges } from '../components/users';
 import { useT, type TFunction, type TranslationKey } from '../i18n';
 
 const ROLE_OPTIONS: { value: UserRole; labelKey: TranslationKey }[] = [
@@ -327,6 +328,10 @@ export function Users() {
           </EmptyState>
         )}
         </Card>
+
+        <div className="mt-4">
+          <RolePrivileges />
+        </div>
       </div>
 
       {creating && (
