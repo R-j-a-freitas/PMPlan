@@ -68,24 +68,24 @@ export const calendar = {
   'load.term.demand': ['Procura', 'Demanda'],
   'load.term.workingDays': ['Dias de trabalho', 'Días de trabajo'],
   'load.zone.capacity': [
-    'engenheiros da zona × dias de trabalho do ano (1 dia-PM por engenheiro por dia). Cada engenheiro activo é repartido em partes iguais pelas zonas que cobre (primária e secundárias): quem cobre 3 zonas conta 1/3 em cada.',
-    'ingenieros de la zona × días de trabajo del año (1 día-PM por ingeniero y día). Cada ingeniero activo se reparte a partes iguales entre las zonas que cubre (principal y secundarias): quien cubre 3 zonas cuenta 1/3 en cada una.',
+    'a capacidade de cada engenheiro (dias de trabalho do ano, 1 dia-PM por dia) é repartida pelas zonas na proporção dos dias de PM que lá faz. Quem faz 3/4 dos seus dias de PM numa zona e 1/4 noutra dá 3/4 da capacidade à primeira e 1/4 à segunda.',
+    'la capacidad de cada ingeniero (días de trabajo del año, 1 día-PM por día) se reparte entre las zonas en proporción a los días de PM que hace en cada una. Quien hace 3/4 de sus días de PM en una zona y 1/4 en otra da 3/4 de su capacidad a la primera y 1/4 a la segunda.',
   ],
   'load.zone.demand': [
     'duração (início e fim inclusive) das PMs activas com início nesse ano, cujo equipamento está nesta zona.',
     'duración (inicio y fin incluidos) de los PMs activos con inicio en ese año, cuyo equipo está en esta zona.',
   ],
   'load.zone.workingDays': [
-    'segunda a sexta, mais os sábados/domingos em que há PMs marcadas — um fim-de-semana trabalhado conta como dia normal.',
-    'de lunes a viernes, más los sábados/domingos con PMs programados — un fin de semana trabajado cuenta como día normal.',
+    'os de cada engenheiro: segunda a sexta, mais os sábados/domingos em que ele tem PMs marcadas — a mesma conta da carga por engenheiro.',
+    'los de cada ingeniero: de lunes a viernes, más los sábados/domingos en los que tiene PMs programados — la misma cuenta que la carga por ingeniero.',
   ],
   'load.zone.note1': [
-    'Uma zona-mãe é só a soma das filhas: procura das filhas ÷ capacidade das filhas. Uma atribuição directa à zona-mãe (ex.: Team Leader da região) não conta como zona coberta.',
-    'Una zona superior es solo la suma de las hijas: demanda de las hijas ÷ capacidad de las hijas. Una asignación directa a la zona superior (p. ej.: Team Leader de la región) no cuenta como zona cubierta.',
+    'Na prática, a carga de uma zona é a média da carga dos engenheiros que lá trabalham, pesada pelos dias que lá fazem. Conta quem faz as PMs, não quem está atribuído à zona: uma zona com quatro engenheiros atribuídos mas onde só um faz as PMs tem a carga desse engenheiro.',
+    'En la práctica, la carga de una zona es la media de la carga de los ingenieros que trabajan en ella, ponderada por los días que hacen allí. Cuenta quien hace los PMs, no quien está asignado a la zona: una zona con cuatro ingenieros asignados pero en la que solo uno hace los PMs tiene la carga de ese ingeniero.',
   ],
   'load.zone.note2': [
-    'Como cada engenheiro é repartido, a soma das capacidades de todas as zonas é a da equipa real — ninguém é contado duas vezes. Engenheiros inactivos não contam.',
-    'Como cada ingeniero se reparte, la suma de las capacidades de todas las zonas es la del equipo real — nadie se cuenta dos veces. Los ingenieros inactivos no cuentan.',
+    'PMs ainda sem engenheiro contam como trabalho dos engenheiros primários da zona. Um engenheiro sem PMs no ano dá a capacidade toda à sua zona primária (é folga disponível lá). Uma zona-mãe é a soma das filhas.',
+    'Los PMs aún sin ingeniero cuentan como trabajo de los ingenieros principales de la zona. Un ingeniero sin PMs en el año aporta toda su capacidad a su zona principal (es holgura disponible allí). Una zona superior es la suma de las hijas.',
   ],
   'load.zone.note3': [
     'Feriados não são descontados aos dias de trabalho.',

@@ -464,13 +464,11 @@ function sumActiveEventDays(
 // — mantém as duas leituras de carga sempre coerentes entre si. Cálculo anual (não
 // mensal — secção "todos os cálculos a nível anual"). Zona-mãe = soma das zonas filhas
 // e SÓ delas: procura = Σ procura das filhas, capacidade = Σ capacidade das filhas.
-// Engenheiros/equipamentos atribuídos directamente à mãe não entram. Um engenheiro que
-// cubra várias filhas reparte-se por elas (engineerShareOfZone), por isso a mãe soma-o
+// Equipamentos atribuídos directamente à mãe não entram. A capacidade de cada engenheiro
+// reparte-se pelas filhas onde ele trabalha (computeLeafZoneLoad), por isso a mãe soma-o
 // uma única vez no total — nem a mais, nem a menos.
 // `events`/`equipment` vêm completos (não pré-filtrados) — a filtragem por zona é feita
 // aqui dentro.
-// Fins-de-semana com PMs marcadas contam como dias úteis dos dois lados do rácio — ver
-// weekendWorkDaysFromEvents.
 export function computeZoneLoadRatio(
   zoneId: string,
   year: number,
@@ -493,7 +491,7 @@ function sumZoneLoad(
 ): LoadRatio {
   visited.add(zoneId); // guarda contra um ciclo pai↔filho nos dados do cliente
   const children = zones.filter((zone) => zone.parent_zone_id === zoneId && !visited.has(zone.id));
-  if (children.length === 0) return computeLeafZoneLoad(zoneId, year, events, engineers, equipment, zones);
+  if (children.length === 0) return computeLeafZoneLoad(zoneId, year, events, engineers, equipment);
 
   let capacityDays = 0;
   let demandDays = 0;
@@ -505,67 +503,88 @@ function sumZoneLoad(
   return { capacityDays, demandDays, ratio: capacityDays === 0 ? 0 : demandDays / capacityDays };
 }
 
-/** Quanto de um engenheiro cabe a esta zona: 1 ÷ nº de zonas-folha que ele cobre.
- *
- *  Antes cada engenheiro contava POR INTEIRO em cada zona que cobria, e com quase todos
- *  a cobrir várias, a capacidade somada dava 46 engenheiros onde existem 24 — a carga
- *  saía a metade da real (SUR mostrava 20% com 42% reais) e o alerta de 85% disparava
- *  tarde de mais. Repartido assim, a soma das capacidades de todas as zonas é exactamente
- *  a da equipa, e as zonas-mãe (soma das filhas) ficam certas por construção.
- *
- *  Só contam zonas-folha: a atribuição a uma zona-mãe (ex.: o TL de uma região) não é
- *  uma zona onde se façam PMs, e a mãe não tem capacidade própria — é a soma das filhas.
- *  Engenheiros inactivos não contam. */
-function engineerShareOfZone(
-  engineer: EngineerWithZones,
-  zoneId: string,
-  leafZoneIds: Set<string>,
-): number {
-  if (!engineer.active) return 0;
-  const covered = new Set(
-    [engineer.primary_zone_id, ...engineer.zones.map((zone) => zone.zone_id)].filter(
-      (id): id is string => !!id && leafZoneIds.has(id),
-    ),
+function eventPmDays(event: PMEvent): number {
+  return (
+    Math.round(
+      (new Date(event.end_date).getTime() - new Date(event.start_date).getTime()) / (1000 * 60 * 60 * 24),
+    ) + 1
   );
-  return covered.has(zoneId) ? 1 / covered.size : 0;
 }
 
+/** Carga de uma zona-folha a partir de QUEM FAZ as PMs dessa zona.
+ *
+ *  Cada engenheiro reparte a sua capacidade anual (a mesma da carga por engenheiro)
+ *  pelas zonas, na proporção dos dias-PM que lá tem. Daqui resulta que a carga de uma
+ *  zona é a média da carga dos engenheiros que lá trabalham, ponderada pelos dias que
+ *  lá fazem — a Galiza, feita só pelo Ricardo, tem exactamente a carga do Ricardo.
+ *
+ *  Porquê assim: as atribuições de zona (primária/secundárias) dizem quem PODE ir, não
+ *  quem vai. Contar todos os possíveis inflacionava a capacidade (a Galiza tinha 4
+ *  engenheiros possíveis e só um lá vai); contar só os primários deixava zonas sem
+ *  nenhum (a Galiza não tem primário) a capacidade zero.
+ *
+ *  Casos de fronteira:
+ *  - PM ainda sem engenheiro: conta como trabalho dos engenheiros primários (activos)
+ *    da zona, repartido por igual. Sem primários, entra só na procura.
+ *  - Engenheiro activo sem PMs no ano: a capacidade fica toda na zona primária — é
+ *    folga real dessa zona.
+ *  A soma das capacidades de todas as zonas é a da equipa, e as zonas-mãe (soma das
+ *  filhas) ficam coerentes por construção. */
 function computeLeafZoneLoad(
   zoneId: string,
   year: number,
   events: PMEvent[],
   engineers: EngineerWithZones[],
   equipment: Equipment[],
-  zones: Zone[],
 ): LoadRatio {
-  const zoneScope = new Set([zoneId]);
   const yearStart = startOfYear(new Date(year, 0, 1));
   const yearEnd = endOfYear(yearStart);
+  const zoneOfEquipment = new Map(equipment.map((item) => [item.id, item.zone_id]));
 
-  // Conta o engenheiro se cobrir a zona por QUALQUER via — zona primária OU secundária
-  // (engineer_zones). Um engenheiro atribuído só como secundário (ex: cobertura de
-  // apoio a uma zona que não é a sua principal) tem de contar na capacidade dessa zona,
-  // senão esta fica sempre a 0% mesmo havendo procura real (capacityDays=0 força ratio=0).
-  // Conta pela fracção que lhe cabe — ver engineerShareOfZone.
-  const leafZoneIds = new Set(
-    zones.filter((zone) => !zones.some((other) => other.parent_zone_id === zone.id)).map((zone) => zone.id),
-  );
-  const engineersInZone = engineers.reduce(
-    (total, engineer) => total + engineerShareOfZone(engineer, zoneId, leafZoneIds),
-    0,
-  );
-  const equipmentIsInZone = (event: PMEvent) => {
-    const eq = equipment.find((item) => item.id === event.equipment_id);
-    return !!eq && zoneScope.has(eq.zone_id);
-  };
+  // Mesmo critério de inclusão da procura de sempre: activa e a começar dentro do ano.
+  const yearEventsActive = events.filter((event) => {
+    if (!eventIsActive(event)) return false;
+    const start = new Date(event.start_date);
+    return start >= yearStart && start <= yearEnd;
+  });
 
-  // Dias úteis + os fins-de-semana em que esta zona tem mesmo PMs marcadas.
-  const workDays =
-    workDaysInRange(yearStart, yearEnd) +
-    weekendWorkDaysFromEvents(events, equipmentIsInZone, yearStart, yearEnd);
-  const capacityDays = engineersInZone * workDays * ASSUMED_PM_DAYS_PER_ENGINEER_PER_WORKDAY;
+  const primariesByZone = new Map<string, string[]>();
+  for (const engineer of engineers) {
+    if (!engineer.active || !engineer.primary_zone_id) continue;
+    const list = primariesByZone.get(engineer.primary_zone_id) ?? [];
+    list.push(engineer.id);
+    primariesByZone.set(engineer.primary_zone_id, list);
+  }
 
-  const demandDays = sumActiveEventDays(events, equipmentIsInZone, yearStart, yearEnd);
+  // Dias-PM de cada engenheiro: no total (D) e nesta zona (d).
+  const totalDays = new Map<string, number>();
+  const zoneDays = new Map<string, number>();
+  let demandDays = 0;
+  for (const event of yearEventsActive) {
+    const eventZone = zoneOfEquipment.get(event.equipment_id);
+    const days = eventPmDays(event);
+    if (eventZone === zoneId) demandDays += days;
+    const doers = event.engineer_id
+      ? [event.engineer_id]
+      : eventZone
+        ? (primariesByZone.get(eventZone) ?? [])
+        : [];
+    for (const engineerId of doers) {
+      const share = days / doers.length;
+      totalDays.set(engineerId, (totalDays.get(engineerId) ?? 0) + share);
+      if (eventZone === zoneId) zoneDays.set(engineerId, (zoneDays.get(engineerId) ?? 0) + share);
+    }
+  }
+
+  let capacityDays = 0;
+  for (const [engineerId, daysHere] of zoneDays) {
+    const engineerCapacity = computeEngineerLoadRatio(engineerId, year, events).capacityDays;
+    capacityDays += (engineerCapacity * daysHere) / (totalDays.get(engineerId) ?? daysHere);
+  }
+  for (const engineerId of primariesByZone.get(zoneId) ?? []) {
+    if ((totalDays.get(engineerId) ?? 0) > 0) continue;
+    capacityDays += computeEngineerLoadRatio(engineerId, year, events).capacityDays;
+  }
 
   return { capacityDays, demandDays, ratio: capacityDays === 0 ? 0 : demandDays / capacityDays };
 }
