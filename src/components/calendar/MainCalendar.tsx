@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { addDays, format } from 'date-fns';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -8,7 +8,16 @@ import multiMonthPlugin from '@fullcalendar/multimonth';
 import interactionPlugin from '@fullcalendar/interaction';
 import ptLocale from '@fullcalendar/core/locales/pt';
 import esLocale from '@fullcalendar/core/locales/es';
-import type { DateSelectArg, DayCellContentArg, EventClickArg, EventInput } from '@fullcalendar/core';
+import type {
+  Calendar,
+  DateSelectArg,
+  DatesSetArg,
+  DayCellContentArg,
+  EventClickArg,
+  EventContentArg,
+  EventInput,
+  EventMountArg,
+} from '@fullcalendar/core';
 import type { EventReceiveArg } from '@fullcalendar/interaction';
 import {
   useAuthStore,
@@ -50,6 +59,12 @@ const CALENDAR_VIEWS = {
   dayGridMonth: { type: 'dayGrid', duration: { months: 1 } },
   timeGridWeek: { type: 'timeGrid', duration: { weeks: 1 } },
 };
+
+// Fora do componente para não mudarem de referência a cada render: o
+// @fullcalendar/react trata uma prop nova como opção alterada e redesenha o
+// calendário inteiro (ver o comentário das funções estáveis em MainCalendar).
+const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, listPlugin, multiMonthPlugin, interactionPlugin];
+const TIME_FORMAT_24H = { hour: '2-digit', minute: '2-digit', hour12: false } as const;
 
 export interface CreateEventPrefill {
   equipmentId: string;
@@ -136,6 +151,8 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
     [relevantHolidays, zones, t],
   );
 
+  const equipmentById = useMemo(() => new Map(equipment.map((item) => [item.id, item])), [equipment]);
+
   const calendarEvents = useMemo<EventInput[]>(() => {
     // O calendário reflecte sempre exactamente o que está marcado no planeamento (zonas,
     // engenheiros, equipamentos e modalidades — em OR entre si). `selectedZoneIds` já vem com
@@ -153,7 +170,7 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       !hasZoneFilter && !hasEngineerFilter && !hasEquipmentFilter && !hasModalityFilter
         ? []
         : events.filter((event) => {
-            const eq = equipment.find((item) => item.id === event.equipment_id);
+            const eq = equipmentById.get(event.equipment_id);
             const zoneMatch = hasZoneFilter && !!eq && selectedZoneIds.includes(eq.zone_id);
             const engineerMatch =
               hasEngineerFilter && !!event.engineer_id && selectedEngineerIds.includes(event.engineer_id);
@@ -163,7 +180,7 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
           });
 
     const pmEvents: EventInput[] = visibleEvents.map((event) => {
-      const eq = equipment.find((item) => item.id === event.equipment_id);
+      const eq = equipmentById.get(event.equipment_id);
       return {
         id: event.id,
         title: eventTitle(eq?.name ?? t('common.equipment'), event.calendar_label),
@@ -193,7 +210,7 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
     // toda a distribuição proposta do ano de uma vez. Estilo tracejado (pmplan-event-preview)
     // e não editáveis/clicáveis (são propostas, não PMs reais).
     const previewPmEvents: EventInput[] = previewEvents.map((event) => {
-      const eq = equipment.find((item) => item.id === event.equipment_id);
+      const eq = equipmentById.get(event.equipment_id);
       return {
         id: event.id,
         title: eq?.name ?? t('common.equipment'),
@@ -217,7 +234,7 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
   }, [
     events,
     previewEvents,
-    equipment,
+    equipmentById,
     relevantHolidays,
     selectedZoneIds,
     selectedEngineerIds,
@@ -233,17 +250,137 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
   // referência (bug conhecido do wrapper) — sincroniza-se aqui de forma imperativa via
   // calendarApi para garantir que o filtro (zonas/engenheiros/equipamentos) chega sempre
   // ao calendário, mesmo quando só o conteúdo do array varia entre renders.
+  // Tudo dentro de batchRendering: fora dele, cada addEvent redesenha o calendário
+  // inteiro (na vista Ano, os 12 meses), e com 200 PMs eram 200 redesenhos por cada
+  // clique num filtro — 7 s e o aviso de página parada. Dentro, é um só (0,3 s).
   useEffect(() => {
-    const api = calendarRef.current?.getApi();
+    // O getApi() do @fullcalendar/react devolve a instância `Calendar`, que tem
+    // batchRendering; o tipo declarado (CalendarApi) é que não o inclui.
+    const api = calendarRef.current?.getApi() as Calendar | undefined;
     if (!api) return;
-    api.removeAllEvents();
-    calendarEvents.forEach((event) => api.addEvent(event));
+    api.batchRendering(() => {
+      api.removeAllEvents();
+      calendarEvents.forEach((event) => api.addEvent(event));
+    });
   }, [calendarEvents, calendarRef]);
+
+  // Funções passadas ao FullCalendar com referência estável. O @fullcalendar/react
+  // compara as props por referência: uma função nova a cada render conta como opção
+  // alterada e redesenha o calendário inteiro (na vista Ano com 200 PMs, ~180 ms em
+  // vez de ~16 ms), e este componente re-renderiza a cada clique num filtro. O que
+  // muda a cada render (o equipamento "armado", os handlers do Dashboard, o ano)
+  // lê-se de `latest` em vez de entrar nas dependências.
+  const latest = useRef({ equipment, selectedEquipmentId, planningYear, onSelectEvent, onCreateEvent });
+  latest.current = { equipment, selectedEquipmentId, planningYear, onSelectEvent, onCreateEvent };
+
+  const eventContent = useCallback(
+    (arg: EventContentArg) => renderEventContent(arg, eventLineDensity, t),
+    [eventLineDensity, t],
+  );
+
+  const eventClassNames = useCallback(
+    (arg: { event: { id: string; extendedProps: Record<string, unknown> } }) => [
+      ...getConflictClassNames(conflictedEventIds.has(arg.event.id)),
+      ...(arg.event.extendedProps.isPreview ? ['pmplan-event-preview'] : []),
+    ],
+    [conflictedEventIds],
+  );
+
+  const dayCellContent = useCallback(
+    (arg: DayCellContentArg) => {
+      // Feriado nesse dia → mostra de que zona é (se regional) e um tooltip nativo
+      // (title) com o detalhe completo ao passar o rato (secção: "quando passado o
+      // rato por cima" deve mostrar do que se trata e quem afecta).
+      const info = holidayDayInfo.get(format(arg.date, 'yyyy-MM-dd'));
+      if (!info) return arg.dayNumberText;
+      return (
+        <div className="flex w-full flex-col items-end gap-0.5" title={info.tooltip}>
+          <span>{arg.dayNumberText}</span>
+          {info.zoneNames.length > 0 && (
+            <span className="truncate rounded bg-red-100 px-1 text-[9px] font-medium leading-tight text-red-700">
+              {info.zoneNames.join(', ')}
+            </span>
+          )}
+        </div>
+      );
+    },
+    [holidayDayInfo],
+  );
+
+  const datesSet = useCallback(
+    (arg: DatesSetArg) => {
+      fetchEvents({ start: arg.startStr, end: arg.endStr });
+      // headerToolbar está desligado (toolbar própria) — sem isto, dayGridMonth/
+      // timeGridWeek ficam sem indicação nenhuma de que mês/semana se está a ver.
+      setVisibleTitle(arg.view.title);
+      // Navegar o calendário (setas ‹ ›, "Hoje", ou o próprio Topbar) mantém o
+      // planningYear alinhado com o ano em vista — senão a geração de plano usaria um
+      // ano diferente do que o utilizador está a ver (bug: ver 2027, gerar 2026).
+      // currentStart é o início do período activo (Jan do ano na vista Ano/Trimestre;
+      // 1.º dia do mês na vista Mês), não o intervalo com dias de padding.
+      const viewYear = arg.view.currentStart.getFullYear();
+      if (viewYear !== latest.current.planningYear) setPlanningYear(viewYear);
+    },
+    [fetchEvents, setVisibleTitle, setPlanningYear],
+  );
+
+  const select = useCallback((arg: DateSelectArg) => {
+    // Equipamento "armado" na sidebar (EquipmentList) → cria já a PM com hospital/
+    // engenheiro pré-preenchidos, cobrindo exactamente os dias seleccionados com o
+    // rato (arg.end é exclusivo em selecções allDay — passa a inclusivo com -1 dia).
+    const { equipment: items, selectedEquipmentId: armedId, onCreateEvent: create } = latest.current;
+    const armed = items.find((item) => item.id === armedId);
+    if (armed) {
+      create(arg.start, {
+        equipmentId: armed.id,
+        engineerId: armed.engineer_primary_id ?? '',
+        endDate: addDays(arg.end, -1),
+      });
+      return;
+    }
+    create(arg.start);
+  }, []);
+
+  const eventClick = useCallback((arg: EventClickArg) => {
+    if (arg.event.display === 'background') return;
+    // Propostas em pré-visualização não são PMs reais — não abrem o modal de edição.
+    if (arg.event.extendedProps.isPreview) return;
+    latest.current.onSelectEvent(arg.event.id);
+  }, []);
+
+  const eventDidMount = useCallback(
+    (arg: EventMountArg) => {
+      if (arg.event.display === 'background') {
+        // Tooltip nativo no próprio fundo do feriado, não só perto do número do dia.
+        const info = arg.event.start ? holidayDayInfo.get(format(arg.event.start, 'yyyy-MM-dd')) : undefined;
+        if (info) arg.el.setAttribute('title', info.tooltip);
+        return;
+      }
+      // PMs: tooltip com equipamento + hospital — nas vistas multi-mês a barra compacta
+      // (EventContent) esconde a linha do hospital, que fica acessível ao passar o rato.
+      const { hospitalName } = arg.event.extendedProps as { hospitalName?: string };
+      arg.el.setAttribute('title', hospitalName ? `${arg.event.title} — ${hospitalName}` : arg.event.title);
+    },
+    [holidayDayInfo],
+  );
+
+  const eventReceive = useCallback((arg: EventReceiveArg) => {
+    // Vindo do drag-source da sidebar (EquipmentList) — nunca grava directamente:
+    // remove o "fantasma" do FullCalendar e abre o PMEventModal pré-preenchido
+    // para validar conflitos antes do commit (regra 6, secção 15).
+    const { equipmentId, engineerId } = arg.event.extendedProps as {
+      equipmentId: string;
+      engineerId: string;
+    };
+    const start = arg.event.start ?? new Date();
+    arg.event.remove();
+    latest.current.onCreateEvent(start, { equipmentId, engineerId });
+  }, []);
 
   return (
     <FullCalendar
       ref={calendarRef}
-      plugins={[dayGridPlugin, timeGridPlugin, listPlugin, multiMonthPlugin, interactionPlugin]}
+      plugins={CALENDAR_PLUGINS}
       views={CALENDAR_VIEWS}
       initialView="multiMonthYear"
       initialDate={`${planningYear}-01-01`}
@@ -257,95 +394,23 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       // Semana começa sempre à segunda-feira — fixado aqui em vez de depender do locale,
       // que difere entre os dois (aplica-se a mês, trimestre, ano e semana).
       firstDay={1}
-      slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
-      eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+      slotLabelFormat={TIME_FORMAT_24H}
+      eventTimeFormat={TIME_FORMAT_24H}
       // engineer/readonly: calendário só-consulta (secção: "engenheiros só podem
       // consultar o calendário sem o alterar").
       selectable={permissions.canCreatePM}
       editable={permissions.canEditPM}
       droppable={permissions.canCreatePM}
-      eventContent={(arg) => renderEventContent(arg, eventLineDensity, t)}
-      eventClassNames={(arg) => [
-        ...getConflictClassNames(conflictedEventIds.has(arg.event.id)),
-        ...(arg.event.extendedProps.isPreview ? ['pmplan-event-preview'] : []),
-      ]}
-      dayCellContent={(arg: DayCellContentArg) => {
-        // Feriado nesse dia → mostra de que zona é (se regional) e um tooltip nativo
-        // (title) com o detalhe completo ao passar o rato (secção: "quando passado o
-        // rato por cima" deve mostrar do que se trata e quem afecta).
-        const info = holidayDayInfo.get(format(arg.date, 'yyyy-MM-dd'));
-        if (!info) return arg.dayNumberText;
-        return (
-          <div className="flex w-full flex-col items-end gap-0.5" title={info.tooltip}>
-            <span>{arg.dayNumberText}</span>
-            {info.zoneNames.length > 0 && (
-              <span className="truncate rounded bg-red-100 px-1 text-[9px] font-medium leading-tight text-red-700">
-                {info.zoneNames.join(', ')}
-              </span>
-            )}
-          </div>
-        );
-      }}
-      datesSet={(arg) => {
-        fetchEvents({ start: arg.startStr, end: arg.endStr });
-        // headerToolbar está desligado (toolbar própria) — sem isto, dayGridMonth/
-        // timeGridWeek ficam sem indicação nenhuma de que mês/semana se está a ver.
-        setVisibleTitle(arg.view.title);
-        // Navegar o calendário (setas ‹ ›, "Hoje", ou o próprio Topbar) mantém o
-        // planningYear alinhado com o ano em vista — senão a geração de plano usaria um
-        // ano diferente do que o utilizador está a ver (bug: ver 2027, gerar 2026).
-        // currentStart é o início do período activo (Jan do ano na vista Ano/Trimestre;
-        // 1.º dia do mês na vista Mês), não o intervalo com dias de padding.
-        const viewYear = arg.view.currentStart.getFullYear();
-        if (viewYear !== planningYear) setPlanningYear(viewYear);
-      }}
-      select={(arg: DateSelectArg) => {
-        // Equipamento "armado" na sidebar (EquipmentList) → cria já a PM com hospital/
-        // engenheiro pré-preenchidos, cobrindo exactamente os dias seleccionados com o
-        // rato (arg.end é exclusivo em selecções allDay — passa a inclusivo com -1 dia).
-        const armed = equipment.find((item) => item.id === selectedEquipmentId);
-        if (armed) {
-          onCreateEvent(arg.start, {
-            equipmentId: armed.id,
-            engineerId: armed.engineer_primary_id ?? '',
-            endDate: addDays(arg.end, -1),
-          });
-          return;
-        }
-        onCreateEvent(arg.start);
-      }}
-      eventClick={(arg: EventClickArg) => {
-        if (arg.event.display === 'background') return;
-        // Propostas em pré-visualização não são PMs reais — não abrem o modal de edição.
-        if (arg.event.extendedProps.isPreview) return;
-        onSelectEvent(arg.event.id);
-      }}
-      eventDidMount={(arg) => {
-        if (arg.event.display === 'background') {
-          // Tooltip nativo no próprio fundo do feriado, não só perto do número do dia.
-          const info = arg.event.start ? holidayDayInfo.get(format(arg.event.start, 'yyyy-MM-dd')) : undefined;
-          if (info) arg.el.setAttribute('title', info.tooltip);
-          return;
-        }
-        // PMs: tooltip com equipamento + hospital — nas vistas multi-mês a barra compacta
-        // (EventContent) esconde a linha do hospital, que fica acessível ao passar o rato.
-        const { hospitalName } = arg.event.extendedProps as { hospitalName?: string };
-        arg.el.setAttribute('title', hospitalName ? `${arg.event.title} — ${hospitalName}` : arg.event.title);
-      }}
+      eventContent={eventContent}
+      eventClassNames={eventClassNames}
+      dayCellContent={dayCellContent}
+      datesSet={datesSet}
+      select={select}
+      eventClick={eventClick}
+      eventDidMount={eventDidMount}
       eventDrop={handleEventDrop}
       eventResize={handleEventResize}
-      eventReceive={(arg: EventReceiveArg) => {
-        // Vindo do drag-source da sidebar (EquipmentList) — nunca grava directamente:
-        // remove o "fantasma" do FullCalendar e abre o PMEventModal pré-preenchido
-        // para validar conflitos antes do commit (regra 6, secção 15).
-        const { equipmentId, engineerId } = arg.event.extendedProps as {
-          equipmentId: string;
-          engineerId: string;
-        };
-        const start = arg.event.start ?? new Date();
-        arg.event.remove();
-        onCreateEvent(start, { equipmentId, engineerId });
-      }}
+      eventReceive={eventReceive}
     />
   );
 }
