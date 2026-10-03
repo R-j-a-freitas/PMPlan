@@ -24,7 +24,11 @@ import { describeRule, formToRuleFields, ruleToForm, type HolidayRuleForm } from
 import { useT, type TFunction } from '../i18n';
 
 const CURRENT_YEAR = new Date().getFullYear();
-const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_YEAR + 2];
+// O Nager.Date só responde para o ano corrente ±50; para trás bastam alguns anos
+// de histórico.
+const YEARS_BACK = 5;
+const YEARS_AHEAD = 50;
+const YEAR_OPTIONS = Array.from({ length: YEARS_BACK + YEARS_AHEAD + 1 }, (_, i) => CURRENT_YEAR - YEARS_BACK + i);
 
 const EMPTY_FORM = { name: '', date: '', country: 'PT' as Country, zoneId: '', locality: '' };
 
