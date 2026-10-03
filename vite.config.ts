@@ -35,6 +35,11 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // O SW tem âmbito '/', mas o pmplan.net também serve outras apps (o Caddy
+        // encaminha /RS, /WL, /xvi, /dgd e /api para outros serviços). Sem isto, toda a
+        // navegação para lá — incluindo os iframes de ajuda do RS — recebia o
+        // index.html do PMPlan em cache.
+        navigateFallbackDenylist: [/^\/RS(\/|$)/, /^\/WL(\/|$)/, /^\/xvi(\/|$)/, /^\/dgd(\/|$)/, /^\/api\//],
         // Cache offline de dados recentes (secção 12) — não dados de negócio,
         // o Supabase continua a ser a fonte de verdade.
         runtimeCaching: [
