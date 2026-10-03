@@ -21,6 +21,8 @@ import type { PMEvent, PMEventInsert } from '../../types';
 import { Badge, Button, Modal } from '../ui';
 import { useT, type TFunction } from '../../i18n';
 import { conflictMessage } from '../../i18n/labels';
+import { exportRowsToSpreadsheet } from '../../lib/spreadsheet';
+import { SchedulerRulesNote } from './SchedulerRulesNote';
 
 interface AutoSchedulerModalProps {
   defaultYear: number;
@@ -96,11 +98,17 @@ function ProposalRow({
         {proposal.adjustmentReason && (
           <div className="mt-0.5 text-xs text-amber-700">{proposal.adjustmentReason}</div>
         )}
-        {proposal.conflicts.map((c, ci) => (
-          <div key={ci} className="mt-0.5 text-xs text-red-700">
-            {conflictMessage(c, t)}
-          </div>
-        ))}
+        {proposal.conflicts.map((c, ci) =>
+          c.warningOnly ? (
+            <div key={ci} className="mt-0.5 text-xs text-amber-700">
+              {t('scheduler.warningOnly')} {conflictMessage(c, t)}
+            </div>
+          ) : (
+            <div key={ci} className="mt-0.5 text-xs text-red-700">
+              {conflictMessage(c, t)}
+            </div>
+          ),
+        )}
       </div>
     </div>
   );
@@ -495,6 +503,47 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
     setPreviewing(false);
   }
 
+  // As PMs com alerta (revisão manual ou conflitos/avisos), numa folha para verificar
+  // fora da app — uma linha por PM, pela ordem da revisão.
+  function handleExportReview() {
+    const anchorLabel: Record<ProposedPMEvent['anchorSource'], string> = {
+      existing_current_year: t('scheduler.anchorExisting'),
+      historical: t('scheduler.anchorHistorical'),
+      base_distribution: t('scheduler.anchorBase'),
+    };
+    const rows = results.flatMap((result) =>
+      result.proposals
+        .map((proposal, index) => ({ proposal, index }))
+        .filter(({ proposal }) => proposal.requiresManualReview || proposal.conflicts.length > 0)
+        .map(({ proposal, index }) => ({
+          [t('scheduler.exportReview.equipment')]: result.equipmentName,
+          [t('scheduler.exportReview.hospital')]: result.hospitalName,
+          [t('scheduler.exportReview.zone')]: result.zoneCode,
+          [t('scheduler.exportReview.pm')]: index + 1,
+          [t('scheduler.exportReview.start')]: formatDate(proposal.proposedStartDate),
+          [t('scheduler.exportReview.end')]: formatDate(proposal.proposedEndDate),
+          [t('scheduler.exportReview.anchor')]: anchorLabel[proposal.anchorSource],
+          [t('scheduler.exportReview.manual')]: proposal.requiresManualReview ? t('common.yes') : t('common.no'),
+          [t('scheduler.exportReview.adjustment')]: proposal.adjustmentReason ?? '',
+          [t('scheduler.exportReview.alerts')]: proposal.conflicts
+            .map((conflict) =>
+              conflict.warningOnly
+                ? `${t('scheduler.warningOnly')} ${conflictMessage(conflict, t) ?? ''}`
+                : (conflictMessage(conflict, t) ?? ''),
+            )
+            .join(' | '),
+          [t('scheduler.exportReview.selected')]: selectedResults.has(result.equipmentId)
+            ? t('common.yes')
+            : t('common.no'),
+        })),
+    );
+    exportRowsToSpreadsheet(
+      rows,
+      t('scheduler.exportReview.file', { year: targetYear }),
+      t('scheduler.exportReview.sheet'),
+    );
+  }
+
   const totalProposals = results.reduce((sum, r) => sum + r.proposals.length, 0);
   const totalConflicts = results.reduce(
     (sum, r) => sum + r.proposals.filter((p) => p.requiresManualReview || p.conflicts.length > 0).length,
@@ -685,11 +734,8 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
                 </div>
               </div>
 
-              {/* Nota informativa */}
-              <div className="rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-xs text-brand-800">
-                <strong>{t('scheduler.howItWorksTitle')}</strong>{' '}
-                {t('scheduler.howItWorks', { year: targetYear, previousYear: targetYear - 1 })}
-              </div>
+              {/* Nota informativa: resumo à vista, regras completas colapsadas */}
+              <SchedulerRulesNote t={t} year={targetYear} />
             </div>
           )}
 
@@ -723,9 +769,14 @@ export function AutoSchedulerModal({ defaultYear, onClose }: AutoSchedulerModalP
                 </div>
               )}
               {totalConflicts > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  <strong>{t('scheduler.alertsTitle', { count: totalConflicts })}</strong>{' '}
-                  {t('scheduler.alertsHint')}
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <p className="min-w-0 flex-1">
+                    <strong>{t('scheduler.alertsTitle', { count: totalConflicts })}</strong>{' '}
+                    {t('scheduler.alertsHint')}
+                  </p>
+                  <Button variant="secondary" size="sm" onClick={handleExportReview}>
+                    {t('scheduler.exportReview')}
+                  </Button>
                 </div>
               )}
               {results.map((result) => (

@@ -2,8 +2,8 @@ import { useCallback, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { compareSchedules, generateAnnualSchedule, proposalToVirtualEvent } from '../lib/autoScheduler';
 import type { HistoricalPM, ProposedPMEvent, ScheduleComparison } from '../lib/autoScheduler';
-import { buildEquipmentSiteIndex, cityKeyOfEquipment } from '../lib/conflictRules';
-import { useEquipmentStore, useHolidayStore } from '../stores';
+import { buildEquipmentSiteIndex, cityKeyOfEquipment, isCitySameDayExempt } from '../lib/conflictRules';
+import { useEquipmentStore, useHolidayStore, useZoneStore } from '../stores';
 import type { PMEvent } from '../types';
 
 export interface BulkSchedulerResult {
@@ -41,6 +41,7 @@ interface UseBulkAutoSchedulerReturn {
 export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
   const equipment = useEquipmentStore((state) => state.equipment);
   const holidays = useHolidayStore((state) => state.holidays);
+  const zones = useZoneStore((state) => state.zones);
 
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -173,6 +174,7 @@ export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
             hospitalId: targetEquipment.hospital_id,
             cityKey: cityKeyOfEquipment(targetEquipment),
             siteIndex,
+            citySameDayWarningOnly: isCitySameDayExempt(targetEquipment.zone_id, zones),
           });
 
           // Adicionar propostas geradas ao pool virtual para os próximos equipamentos
@@ -202,7 +204,7 @@ export function useBulkAutoScheduler(): UseBulkAutoSchedulerReturn {
       setResults(accumulated);
       setGenerating(false);
     },
-    [equipment, holidays],
+    [equipment, holidays, zones],
   );
 
   const reset = useCallback(() => {

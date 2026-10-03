@@ -3,7 +3,12 @@ import { format } from 'date-fns';
 import { proposeRemainingPMs } from '../lib/autoScheduler';
 import type { ProposedPMEvent } from '../lib/autoScheduler';
 import { resolveApprovalTrack } from '../lib/approvalTrack';
-import { buildEquipmentSiteIndex, cityKeyOfEquipment, listPmEventsForEquipmentInYear } from '../lib/conflictRules';
+import {
+  buildEquipmentSiteIndex,
+  cityKeyOfEquipment,
+  isCitySameDayExempt,
+  listPmEventsForEquipmentInYear,
+} from '../lib/conflictRules';
 import { defaultCalendarLabel } from '../lib/pmLabels';
 import {
   createSourceChangesForEvents,
@@ -12,6 +17,7 @@ import {
   useEquipmentStore,
   useHolidayStore,
   useModalityStore,
+  useZoneStore,
 } from '../stores';
 import type { PMEvent, PMEventInsert } from '../types';
 
@@ -38,6 +44,7 @@ interface UsePlanRemainingPMsResult {
 export function usePlanRemainingPMs(): UsePlanRemainingPMsResult {
   const equipment = useEquipmentStore((state) => state.equipment);
   const holidays = useHolidayStore((state) => state.holidays);
+  const zones = useZoneStore((state) => state.zones);
   const modalities = useModalityStore((state) => state.modalities);
   const createBulkEvents = useCalendarStore((state) => state.createBulkEvents);
 
@@ -69,6 +76,7 @@ export function usePlanRemainingPMs(): UsePlanRemainingPMsResult {
             hospitalId: target.hospital_id,
             cityKey: cityKeyOfEquipment(target),
             siteIndex: buildEquipmentSiteIndex(equipment),
+            citySameDayWarningOnly: isCitySameDayExempt(target.zone_id, zones),
             anchorDate,
             bookedEventsTargetYear: listPmEventsForEquipmentInYear(target.id, targetYear, yearEvents),
         });
@@ -78,7 +86,7 @@ export function usePlanRemainingPMs(): UsePlanRemainingPMsResult {
         setBusy(false);
       }
     },
-    [equipment, holidays],
+    [equipment, holidays, zones],
   );
 
   const save = useCallback(async () => {

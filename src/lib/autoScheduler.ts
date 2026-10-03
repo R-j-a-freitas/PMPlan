@@ -54,6 +54,10 @@ export interface SchedulerConfig {
   /** Índice equipamento→{hospital, cidade} de TODOS os equipamentos — classifica os
    *  eventos existentes (reais e virtuais do lote) para as Regras 7/8. */
   siteIndex: EquipmentSiteIndex;
+  /** Zona isenta da Regra 8 (conflictRules.isCitySameDayExempt, hoje Madrid): a mesma
+   *  cidade no mesmo dia não move a data — a ancoragem mantém-se e o choque fica como
+   *  aviso (warningOnly) nos conflitos da proposta. */
+  citySameDayWarningOnly?: boolean;
 }
 
 export interface ProposedPMEvent {
@@ -121,6 +125,7 @@ interface PlacementContext {
   hospitalId: string;
   cityKey: string | null;
   siteIndex: EquipmentSiteIndex;
+  citySameDayWarningOnly: boolean;
 }
 
 function isBlockedDay(date: Date, ctx: PlacementContext): boolean {
@@ -154,7 +159,25 @@ function hasPlacementConflict(start: Date, ctx: PlacementContext): boolean {
     siteIndex: ctx.siteIndex,
   };
   if (checkHospitalSameWeekConflict(siteParams).hasConflict) return true;
+  // Zona isenta: a Regra 8 não procura outra data (ver cityWarnings).
+  if (ctx.citySameDayWarningOnly) return false;
   return checkCitySameDayConflict({ ...siteParams, cityKey: ctx.cityKey }).hasConflict;
+}
+
+// Zona isenta da Regra 8: o choque de cidade na data escolhida não a moveu, mas fica
+// como aviso na proposta (e entra nos alertas e na exportação da revisão).
+function cityWarnings(start: Date, ctx: PlacementContext): ConflictResult[] {
+  if (!ctx.citySameDayWarningOnly) return [];
+  const result = checkCitySameDayConflict({
+    equipmentId: ctx.equipmentId,
+    hospitalId: ctx.hospitalId,
+    cityKey: ctx.cityKey,
+    startDate: start,
+    endDate: addDays(start, ctx.durationDays - 1),
+    existingEvents: ctx.existingEvents,
+    siteIndex: ctx.siteIndex,
+  });
+  return result.hasConflict ? [{ ...result, warningOnly: true }] : [];
 }
 
 // Regra 4 (fim-de-semana contratado): os dias de fim-de-semana do contrato ficam SEMPRE
@@ -207,7 +230,7 @@ function resolveValidDate(candidate: Date, ctx: PlacementContext, notBefore?: Da
         week === 0 ? baseReasons : [...baseReasons, `ajustado: ${week} semana(s) para resolver conflito`];
       return {
         date: start,
-        conflicts: [],
+        conflicts: cityWarnings(start, ctx),
         requiresManualReview: false,
         ...(reasons.length ? { adjustmentReason: reasons.join('; ') } : {}),
       };
@@ -221,7 +244,7 @@ function resolveValidDate(candidate: Date, ctx: PlacementContext, notBefore?: Da
         if (!isAcceptable(start)) continue;
         return {
           date: start,
-          conflicts: [],
+          conflicts: cityWarnings(start, ctx),
           requiresManualReview: false,
           adjustmentReason: [
             ...baseReasons,
@@ -248,6 +271,7 @@ function resolveValidDate(candidate: Date, ctx: PlacementContext, notBefore?: Da
     hospitalId: ctx.hospitalId,
     cityKey: ctx.cityKey,
     siteIndex: ctx.siteIndex,
+    citySameDayWarningOnly: ctx.citySameDayWarningOnly,
   });
 
   return {
@@ -388,6 +412,7 @@ export function generateAnnualSchedule(config: SchedulerConfig): ProposedPMEvent
     hospitalId,
     cityKey,
     siteIndex,
+    citySameDayWarningOnly = false,
   } = config;
 
   const baseIntervalDays = Math.round(365 / pmPerYear);
@@ -411,6 +436,7 @@ export function generateAnnualSchedule(config: SchedulerConfig): ProposedPMEvent
     hospitalId,
     cityKey,
     siteIndex,
+    citySameDayWarningOnly,
   };
 
   const draftProposals: ProposedPMEvent[] = [];
@@ -527,6 +553,7 @@ export function proposeRemainingPMs(config: RemainingPMsConfig): ProposedPMEvent
     hospitalId: config.hospitalId,
     cityKey: config.cityKey,
     siteIndex: config.siteIndex,
+    citySameDayWarningOnly: config.citySameDayWarningOnly ?? false,
   };
 
   const drafts: ProposedPMEvent[] = [];

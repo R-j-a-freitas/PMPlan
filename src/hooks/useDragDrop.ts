@@ -6,6 +6,7 @@ import { useConflictEngine } from './useConflictEngine';
 import { useCalendarStore, useUiStore } from '../stores';
 import { useT } from '../i18n';
 import { conflictMessage } from '../i18n/labels';
+import { isWarningOnly } from '../lib/conflictRules';
 
 interface DragDropResult {
   handleEventDrop: (info: EventDropArg) => Promise<void>;
@@ -59,15 +60,15 @@ export function useDragDrop(): DragDropResult {
         excludeEventId: params.eventId,
       });
 
-      const blocking = results.find((result) => result.hasConflict && result.type !== 'zone_overload');
+      const blocking = results.find((result) => result.hasConflict && !isWarningOnly(result));
       if (blocking) {
         params.revert();
         pushToast({ variant: 'error', message: conflictMessage(blocking, t) ?? t('pm.conflict') });
         return;
       }
 
-      const warning = results.find((result) => result.hasConflict && result.type === 'zone_overload');
-      if (warning) {
+      // Avisos não impedem gravar: carga de zona e a Regra 8 nas zonas isentas (Madrid).
+      for (const warning of results.filter((result) => result.hasConflict && isWarningOnly(result))) {
         pushToast({ variant: 'warning', message: conflictMessage(warning, t) ?? t('pm.zoneOverload') });
       }
 

@@ -4,6 +4,7 @@ import {
   checkPmQuota,
   checkZoneLoad,
   cityKeyOfEquipment,
+  isCitySameDayExempt,
   validatePMPlacement,
 } from '../lib/conflictRules';
 import {
@@ -72,6 +73,7 @@ export function useConflictEngine() {
         hospitalId: targetEquipment.hospital_id,
         cityKey: cityKeyOfEquipment(targetEquipment),
         siteIndex,
+        citySameDayWarningOnly: isCitySameDayExempt(targetEquipment.zone_id, zones),
         ...(params.excludeEventId ? { excludeEventId: params.excludeEventId } : {}),
       });
 

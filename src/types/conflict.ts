@@ -32,6 +32,9 @@ export type ConflictResult = {
   messageParams?: Record<string, string | number>;
   /** Próxima data disponível sugerida automaticamente. */
   suggestedDate?: Date;
+  /** Conflito que se mostra mas não impede gravar — hoje só a Regra 8 nas zonas
+   *  isentas (ver CITY_SAME_DAY_EXEMPT_ZONE_CODES em lib/conflictRules). */
+  warningOnly?: boolean;
 };
 
 /** Linha persistida da tabela conflict_log. */

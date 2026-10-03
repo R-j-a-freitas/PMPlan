@@ -321,6 +321,31 @@ export function checkHospitalSameWeekConflict(
   };
 }
 
+// Excepção à Regra 8: nas zonas com estes códigos (e nas suas zonas-filhas) duas PMs
+// na mesma cidade no mesmo dia não bloqueiam — o scheduler mantém a data ancorada e a
+// criação manual grava. O choque continua a aparecer, como aviso (warningOnly).
+// MD = Madrid: vários hospitais na mesma cidade, com equipa para mais de uma PM por dia.
+export const CITY_SAME_DAY_EXEMPT_ZONE_CODES: readonly string[] = ['MD'];
+
+export function isCitySameDayExempt(zoneId: string, zones: Pick<Zone, 'id' | 'code' | 'parent_zone_id'>[]): boolean {
+  const exempt = new Set(CITY_SAME_DAY_EXEMPT_ZONE_CODES.map((code) => code.toUpperCase()));
+  const byId = new Map(zones.map((zone) => [zone.id, zone]));
+  const seen = new Set<string>();
+  let current = byId.get(zoneId);
+  while (current && !seen.has(current.id)) {
+    if (exempt.has(current.code.toUpperCase())) return true;
+    seen.add(current.id);
+    current = current.parent_zone_id ? byId.get(current.parent_zone_id) : undefined;
+  }
+  return false;
+}
+
+/** Conflitos que se mostram mas não impedem gravar: a carga de zona (Regra 3, alerta) e
+ *  os marcados warningOnly (Regra 8 nas zonas isentas). */
+export function isWarningOnly(result: ConflictResult): boolean {
+  return result.type === 'zone_overload' || result.warningOnly === true;
+}
+
 // Regra 8: máximo 1 PM por cidade por dia. Eventos do MESMO hospital não contam aqui —
 // esses já são bloqueados pela Regra 7 (evita reportar o mesmo choque duas vezes).
 export function checkCitySameDayConflict(
@@ -653,6 +678,8 @@ export function validatePMPlacement(params: {
   hospitalId?: string;
   cityKey?: string | null;
   siteIndex?: EquipmentSiteIndex;
+  /** Zona isenta da Regra 8 (isCitySameDayExempt): o choque sai como aviso. */
+  citySameDayWarningOnly?: boolean;
 }): ConflictResult[] {
   const {
     engineerId,
@@ -670,6 +697,7 @@ export function validatePMPlacement(params: {
     hospitalId,
     cityKey = null,
     siteIndex,
+    citySameDayWarningOnly = false,
   } = params;
 
   const results: ConflictResult[] = [];
@@ -705,7 +733,9 @@ export function validatePMPlacement(params: {
     if (hospitalResult.hasConflict) results.push(hospitalResult);
 
     const cityResult = checkCitySameDayConflict({ ...siteParams, cityKey });
-    if (cityResult.hasConflict) results.push(cityResult);
+    if (cityResult.hasConflict) {
+      results.push(citySameDayWarningOnly ? { ...cityResult, warningOnly: true } : cityResult);
+    }
   }
 
   return results;

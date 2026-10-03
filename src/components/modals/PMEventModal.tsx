@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDays, format } from 'date-fns';
 import { useConflictEngine, usePlanRemainingPMs } from '../../hooks';
 import { useAuthStore, useCalendarStore, useEquipmentStore, useUiStore } from '../../stores';
-import { findEngineerOverlapInReassign, listPmEventsForEquipmentInYear } from '../../lib/conflictRules';
+import {
+  findEngineerOverlapInReassign,
+  isWarningOnly,
+  listPmEventsForEquipmentInYear,
+} from '../../lib/conflictRules';
 import { toDisplayDate } from '../../lib/dateFormat';
 import type { PMStatus } from '../../types';
 import { Button, Modal } from '../ui';
@@ -176,13 +180,13 @@ export function PMEventModal({ eventId, initial, onClose }: PMEventModalProps) {
       endDate: new Date(endDate),
       ...(eventId ? { excludeEventId: eventId } : {}),
     });
-    const blocking = results.find((result) => result.hasConflict && result.type !== 'zone_overload');
+    const blocking = results.find((result) => result.hasConflict && !isWarningOnly(result));
     if (blocking) {
       pushToast({ variant: 'error', message: conflictMessage(blocking, t) ?? t('pm.conflict') });
       return;
     }
-    const warning = results.find((result) => result.hasConflict && result.type === 'zone_overload');
-    if (warning) {
+    // Avisos não impedem gravar: carga de zona e a Regra 8 nas zonas isentas (Madrid).
+    for (const warning of results.filter((result) => result.hasConflict && isWarningOnly(result))) {
       pushToast({ variant: 'warning', message: conflictMessage(warning, t) ?? t('pm.zoneOverload') });
     }
 
