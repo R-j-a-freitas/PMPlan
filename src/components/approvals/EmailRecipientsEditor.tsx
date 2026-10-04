@@ -13,8 +13,9 @@ import { useT } from '../../i18n';
 // Gestão dos destinatários que vão SEMPRE em CC nos envios de propostas/cartas aos
 // clientes (substitui o antigo TERESA_EMAIL hardcoded). O toggle "Ativo" liga/desliga
 // cada pessoa do loop de emails sem apagar o registo — é como se tira alguém dos envios
-// durante os testes e se volta a pôr depois, sem deploy. O próprio utilizador que envia
-// entra automaticamente em CC (não precisa de estar aqui).
+// durante os testes e se volta a pôr depois, sem deploy. Quem envia não entra
+// automaticamente: quem quiser receber os envios acrescenta-se aqui. Os Team Leaders não
+// estão na lista — vêm das zonas e têm o seu interruptor (app_settings).
 export function EmailRecipientsEditor() {
   const t = useT();
   const recipients = useEmailRecipientStore((state) => state.recipients);
@@ -42,10 +43,10 @@ export function EmailRecipientsEditor() {
     fetchAppSettings();
   }, [fetchRecipients, fetchAppSettings]);
 
-  async function handleToggleTeamLeaders(value: boolean) {
+  async function handleToggleSetting(key: string, value: boolean) {
     setBusy(true);
     try {
-      await setBoolean(SETTING_INCLUDE_TEAM_LEADERS, value, profile?.id ?? null);
+      await setBoolean(key, value, profile?.id ?? null);
     } catch {
       pushToast({ variant: 'error', message: t('recipients.settingFailed') });
     } finally {
@@ -102,9 +103,7 @@ export function EmailRecipientsEditor() {
   return (
     <Card className="max-w-2xl" title={t('recipients.title')}>
       <p className="mb-4 text-sm text-gray-500">
-        {t('recipients.intro')}{' '}
-        {profile?.email && <>{t('recipients.senderNote', { email: profile.email })} </>}
-        {t('recipients.repliesNote', { mailbox: SIGNED_DOCUMENTS_MAILBOX })}
+        {t('recipients.intro')} {t('recipients.repliesNote', { mailbox: SIGNED_DOCUMENTS_MAILBOX })}
       </p>
 
       {/* Os Team Leaders não estão na lista abaixo — vêm das zonas (Configurações →
@@ -117,7 +116,7 @@ export function EmailRecipientsEditor() {
             className="mt-0.5"
             checked={includeTeamLeaders}
             disabled={busy}
-            onChange={(event) => handleToggleTeamLeaders(event.target.checked)}
+            onChange={(event) => handleToggleSetting(SETTING_INCLUDE_TEAM_LEADERS, event.target.checked)}
           />
           <span>
             <span className={`text-sm font-medium ${includeTeamLeaders ? 'text-gray-800' : 'text-gray-400'}`}>

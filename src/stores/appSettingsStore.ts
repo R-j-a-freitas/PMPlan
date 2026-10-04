@@ -41,10 +41,14 @@ export const useAppSettingsStore = create<AppSettingsState>()(
       },
 
       setBoolean: async (key, value, userId) => {
+        // upsert e não update: uma definição nova não precisa de migração para existir —
+        // a linha cria-se no primeiro toggle (a RLS deixa o admin inserir, ver 0028).
         const { error } = await supabase
           .from('app_settings')
-          .update({ value, updated_at: new Date().toISOString(), updated_by: userId })
-          .eq('key', key);
+          .upsert(
+            { key, value, updated_at: new Date().toISOString(), updated_by: userId },
+            { onConflict: 'key' },
+          );
         if (error) {
           set({ error: error.message });
           throw error;

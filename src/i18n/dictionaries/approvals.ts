@@ -253,10 +253,6 @@ export const approvals = {
     'Estas pessoas entram em CC em todos os envios de propostas e cartas aos clientes. Desliga o interruptor Ativo para tirar alguém do loop (ex.: durante testes) sem apagar o registo — volta a ligar quando quiseres.',
     'Estas personas entran en copia en todos los envíos de propuestas y cartas a los clientes. Desactiva el interruptor Activo para sacar a alguien del circuito (p. ej.: durante las pruebas) sin borrar el registro — vuelve a activarlo cuando quieras.',
   ],
-  'recipients.senderNote': [
-    'O utilizador que envia ({email}) entra sempre em CC automaticamente.',
-    'El usuario que envía ({email}) entra siempre en copia automáticamente.',
-  ],
   'recipients.repliesNote': [
     'Estas pessoas recebem também as respostas dos clientes com os documentos assinados (entram em Reply-To da carta de assinatura, a par de {mailbox}).',
     'Estas personas reciben también las respuestas de los clientes con los documentos firmados (entran en Reply-To de la carta de firma, junto a {mailbox}).',
@@ -266,8 +262,8 @@ export const approvals = {
     'Incluir a los Team Leaders de las zonas',
   ],
   'recipients.includeTeamLeadersHint': [
-    'O TL da zona de cada cliente entra em CC nos emails que lhe são enviados. Desliga durante os testes para não incomodar os TLs — os envios continuam a funcionar, apenas sem eles em cópia.',
-    'El TL de la zona de cada cliente entra en copia en los correos que se le envían. Desactívalo durante las pruebas para no molestar a los TL — los envíos siguen funcionando, solo que sin ellos en copia.',
+    'O TL da zona de cada hospital entra em CC em todos os emails do processo (validação dos engenheiros e da equipa, proposta e carta ao cliente) e no Reply-To da carta, até a carta assinada chegar. Desliga durante os testes para não incomodar os TLs — os envios continuam a funcionar, apenas sem eles em cópia.',
+    'El TL de la zona de cada hospital entra en copia en todos los correos del proceso (validación de los ingenieros y del equipo, propuesta y carta al cliente) y en el Reply-To de la carta, hasta que llega la carta firmada. Desactívalo durante las pruebas para no molestar a los TL — los envíos siguen funcionando, solo que sin ellos en copia.',
   ],
   'recipients.empty': ['Sem destinatários configurados.', 'Sin destinatarios configurados.'],
   'recipients.activeTitle': ['Ativo — recebe os emails', 'Activo — recibe los correos'],

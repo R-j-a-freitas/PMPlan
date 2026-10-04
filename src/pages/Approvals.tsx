@@ -590,30 +590,35 @@ function ApprovalsContent() {
     const subject = isSignatureLetter
       ? withReferenceCode(rendered.subject, proposal.reference_code)
       : rendered.subject;
-    // CC = quem envia (sempre) + destinatários fixos activos (email_recipients, geridos na
-    // app) + o Team Leader da zona, nos emails que vão para o cliente. Desactivar alguém na
-    // tab "Destinatários em CC" tira-o daqui sem mexer no código.
+    // CC = destinatários fixos activos (email_recipients) + o Team Leader da zona. Quem
+    // envia não entra sozinho: se quiser receber, acrescenta-se à lista em "Destinatários
+    // em CC", como qualquer outra pessoa. Tira-se do loop no "Ativo" / no interruptor dos
+    // TLs, sem mexer no código.
     const fixedCc = recipients.filter((recipient) => recipient.active).map((recipient) => recipient.email);
-    // O TL entra só nos envios ao cliente (proposta e carta de assinatura), que é onde a
-    // regra se aplica — o email de validação ao engenheiro é interno e não passa por ele.
-    // Quem for TL da zona *e* engenheiro das PMs não recebe duas vezes: o Set desduplica.
-    const isClientEmail = step === 'client_proposal' || step === 'signature_letter';
-    // O interruptor "Incluir os Team Leaders das zonas" (Aprovações → Destinatários em CC)
-    // permite tirá-los do loop durante os testes, tal como o "Ativo" de cada pessoa.
+    // O TL acompanha o processo todo — validação dos engenheiros e da equipa da zona,
+    // proposta e carta ao cliente, e os reenvios — até a carta assinada chegar (stage
+    // 'signed', posto pelo trigger da 0022 quando o documento é arquivado). Antes só ia
+    // nos envios ao cliente, e o TL não via a validação interna.
     const teamLeaderCc =
-      isClientEmail && includeTeamLeaders && bundle.teamLeader?.email ? [bundle.teamLeader.email] : [];
+      includeTeamLeaders && proposal.stage !== 'signed' && bundle.teamLeader?.email ? [bundle.teamLeader.email] : [];
     // A caixa de documentos vai só em Reply-To, NUNCA em CC. Em CC, a nossa própria carta
     // era entregue à caixa e o webhook arquivava o PDF por assinar que acabáramos de
     // enviar — ficavam dois documentos por hospital, um deles inútil. O Reply-To sozinho
     // faz o trabalho todo: basta o cliente carregar em "Responder".
-    const cc = [...new Set([...(profile?.email ? [profile.email] : []), ...fixedCc, ...teamLeaderCc])];
-    // Reply-To da carta: a caixa de documentos (que arquiva), quem enviou, e os
-    // destinatários fixos activos. Estes últimos estão aqui porque uma resposta do cliente
+    // Quem já vai em Para não se repete em CC (ex: o TL que também é da equipa da zona,
+    // ou quem envia sendo um dos engenheiros).
+    const toLower = new Set(to.map((email) => email.toLowerCase()));
+    const cc = [...new Set([...fixedCc, ...teamLeaderCc])].filter(
+      (email) => !toLower.has(email.toLowerCase()),
+    );
+    // Reply-To da carta: a caixa de documentos (que arquiva) e os destinatários fixos
+    // activos. Estes últimos estão aqui porque uma resposta do cliente
     // só chega a quem está em Reply-To — estar em CC do email que sai não faz receber a
     // resposta que entra, e a Teresa (contacto Elekta) tem de ver os documentos assinados
-    // à medida que chegam, não só o pedido que os originou.
+    // à medida que chegam, não só o pedido que os originou. O TL também, porque a carta
+    // assinada é o fim do processo que ele acompanha.
     const replyTo = isSignatureLetter
-      ? [...new Set([...(profile?.email ? [profile.email] : []), ...fixedCc, SIGNED_DOCUMENTS_MAILBOX])]
+      ? [...new Set([...fixedCc, ...teamLeaderCc, SIGNED_DOCUMENTS_MAILBOX])]
       : undefined;
 
     const messageId = await sendProposalEmail({

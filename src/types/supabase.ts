@@ -200,7 +200,7 @@ export type Database = {
       // trata-o como unknown e cada chave é lida com o tipo que lhe corresponde.
       app_settings: {
         Row: { key: string; value: unknown; description: string | null; updated_at: string; updated_by: string | null };
-        Insert: { key: string; value: unknown; description?: string | null };
+        Insert: { key: string; value: unknown; description?: string | null; updated_at?: string; updated_by?: string | null };
         Update: { value?: unknown; updated_at?: string; updated_by?: string | null };
         Relationships: [];
       };
