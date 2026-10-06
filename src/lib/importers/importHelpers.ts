@@ -10,6 +10,17 @@ export function parseBooleanPt(value: string | undefined, defaultValue: boolean)
   return defaultValue;
 }
 
+/** Código postal lido de uma folha de cálculo. O Excel guarda-o muitas vezes como número:
+ *  os espanhóis das províncias 01–09 (Barcelona 08…, Alicante 03…) perdem o zero à
+ *  esquerda e os portugueses o hífen. Repõe 5 dígitos em ES e NNNN-NNN em PT; o resto
+ *  (já formatado, ou incompleto) passa como está. */
+export function normalizePostalCode(value: string | undefined, country: 'PT' | 'ES'): string {
+  const text = (value ?? '').trim();
+  if (country === 'PT' && /^\d{7}$/.test(text)) return `${text.slice(0, 4)}-${text.slice(4)}`;
+  if (country === 'ES' && /^\d{4}$/.test(text)) return `0${text}`;
+  return text;
+}
+
 export function boolToPt(value: boolean): string {
   return value ? 'Sim' : 'Não';
 }

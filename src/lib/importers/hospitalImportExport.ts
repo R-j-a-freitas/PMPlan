@@ -2,7 +2,7 @@ import type { Country, HospitalInsert, HospitalUpdate, HospitalWithZone, Zone } 
 import { toSpanishRegionCode } from '../spanishRegions';
 import type { ImportRef, ParsedImportRow } from '../spreadsheet';
 import type { ImportAliases } from './importHelpers';
-import { boolToPt, parseBooleanPt, resolveRef } from './importHelpers';
+import { boolToPt, normalizePostalCode, parseBooleanPt, resolveRef } from './importHelpers';
 
 const COUNTRY_LABELS: Record<Country, string> = { PT: 'Portugal', ES: 'Espanha' };
 
@@ -139,7 +139,7 @@ export function parseHospitalImportRows(
       set('short_name', row['Nome curto']?.trim() || undefined);
       set('letter_name', row['Nome carta']?.trim() || undefined);
       set('address', row['Morada']?.trim() || undefined);
-      set('postal_code', row['Código postal']?.trim() || undefined);
+      set('postal_code', normalizePostalCode(row['Código postal'], country ?? existing.country) || undefined);
       set('country', country ?? undefined);
       const localityValue = row['Localidade']?.trim();
       set('locality', localityValue ? importedLocality(localityValue, country ?? existing.country) : undefined);
@@ -193,7 +193,7 @@ export function parseHospitalImportRows(
       short_name: row['Nome curto'] || null,
       letter_name: row['Nome carta'] || null,
       address: row['Morada'] || null,
-      postal_code: row['Código postal'] || null,
+      postal_code: normalizePostalCode(row['Código postal'], country) || null,
       country,
       locality: row['Localidade']?.trim() ? importedLocality(row['Localidade'].trim(), country) : null,
       city: country === 'ES' ? row['Cidade'] || null : null,

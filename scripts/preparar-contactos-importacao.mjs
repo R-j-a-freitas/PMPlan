@@ -48,6 +48,17 @@ const DESTINO_HOSPITAIS = 'DOCS/XLS/hospitais-importacao-ES.xlsx';
 
 // ─── Normalização e limpeza ──────────────────────────────────────────────────
 
+/** O Excel guarda o código postal como número: os espanhóis das províncias 01–09
+ *  (Barcelona 08…, Alicante 03…) perdem o zero à esquerda e os portugueses perdem o
+ *  hífen. Repõe 5 dígitos em ES e NNNN-NNN em PT; o resto passa como está. */
+function formatarCodigoPostal(valor, pais) {
+  const texto = String(valor ?? '').trim();
+  const p = String(pais ?? '').trim().toUpperCase();
+  if (p === 'PT' && /^\d{7}$/.test(texto)) return `${texto.slice(0, 4)}-${texto.slice(4)}`;
+  if (p !== 'PT' && /^\d{4}$/.test(texto)) return `0${texto}`;
+  return texto;
+}
+
 const TITULOS = /^(d\.|dª|dna\.?|dña\.?|don|doña|dr\.?a?\.?|sr\.?a?\.?|sra\.?|prof\.?)$/i;
 
 function semAcentos(value) {
@@ -183,7 +194,7 @@ const brutos = linhas.slice(1).map((linha) => ({
   nomeCarta: String(linha[5] ?? '').trim(),
   morada: String(linha[6] ?? '').trim(),
   cidade: String(linha[7] ?? '').trim(),
-  codigoPostal: String(linha[8] ?? '').trim(),
+  codigoPostal: formatarCodigoPostal(linha[8], linha[2]),
   nome: String(linha[9] ?? '').trim(),
   telefone: String(linha[10] ?? '').trim(),
   movel: String(linha[11] ?? '').trim(),

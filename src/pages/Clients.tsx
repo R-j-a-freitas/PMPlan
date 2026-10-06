@@ -36,11 +36,32 @@ import {
 } from '../components/ui';
 import { useT, type TFunction, type TranslationKey } from '../i18n';
 
-const EMPTY_FORM = { name: '', shortName: '', country: 'PT' as Country, locality: '', city: '', zoneId: '' };
+const EMPTY_FORM = {
+  name: '',
+  shortName: '',
+  country: 'PT' as Country,
+  locality: '',
+  city: '',
+  zoneId: '',
+  letterName: '',
+  address: '',
+  postalCode: '',
+  elektaId: '',
+};
 
 const COUNTRY_LABEL_KEYS: Record<Country, TranslationKey> = { PT: 'country.PT', ES: 'country.ES' };
 
-type HospitalSortKey = 'name' | 'shortName' | 'country' | 'locality' | 'city' | 'zone' | 'contacts';
+type HospitalSortKey =
+  | 'name'
+  | 'shortName'
+  | 'letterName'
+  | 'country'
+  | 'locality'
+  | 'city'
+  | 'address'
+  | 'elektaId'
+  | 'zone'
+  | 'contacts';
 
 /** Localidade como a coluna a mostra: o concelho em PT, o nome da Comunidade Autónoma
  *  em ES ("Galiza" e não "ES-GA", que é o código que a Nager.Date usa). */
@@ -63,9 +84,12 @@ function hospitalSortAccessors(
   return {
     name: (hospital) => hospital.name,
     shortName: (hospital) => hospital.short_name,
+    letterName: (hospital) => hospital.letter_name,
     country: (hospital) => hospital.country,
     locality: localityLabel,
     city: (hospital) => hospital.city,
+    address: (hospital) => hospital.address,
+    elektaId: (hospital) => hospital.elekta_id,
     zone: (hospital) => hospital.zone_code,
     contacts: (hospital) => contactNames(contactsByHospital.get(hospital.id) ?? []),
   };
@@ -84,6 +108,10 @@ function hospitalSearchFields(
   return [
     hospital.name,
     hospital.short_name,
+    hospital.letter_name,
+    hospital.address,
+    hospital.postal_code,
+    hospital.elekta_id,
     hospital.country,
     t(COUNTRY_LABEL_KEYS[hospital.country]),
     localityLabel(hospital),
@@ -267,6 +295,31 @@ function HospitalFormModal({
         zones={zones}
         placeholder={t('hospitals.field.zoneRequired')}
       />
+      {/* Dados da lista do cliente (migração 0021) — opcionais. */}
+      <input
+        placeholder={t('hospitals.field.letterName')}
+        className="col-span-2 pm-field"
+        value={form.letterName}
+        onChange={(event) => setForm({ ...form, letterName: event.target.value })}
+      />
+      <input
+        placeholder={t('hospitals.field.address')}
+        className="col-span-2 pm-field"
+        value={form.address}
+        onChange={(event) => setForm({ ...form, address: event.target.value })}
+      />
+      <input
+        placeholder={t('hospitals.field.postalCode')}
+        className="pm-field"
+        value={form.postalCode}
+        onChange={(event) => setForm({ ...form, postalCode: event.target.value })}
+      />
+      <input
+        placeholder={t('hospitals.field.elektaId')}
+        className="pm-field"
+        value={form.elektaId}
+        onChange={(event) => setForm({ ...form, elektaId: event.target.value })}
+      />
     </FormModal>
   );
 }
@@ -367,7 +420,10 @@ export function Clients() {
       await createHospital({
         name: form.name,
         short_name: form.shortName || null,
-        address: null,
+        letter_name: form.letterName.trim() || null,
+        address: form.address.trim() || null,
+        postal_code: form.postalCode.trim() || null,
+        elekta_id: form.elektaId.trim() || null,
         country: form.country,
         locality: form.locality || null,
         city: form.country === 'ES' ? form.city || null : null,
@@ -442,6 +498,10 @@ export function Clients() {
     locality: string | null;
     city: string | null;
     zone_id: string;
+    letter_name: string | null;
+    address: string | null;
+    postal_code: string | null;
+    elekta_id: string | null;
   }) {
     setEditingId(hospital.id);
     setEditForm({
@@ -451,6 +511,10 @@ export function Clients() {
       locality: hospital.locality ?? '',
       city: hospital.city ?? '',
       zoneId: hospital.zone_id,
+      letterName: hospital.letter_name ?? '',
+      address: hospital.address ?? '',
+      postalCode: hospital.postal_code ?? '',
+      elektaId: hospital.elekta_id ?? '',
     });
   }
 
@@ -465,6 +529,10 @@ export function Clients() {
         locality: editForm.locality || null,
         city: editForm.country === 'ES' ? editForm.city || null : null,
         zone_id: editForm.zoneId,
+        letter_name: editForm.letterName.trim() || null,
+        address: editForm.address.trim() || null,
+        postal_code: editForm.postalCode.trim() || null,
+        elekta_id: editForm.elektaId.trim() || null,
       });
       setEditingId(null);
     } catch (err) {
@@ -518,9 +586,12 @@ export function Clients() {
             <tr>
               <SortableTh {...sortableProps('name')}>{t('common.name')}</SortableTh>
               <SortableTh {...sortableProps('shortName')}>{t('hospitals.col.shortName')}</SortableTh>
+              <SortableTh {...sortableProps('letterName')}>{t('hospitals.col.letterName')}</SortableTh>
               <SortableTh {...sortableProps('country')}>{t('common.country')}</SortableTh>
               <SortableTh {...sortableProps('locality')}>{t('common.locality')}</SortableTh>
               <SortableTh {...sortableProps('city')}>{t('common.city')}</SortableTh>
+              <SortableTh {...sortableProps('address')}>{t('hospitals.col.address')}</SortableTh>
+              <SortableTh {...sortableProps('elektaId')}>{t('hospitals.col.elektaId')}</SortableTh>
               <SortableTh {...sortableProps('zone')}>{t('common.zone')}</SortableTh>
               <SortableTh {...sortableProps('contacts')}>{t('common.contacts')}</SortableTh>
               <th className="py-1.5 pr-2" />
@@ -550,6 +621,14 @@ export function Clients() {
                           className="pm-field w-full"
                           value={editForm.shortName}
                           onChange={(event) => setEditForm({ ...editForm, shortName: event.target.value })}
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <input
+                          className="pm-field w-full"
+                          placeholder={t('hospitals.field.letterName')}
+                          value={editForm.letterName}
+                          onChange={(event) => setEditForm({ ...editForm, letterName: event.target.value })}
                         />
                       </td>
                       <td className="py-1.5 pr-2">
@@ -588,6 +667,30 @@ export function Clients() {
                         )}
                       </td>
                       <td className="py-1.5 pr-2">
+                        <div className="flex flex-col gap-1">
+                          <input
+                            className="pm-field w-full"
+                            placeholder={t('hospitals.field.address')}
+                            value={editForm.address}
+                            onChange={(event) => setEditForm({ ...editForm, address: event.target.value })}
+                          />
+                          <input
+                            className="pm-field w-28"
+                            placeholder={t('hospitals.field.postalCode')}
+                            value={editForm.postalCode}
+                            onChange={(event) => setEditForm({ ...editForm, postalCode: event.target.value })}
+                          />
+                        </div>
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <input
+                          className="pm-field w-24"
+                          placeholder={t('hospitals.field.elektaId')}
+                          value={editForm.elektaId}
+                          onChange={(event) => setEditForm({ ...editForm, elektaId: event.target.value })}
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2">
                         <ZoneSelect
                           value={editForm.zoneId}
                           onChange={(zoneId) => setEditForm({ ...editForm, zoneId })}
@@ -613,6 +716,7 @@ export function Clients() {
                     <>
                       <td className="py-1.5 pr-2">{hospital.name}</td>
                       <td className="py-1.5 pr-2">{hospital.short_name}</td>
+                      <td className="py-1.5 pr-2 text-xs">{hospital.letter_name ?? '—'}</td>
                       <td className="py-1.5 pr-2">{hospital.country}</td>
                       <td className="py-1.5 pr-2">
                         {hospital.locality
@@ -622,6 +726,17 @@ export function Clients() {
                           : '—'}
                       </td>
                       <td className="py-1.5 pr-2">{hospital.city ?? '—'}</td>
+                      <td className="py-1.5 pr-2 text-xs">
+                        {hospital.address || hospital.postal_code ? (
+                          <>
+                            {hospital.address && <div>{hospital.address}</div>}
+                            {hospital.postal_code && <div className="text-gray-500">{hospital.postal_code}</div>}
+                          </>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2 font-mono text-xs">{hospital.elekta_id ?? '—'}</td>
                       <td className="py-1.5 pr-2">
                         <Badge variant="neutral">{hospital.zone_code}</Badge>
                       </td>
@@ -662,7 +777,7 @@ export function Clients() {
                 </tr>
                 {documentsOpen && !editing && canViewSignedDocuments && (
                   <tr className="pm-row-detail bg-gray-50">
-                    <td colSpan={8} className="p-2">
+                    <td colSpan={11} className="p-2">
                       <HospitalSignedDocuments hospitalId={hospital.id} />
                     </td>
                   </tr>
