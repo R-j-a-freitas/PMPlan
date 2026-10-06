@@ -49,6 +49,7 @@ export const calendar = {
   'sidebar.allMasc': ['Todos', 'Todos'],
   'sidebar.noZone': ['Sem zona', 'Sin zona'],
   'sidebar.searchEquipment': ['Procurar equipamento…', 'Buscar equipo…'],
+  'sidebar.equipmentSearch': ['Procurar equipamentos', 'Buscar equipos'],
   'sidebar.showAllInCalendar': [
     'Mostrar todos no calendário',
     'Mostrar todos en el calendario',

@@ -17,10 +17,11 @@ interface SidebarSectionProps {
 }
 
 // Cabeçalho colapsável partilhado por todas as secções da Sidebar (Zonas, Engenheiros,
-// Equipamentos, Carga…) — colapsar esconde o conteúdo só visualmente, para poupar espaço;
-// não mexe em nenhuma selecção/filtro, que continuam a vir das stores. Mesma seta ▸/▾ já
-// usada nas zonas dentro de cada secção.
-export function SidebarSection({ title, titleAccessory, defaultCollapsed = false, children }: SidebarSectionProps) {
+// Equipamentos, Procurar equipamentos, Carga…) — colapsar esconde o conteúdo só
+// visualmente, para poupar espaço; não mexe em nenhuma selecção/filtro, que continuam a vir
+// das stores. Mesma seta ▸/▾ já usada nas zonas dentro de cada secção. Começam fechadas:
+// a coluna abre como um índice das secções e cada um abre só o que vai usar.
+export function SidebarSection({ title, titleAccessory, defaultCollapsed = true, children }: SidebarSectionProps) {
   const t = useT();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 

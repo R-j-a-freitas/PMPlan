@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Draggable } from '@fullcalendar/interaction';
 import { useAuthStore, useEquipmentStore, useZoneStore } from '../../stores';
 import { buildModalityScopeMatcher } from '../../lib/modalityScope';
 import type { EquipmentFull } from '../../types';
 import { Badge } from '../ui';
 import { useT } from '../../i18n';
+import { SidebarSection } from './SidebarSection';
 
 // Pesquisa dinâmica por TODOS os campos visíveis/relevantes da lista, não só o nome —
 // equipamento, fabricante, modelo, modalidade, nº de série, hospital e zona.
@@ -49,7 +50,11 @@ export function EquipmentList() {
   const toggleEquipmentSelection = useEquipmentStore((state) => state.toggleEquipmentSelection);
   const setSelectedEquipmentIds = useEquipmentStore((state) => state.setSelectedEquipmentIds);
   const zones = useZoneStore((state) => state.zones);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Ref por estado e não useRef: a lista vive numa secção colapsável, por isso o elemento
+  // aparece e desaparece. Assim o Draggable é criado sempre que a lista se abre e
+  // destruído quando se fecha — com useRef ficava preso ao primeiro elemento (ou a nenhum,
+  // se a secção começasse fechada) e o arrastar para o calendário deixava de funcionar.
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
 
   // O filtro de modalidades é por par (zona-mãe, modalidade): a chave marcada na sidebar
   // traz a zona-mãe e o equipamento está numa zona-folha, daí o matcher em vez de um includes.
@@ -59,8 +64,8 @@ export function EquipmentList() {
   );
 
   useEffect(() => {
-    if (!containerRef.current || !canCreatePM) return;
-    const draggable = new Draggable(containerRef.current, {
+    if (!container || !canCreatePM) return;
+    const draggable = new Draggable(container, {
       itemSelector: '.pmplan-equipment-item',
       eventData: (el) => ({
         title: el.dataset['name'],
@@ -74,7 +79,7 @@ export function EquipmentList() {
       }),
     });
     return () => draggable.destroy();
-  }, [canCreatePM]);
+  }, [container, canCreatePM]);
 
   const filtered = equipment.filter((item) => {
     if (filters.zoneIds.length > 0 && !filters.zoneIds.includes(item.zone_id)) return false;
@@ -97,7 +102,7 @@ export function EquipmentList() {
   }
 
   return (
-    <div className="border-b border-gray-200 px-2 py-1.5">
+    <SidebarSection title={t('sidebar.equipmentSearch')}>
       {/* `text-xs py-1` vencem o `text-sm py-1.5` do .pm-field: as utilitárias saem
           depois da camada de componentes no CSS gerado. */}
       <input
@@ -113,7 +118,7 @@ export function EquipmentList() {
           {t('sidebar.showAllInCalendar')}
         </label>
       )}
-      <div ref={containerRef} className="flex flex-col gap-0.5">
+      <div ref={setContainer} className="flex flex-col gap-0.5">
         {filtered.map((item) => {
           const armed = item.id === selectedEquipmentId;
           return (
@@ -149,6 +154,6 @@ export function EquipmentList() {
           );
         })}
       </div>
-    </div>
+    </SidebarSection>
   );
 }
