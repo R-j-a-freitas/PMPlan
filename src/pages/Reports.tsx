@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { PageShell } from '../app/PageShell';
 import { exportPMEventsToExcel, exportPMEventsToPdf } from '../lib/exporters';
-import type { PMReportRow } from '../lib/exporters';
-import { useCalendarStore, useEngineerStore, useEquipmentStore } from '../stores';
+import type { PMReportRow, ReportMeta } from '../lib/exporters';
+import { useAuthStore, useCalendarStore, useEngineerStore, useEquipmentStore, useUiStore } from '../stores';
 import { Badge, Button, Card, EmptyState, PageHeader, SortableTh } from '../components/ui';
 import { useTableSort } from '../hooks';
 import type { SortAccessors } from '../hooks';
@@ -134,7 +134,53 @@ export function Reports() {
 
   const reportSort = useMemo(() => buildReportSort(t), [t]);
   const { rows, sortableProps } = useTableSort(filteredRows, reportSort, 'startDate');
+  const profile = useAuthStore((state) => state.profile);
+  const pushToast = useUiStore((state) => state.pushToast);
+  const [exporting, setExporting] = useState(false);
 
+  // Cabeçalho dos ficheiros exportados: o que foi exportado (ano, filtros, nº de PMs), por
+  // quem e quando — para quem recebe o PDF/Excel saber o que tem na mão sem ver a app.
+  function reportMeta(): ReportMeta {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, '0');
+    const when = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const who = profile?.name || profile?.email || '';
+    return {
+      title: t('reports.file.title'),
+      subtitle: t('reports.file.subtitle', { year, count: rows.length }),
+      filters: [
+        `${t('common.modality')}: ${modalityFilter || t('reports.allFem')}`,
+        `${t('common.hospital')}: ${hospitalFilter || t('reports.allMasc')}`,
+        `${t('common.engineer')}: ${engineerFilter || t('reports.allMasc')}`,
+      ].join('  ·  '),
+      generated: who ? t('reports.file.generatedBy', { when, who }) : t('reports.file.generated', { when }),
+      columns: {
+        equipmentName: t('common.equipment'),
+        modality: t('common.modality'),
+        hospitalName: t('common.hospital'),
+        zoneName: t('common.zone'),
+        engineerName: t('common.engineer'),
+        startDate: t('common.start'),
+        endDate: t('common.end'),
+        status: t('common.status'),
+        notes: t('common.notes'),
+      },
+      statusLabel: (status) => (status in PM_STATUS_KEYS ? t(PM_STATUS_KEYS[status as PMStatus]) : status),
+      pageLabel: (page, total) => t('reports.file.page', { page, total }),
+    };
+  }
+
+  async function handleExport(kind: 'pdf' | 'xlsx') {
+    setExporting(true);
+    try {
+      if (kind === 'pdf') await exportPMEventsToPdf(rows, reportMeta(), `pmplan-${year}.pdf`);
+      else await exportPMEventsToExcel(rows, reportMeta(), `pmplan-${year}.xlsx`);
+    } catch (err) {
+      pushToast({ variant: 'error', message: err instanceof Error ? err.message : t('reports.file.failed') });
+    } finally {
+      setExporting(false);
+    }
+  }
   return (
     <PageShell>
       <PageHeader
@@ -144,12 +190,12 @@ export function Reports() {
           <>
             <Button
               variant="secondary"
-              onClick={() => exportPMEventsToPdf(rows, `pmplan-${year}.pdf`)}
-              disabled={rows.length === 0}
+              onClick={() => handleExport('pdf')}
+              disabled={rows.length === 0 || exporting}
             >
               {t('reports.exportPdf')}
             </Button>
-            <Button onClick={() => exportPMEventsToExcel(rows, `pmplan-${year}.xlsx`)} disabled={rows.length === 0}>
+            <Button onClick={() => handleExport('xlsx')} disabled={rows.length === 0 || exporting}>
               {t('reports.exportExcel')}
             </Button>
           </>
