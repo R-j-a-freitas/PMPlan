@@ -66,6 +66,14 @@ const CALENDAR_VIEWS = {
 const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, listPlugin, multiMonthPlugin, interactionPlugin];
 const TIME_FORMAT_24H = { hour: '2-digit', minute: '2-digit', hour12: false } as const;
 
+/** Ano a que pertence o período mostrado: o do dia do meio de [currentStart, currentEnd[.
+ *  Na vista Ano/Trimestre/Mês dá o mesmo que o primeiro dia; numa semana que atravessa a
+ *  passagem de ano, dá o ano da quinta-feira (a mesma regra da semana ISO). */
+function viewYearOf(view: { currentStart: Date; currentEnd: Date }): number {
+  const middle = new Date((view.currentStart.getTime() + view.currentEnd.getTime()) / 2);
+  return middle.getFullYear();
+}
+
 export interface CreateEventPrefill {
   equipmentId: string;
   engineerId: string;
@@ -110,8 +118,23 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
   const permissions = useAuthStore((state) => state.permissions);
   const { handleEventDrop, handleEventResize } = useDragDrop();
 
+  // Ao passar para Trimestre/Mês/Semana, ir para o período de hoje — senão ficava na data
+  // em que a vista Ano estava, que é sempre 1 de Janeiro. Planear outro ano não pode mudar
+  // o ano de planeamento: aí vai-se para o mesmo dia e mês de hoje, mas no ano planeado
+  // (29/02 cai em 28/02 num ano comum). A vista Ano fica no ano em que está.
   useEffect(() => {
-    calendarRef.current?.getApi().changeView(activeView);
+    const api = calendarRef.current?.getApi();
+    if (!api) return;
+    if (activeView === 'multiMonthYear') {
+      api.changeView(activeView);
+      return;
+    }
+    const today = new Date();
+    const year = useCalendarStore.getState().planningYear;
+    const lastDay = new Date(year, today.getMonth() + 1, 0).getDate();
+    const target =
+      today.getFullYear() === year ? today : new Date(year, today.getMonth(), Math.min(today.getDate(), lastDay));
+    api.changeView(activeView, target);
   }, [activeView, calendarRef]);
 
   // "obrigatório separar os anos": mudar o ano de planeamento (Topbar) navega o
@@ -120,8 +143,12 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
   // PARTIR da própria navegação do calendário (setas ‹ › da CalendarToolbar → datesSet).
   useEffect(() => {
     const api = calendarRef.current?.getApi();
-    if (api && api.getDate().getFullYear() !== planningYear) {
-      api.gotoDate(`${planningYear}-01-01`);
+    if (api && viewYearOf(api.view) !== planningYear) {
+      // 4 de Janeiro e não 1: a semana que contém o dia 4 tem sempre a quinta-feira (o
+      // meio da semana, que é por onde viewYearOf lê o ano) dentro do próprio ano. Com o
+      // dia 1, a vista Semana podia ficar numa semana "do ano anterior" e puxar o ano de
+      // planeamento para trás, em cadeia, até 2024.
+      api.gotoDate(`${planningYear}-01-04`);
     }
   }, [planningYear, calendarRef]);
 
@@ -316,9 +343,9 @@ export function MainCalendar({ calendarRef, onSelectEvent, onCreateEvent }: Main
       // Navegar o calendário (setas ‹ ›, "Hoje", ou o próprio Topbar) mantém o
       // planningYear alinhado com o ano em vista — senão a geração de plano usaria um
       // ano diferente do que o utilizador está a ver (bug: ver 2027, gerar 2026).
-      // currentStart é o início do período activo (Jan do ano na vista Ano/Trimestre;
-      // 1.º dia do mês na vista Mês), não o intervalo com dias de padding.
-      const viewYear = arg.view.currentStart.getFullYear();
+      // O ano lê-se pelo meio do período activo (viewYearOf), não pelo primeiro dia: a
+      // semana de 1/1/2026 começa a 29/12/2025 e, lida pelo início, contava como 2025.
+      const viewYear = viewYearOf(arg.view);
       if (viewYear !== latest.current.planningYear) setPlanningYear(viewYear);
     },
     [fetchEvents, setVisibleTitle, setPlanningYear],
