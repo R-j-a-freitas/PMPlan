@@ -3,3 +3,4 @@ export * from './CalendarToolbar';
 export * from './EventContent';
 export * from './HolidayLayer';
 export * from './ConflictIndicator';
+export * from './PmsOnHolidaysAlert';

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type FullCalendar from '@fullcalendar/react';
 import { Topbar } from '../app/Topbar';
 import { Sidebar } from '../components/sidebar';
-import { CalendarToolbar, MainCalendar } from '../components/calendar';
+import { CalendarToolbar, MainCalendar, PmsOnHolidaysAlert } from '../components/calendar';
 import { AutoSchedulerModal, PMEventModal } from '../components/modals';
 import type { PMEventModalInitial } from '../components/modals';
 import { useHolidays } from '../hooks';
@@ -70,6 +70,7 @@ export function Dashboard() {
               ) : undefined
             }
           />
+          <PmsOnHolidaysAlert />
           <div className="flex-1 overflow-hidden">
             <MainCalendar
               calendarRef={calendarRef}

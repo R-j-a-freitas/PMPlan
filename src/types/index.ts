@@ -13,3 +13,4 @@ export * from './user';
 export * from './clientProposal';
 export * from './systemHealth';
 export * from './signedDocument';
+export * from './pmHolidayConfirmation';

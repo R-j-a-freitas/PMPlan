@@ -13,6 +13,7 @@ import {
   useEngineerStore,
   useEquipmentStore,
   useHolidayStore,
+  usePmHolidayConfirmationStore,
   useZoneStore,
 } from '../stores';
 import type { ConflictResult } from '../types';
@@ -36,6 +37,7 @@ export function useConflictEngine() {
   const equipment = useEquipmentStore((state) => state.equipment);
   const engineers = useEngineerStore((state) => state.engineers);
   const zones = useZoneStore((state) => state.zones);
+  const holidayConfirmations = usePmHolidayConfirmationStore((state) => state.confirmations);
   const setActiveConflicts = useConflictStore((state) => state.setActiveConflicts);
 
   // Regras 7/8 (hospital/cidade) — classifica os eventos existentes pelo local do
@@ -74,6 +76,15 @@ export function useConflictEngine() {
         cityKey: cityKeyOfEquipment(targetEquipment),
         siteIndex,
         citySameDayWarningOnly: isCitySameDayExempt(targetEquipment.zone_id, zones),
+        ...(params.excludeEventId
+          ? {
+              confirmedHolidayDates: new Set(
+                holidayConfirmations
+                  .filter((row) => row.pm_event_id === params.excludeEventId)
+                  .map((row) => row.holiday_date.slice(0, 10)),
+              ),
+            }
+          : {}),
         ...(params.excludeEventId ? { excludeEventId: params.excludeEventId } : {}),
       });
 
@@ -102,7 +113,7 @@ export function useConflictEngine() {
       setActiveConflicts(results);
       return results;
     },
-    [events, yearEvents, holidays, equipment, engineers, zones, siteIndex, setActiveConflicts],
+    [events, yearEvents, holidays, equipment, engineers, zones, siteIndex, holidayConfirmations, setActiveConflicts],
   );
 
   return { validate };

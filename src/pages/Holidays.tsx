@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageShell } from '../app/PageShell';
 import { useHolidays, useTableSort } from '../hooks';
 import type { SortAccessors } from '../hooks';
@@ -18,7 +19,7 @@ import {
 import type { Country, Holiday, HolidayRule, Zone } from '../types';
 import { matchesSearch } from '../lib/searchText';
 import { Button, Card, EmptyState, FormModal, PageHeader, SearchInput, SortableTh } from '../components/ui';
-import { HolidayRuleFormModal, HolidayRulesCard, HolidaySourcesNote } from '../components/holidays';
+import { HolidayRuleFormModal, HolidayRulesCard, HolidaySourcesNote, PmsOnHolidaysCard } from '../components/holidays';
 import { spanishCityCalendarUrl } from '../lib/holidayReferenceLinks';
 import { describeRule, formToRuleFields, ruleToForm, type HolidayRuleForm } from '../lib/holidayRuleForm';
 import { useT, type TFunction } from '../i18n';
@@ -233,7 +234,10 @@ export function Holidays() {
   const updateHolidayRule = useHolidayRuleStore((state) => state.updateRule);
   const deleteHolidayRule = useHolidayRuleStore((state) => state.deleteRule);
 
-  const [year, setYear] = useState(CURRENT_YEAR);
+  // ?year=2027 (vem do aviso "PMs em feriados" do calendário): abre já no ano certo.
+  const [searchParams] = useSearchParams();
+  const yearParam = Number(searchParams.get('year'));
+  const [year, setYear] = useState(YEAR_OPTIONS.includes(yearParam) ? yearParam : CURRENT_YEAR);
   const { holidays } = useHolidays(year);
   const [creatingHoliday, setCreatingHoliday] = useState(false);
   const [ruleEditing, setRuleEditing] = useState<RuleEditing | null>(null);
@@ -442,6 +446,10 @@ export function Holidays() {
       />
 
       <HolidaySourcesNote t={t} year={year} boeImport={boeImport} />
+
+      <div className="mb-4">
+        <PmsOnHolidaysCard t={t} year={year} holidays={holidays} />
+      </div>
 
       {/* Ano e procura numa barra só: a procura aplica-se às categorias e às regras em
           simultâneo, por isso pertence ao topo da página e não a cada secção. */}

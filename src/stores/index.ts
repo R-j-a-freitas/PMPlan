@@ -17,3 +17,4 @@ export * from './systemHealthStore';
 export * from './signedDocumentStore';
 export * from './appSettingsStore';
 export * from './languageStore';
+export * from './pmHolidayConfirmationStore';

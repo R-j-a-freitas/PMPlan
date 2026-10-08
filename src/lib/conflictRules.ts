@@ -12,7 +12,7 @@ import {
 } from 'date-fns';
 import type { Interval } from 'date-fns';
 import type { ConflictResult, Country, Equipment, EquipmentFull, EngineerWithZones, Holiday, PMEvent, WeekendWork, Zone } from '../types';
-import { toDisplayDate } from './dateFormat';
+import { addDaysToIsoDate, toDisplayDate } from './dateFormat';
 
 const ENGINEER_SUGGESTION_SEARCH_DAYS = 60;
 /** Acima deste rácio procura-vs-capacidade a zona é assinalada como sobrecarregada (alerta, não bloqueio). */
@@ -144,6 +144,25 @@ export function findEngineerOverlapInReassign(
 // da zona PMPlan (mesmo zone_id) + feriado municipal/regional oficial do hospital (mesma
 // locality — ex: feriado de Braga só bloqueia equipamento cujo hospital é em Braga, ou
 // "fiesta local" de Vigo via hospitalCity — distinto da Comunidade Autónoma).
+/** Os feriados que se aplicam a um hospital: nacionais do país, fecho operacional da zona,
+ *  e o municipal/regional da localidade ou da cidade do hospital. Partilhado pela Regra 2
+ *  (checkHolidayConflict) e pela revisão das PMs já marcadas (findPmsOnHolidays). */
+export function holidaysApplicableTo(
+  holidays: Holiday[],
+  zoneId: string,
+  country: Country,
+  hospitalLocality: string | null = null,
+  hospitalCity: string | null = null,
+): Holiday[] {
+  return holidays.filter(
+    (holiday) =>
+      holiday.zone_id === zoneId ||
+      (holiday.locality !== null && holiday.locality === hospitalLocality) ||
+      (holiday.locality !== null && holiday.locality === hospitalCity) ||
+      (holiday.zone_id === null && holiday.locality === null && holiday.country === country),
+  );
+}
+
 export function checkHolidayConflict(
   date: Date,
   zoneId: string,
@@ -152,14 +171,7 @@ export function checkHolidayConflict(
   hospitalLocality: string | null = null,
   hospitalCity: string | null = null,
 ): ConflictResult {
-  const applicableHolidays = holidays.filter(
-    (holiday) =>
-      holiday.zone_id === zoneId ||
-      (holiday.locality !== null && holiday.locality === hospitalLocality) ||
-      (holiday.locality !== null && holiday.locality === hospitalCity) ||
-      (holiday.zone_id === null && holiday.locality === null && holiday.country === zoneCountry),
-  );
-
+  const applicableHolidays = holidaysApplicableTo(holidays, zoneId, zoneCountry, hospitalLocality, hospitalCity);
   const matched = applicableHolidays.find((holiday) => isSameDay(new Date(holiday.date), date));
 
   if (!matched) return NO_CONFLICT;
@@ -179,6 +191,74 @@ export function checkHolidayConflict(
     messageParams: { name: matched.name },
     suggestedDate,
   };
+}
+
+// ─── REVISÃO: PMs JÁ MARCADAS QUE CAEM EM FERIADOS ───────────────────────────
+//
+// A Regra 2 só actua quando se cria, move ou gera uma PM. Os feriados de um ano ainda
+// mudam depois de o plano estar feito — o BOE publica os regionais de Espanha no fim de
+// Outubro, as câmaras as fiestas locales até Dezembro — e uma PM já marcada num dia que
+// passou a ser feriado ficava lá sem aviso. Esta função encontra-as.
+
+export interface PmOnHoliday {
+  event: PMEvent;
+  equipment: Pick<EquipmentFull, 'id' | 'name' | 'hospital_name' | 'zone_code'> | null;
+  /** Os feriados que coincidem com algum dia da PM (pode ser mais do que um). */
+  holidays: Holiday[];
+}
+
+/** Estados que ainda se podem mudar de data: as concluídas já aconteceram e as canceladas
+ *  não ocupam o dia. */
+const REVIEWABLE_STATUSES = new Set(['planned', 'confirmed', 'delayed', 'in_progress']);
+
+export function findPmsOnHolidays(
+  events: PMEvent[],
+  equipment: Pick<
+    EquipmentFull,
+    'id' | 'name' | 'hospital_name' | 'zone_code' | 'zone_id' | 'hospital_country' | 'hospital_locality' | 'hospital_city'
+  >[],
+  holidays: Holiday[],
+): PmOnHoliday[] {
+  const byId = new Map(equipment.map((item) => [item.id, item]));
+  const result: PmOnHoliday[] = [];
+  for (const event of events) {
+    if (!REVIEWABLE_STATUSES.has(event.status)) continue;
+    const eq = byId.get(event.equipment_id);
+    if (!eq) continue;
+    const applicable = holidaysApplicableTo(holidays, eq.zone_id, eq.hospital_country, eq.hospital_locality, eq.hospital_city);
+    if (applicable.length === 0) continue;
+    const byDate = new Map<string, Holiday[]>();
+    for (const holiday of applicable) {
+      const key = holiday.date.slice(0, 10);
+      byDate.set(key, [...(byDate.get(key) ?? []), holiday]);
+    }
+    const hits: Holiday[] = [];
+    // Datas em texto 'yyyy-MM-dd' do princípio ao fim: sem objectos Date, não há fuso
+    // horário a deslocar um feriado para o dia ao lado.
+    for (let day = event.start_date.slice(0, 10), guard = 0; day <= event.end_date.slice(0, 10) && guard < 60; guard++) {
+      hits.push(...(byDate.get(day) ?? []));
+      day = addDaysToIsoDate(day, 1);
+    }
+    if (hits.length > 0) result.push({ event, equipment: eq, holidays: hits });
+  }
+  return result.sort((a, b) => a.event.start_date.localeCompare(b.event.start_date));
+}
+
+/** Separa a revisão em por rever e confirmadas. Uma PM só sai de "por rever" quando TODOS
+ *  os seus dias de feriado estão confirmados; nas por rever ficam só os dias que faltam. */
+export function splitPmsOnHolidays(
+  rows: PmOnHoliday[],
+  confirmedByEvent: Map<string, Set<string>>,
+): { pending: PmOnHoliday[]; confirmed: PmOnHoliday[] } {
+  const pending: PmOnHoliday[] = [];
+  const confirmed: PmOnHoliday[] = [];
+  for (const row of rows) {
+    const dates = confirmedByEvent.get(row.event.id);
+    const open = row.holidays.filter((holiday) => !dates?.has(holiday.date.slice(0, 10)));
+    if (open.length === 0) confirmed.push(row);
+    else pending.push({ ...row, holidays: open });
+  }
+  return { pending, confirmed };
 }
 
 // Regra 5: fim-de-semana só com contrato que o permita. 'none' (ou ausente — fallback
@@ -680,6 +760,9 @@ export function validatePMPlacement(params: {
   siteIndex?: EquipmentSiteIndex;
   /** Zona isenta da Regra 8 (isCitySameDayExempt): o choque sai como aviso. */
   citySameDayWarningOnly?: boolean;
+  /** Dias de feriado já confirmados para esta PM ('yyyy-MM-dd', migração 0029): editar a
+   *  PM confirmada não pode voltar a ser bloqueado pelo mesmo feriado — sai como aviso. */
+  confirmedHolidayDates?: Set<string>;
 }): ConflictResult[] {
   const {
     engineerId,
@@ -698,12 +781,18 @@ export function validatePMPlacement(params: {
     cityKey = null,
     siteIndex,
     citySameDayWarningOnly = false,
+    confirmedHolidayDates,
   } = params;
 
   const results: ConflictResult[] = [];
 
   const holidayConflicts = eachDayOfInterval({ start: startDate, end: endDate })
-    .map((day) => checkHolidayConflict(day, zoneId, zoneCountry, holidays, hospitalLocality, hospitalCity))
+    .map((day) => {
+      const result = checkHolidayConflict(day, zoneId, zoneCountry, holidays, hospitalLocality, hospitalCity);
+      return result.hasConflict && confirmedHolidayDates?.has(format(day, 'yyyy-MM-dd'))
+        ? { ...result, warningOnly: true }
+        : result;
+    })
     .filter((result) => result.hasConflict);
   results.push(...holidayConflicts);
 

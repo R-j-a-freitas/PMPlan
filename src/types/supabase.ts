@@ -28,6 +28,8 @@ import type {
   HolidayInsert,
   HolidayRule,
   HolidayRuleInsert,
+  PmHolidayConfirmation,
+  PmHolidayConfirmationInsert,
   HolidayRuleUpdate,
   HolidaySyncRun,
   Hospital,
@@ -101,6 +103,12 @@ export type Database = {
         Row: PMEvent;
         Insert: PMEventInsert;
         Update: PMEventUpdate;
+        Relationships: [];
+      };
+      pm_holiday_confirmations: {
+        Row: PmHolidayConfirmation;
+        Insert: PmHolidayConfirmationInsert;
+        Update: Partial<PmHolidayConfirmationInsert>;
         Relationships: [];
       };
       source_changes: {
