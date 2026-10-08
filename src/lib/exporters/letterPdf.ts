@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { eachDayOfInterval } from 'date-fns';
 import type { ApprovalTrack, Country, EquipmentFull, PMEvent } from '../../types';
+import { SIGNED_DOCUMENTS_MAILBOX } from '../proposalEmail';
 
 /** Um dia de intervencao com o texto que o descreve. O texto e por DIA e nao por
  *  equipamento: a mesma maquina pode levar so a troca de fonte numa visita e a troca de
@@ -117,7 +118,7 @@ const COPY = {
     closing: [
       'Rogamos que en las fechas indicadas dejen el sistema a disposición de nuestros ingenieros a fin de poder realizar las revisiones.',
       'La realización de dichas intervenciones queda condicionada a la existencia de un contrato de mantenimiento en la fecha de intervención.',
-      'Les agradeceríamos nos devolvieran la copia firmada con su aceptación por correo electrónico (spainsupport@elekta.com / teresa.matos@elekta.com).',
+      `Les agradeceríamos nos devolvieran la copia firmada con su aceptación por correo electrónico (${SIGNED_DOCUMENTS_MAILBOX} / spainsupport@elekta.com / teresa.matos@elekta.com).`,
     ],
     farewell: 'Aprovechamos la ocasión para saludarles atentamente,',
     acceptanceHeading: 'CONFORME Y ACEPTADO:',
@@ -144,7 +145,7 @@ const COPY = {
     closing: [
       'No seguimento deste plano solicitamos que coloquem o equipamento à disposição dos nossos engenheiros por forma a viabilizar as referidas manutenções. As tarefas do Programa de Manutenções a realizar podem ser modificadas devido a obsolescências técnicas que apresentem os equipamentos. Caso as mesmas se verifiquem, serão atempadamente comunicadas.',
       'A realização das intervenções acima listadas está condicionada à existência de um Contrato de Manutenção vigente à data de cada intervenção.',
-      'Agradecemos a devolução de uma cópia desta carta devidamente assinada como prova de aceitação da calendarização para o email teresa.matos@elekta.com ou então via fax para o número +34 915 973 519. Caso necessite de alguma alteração/modificação pode entrar em contacto connosco via email teresa.matos@elekta.com ou alternativamente através do número de telefone 21 1349530.',
+      `Agradecemos a devolução de uma cópia desta carta devidamente assinada como prova de aceitação da calendarização para o email ${SIGNED_DOCUMENTS_MAILBOX} ou teresa.matos@elekta.com, ou então via fax para o número +34 915 973 519. Caso necessite de alguma alteração/modificação pode entrar em contacto connosco via email teresa.matos@elekta.com ou alternativamente através do número de telefone 21 1349530.`,
     ],
     farewell: 'Agradecemos desde já a vossa colaboração.\nCom os melhores cumprimentos,',
     acceptanceHeading: 'CONFIRMO E ACEITO:',
